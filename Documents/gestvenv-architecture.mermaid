@@ -1,0 +1,396 @@
+# Document d'Architecture - GestVenv
+## Gestionnaire d'Environnements Virtuels Python
+
+### 1. Vue d'ensemble du système
+
+```mermaid
+graph TB
+    User[Utilisateur] -->|interagit avec| CLI[Interface CLI]
+    CLI -->|utilise| EnvMgr[Gestionnaire<br>d'Environnements]
+    CLI -->|utilise| PkgMgr[Gestionnaire<br>de Packages]
+    CLI -->|utilise| ConfigMgr[Gestionnaire<br>de Configuration]
+    
+    EnvMgr -->|crée/modifie| VEnvs[(Environnements<br>Virtuels)]
+    PkgMgr -->|installe/gère| Packages[(Packages<br>Python)]
+    ConfigMgr -->|lit/écrit| Config[(Fichiers de<br>Configuration)]
+    
+    subgraph Composants Principaux
+        CLI
+        EnvMgr
+        PkgMgr
+        ConfigMgr
+    end
+    
+    subgraph Ressources
+        VEnvs
+        Packages
+        Config
+    end
+    
+    Utils[Utilitaires] -.->|supporte| EnvMgr
+    Utils -.->|supporte| PkgMgr
+    Utils -.->|supporte| ConfigMgr
+```
+
+### 2. Structure des packages
+
+```mermaid
+graph TD
+    gestvenv[gestvenv] --> cli
+    gestvenv --> core
+    gestvenv --> utils
+    gestvenv --> templates
+    gestvenv --> tests
+    
+    core --> env_manager
+    core --> package_manager
+    core --> config_manager
+    
+    utils --> path_handler
+    utils --> system_commands
+    utils --> validators
+    
+    tests --> test_env_manager
+    tests --> test_package_manager
+    tests --> test_config_manager
+    
+    cli -->|utilise| env_manager
+    cli -->|utilise| package_manager
+    cli -->|utilise| config_manager
+    
+    env_manager -->|utilise| utils
+    package_manager -->|utilise| utils
+    config_manager -->|utilise| utils
+    
+    style gestvenv fill:#f9f,stroke:#333,stroke-width:2px
+```
+
+### 3. Diagramme de classes
+
+```mermaid
+classDiagram
+    class CLI {
+        +parse_arguments()
+        +run_command()
+        +display_result()
+        +show_help()
+    }
+    
+    class EnvManager {
+        -base_dir: Path
+        -envs_dir: Path
+        -config_file: Path
+        -config: dict
+        +create_env(name, python_version, packages)
+        +activate_env(name)
+        +remove_env(name)
+        +list_envs()
+        -_save_config()
+        -_install_packages(env_name, packages)
+    }
+    
+    class PackageManager {
+        -env_manager: EnvManager
+        +install_packages(env_name, packages)
+        +update_packages(env_name, packages)
+        +remove_packages(env_name, packages)
+        +list_packages(env_name)
+        +check_dependencies(env_name)
+        -_get_pip_path(env_name)
+        -_run_pip_command(env_name, command, args)
+    }
+    
+    class ConfigManager {
+        -config_file: Path
+        -config: dict
+        +load_config()
+        +save_config()
+        +export_config(env_name, output_path)
+        +import_config(config_file, name)
+        +get_env_config(env_name)
+        +update_env_config(env_name, key, value)
+        -_validate_config()
+    }
+    
+    class PathHandler {
+        +get_home_dir(): Path
+        +get_base_dir(): Path
+        +get_envs_dir(): Path
+        +get_env_path(name): Path
+        +ensure_dir_exists(path)
+        +is_valid_path(path): bool
+    }
+    
+    class SystemCommands {
+        +run_command(command, args): ProcessResult
+        +get_python_executable(version): str
+        +get_platform(): str
+        +get_activate_command(env_path): str
+        +get_python_version(): str
+    }
+    
+    class Validators {
+        +is_valid_env_name(name): bool
+        +is_valid_package_name(name): bool
+        +is_valid_python_version(version): bool
+        +validate_packages_list(packages): list
+    }
+    
+    CLI --> EnvManager: utilise
+    CLI --> PackageManager: utilise
+    CLI --> ConfigManager: utilise
+    
+    EnvManager --> ConfigManager: utilise
+    PackageManager --> EnvManager: utilise
+    
+    EnvManager --> PathHandler: utilise
+    EnvManager --> SystemCommands: utilise
+    EnvManager --> Validators: utilise
+    
+    PackageManager --> PathHandler: utilise
+    PackageManager --> SystemCommands: utilise
+    
+    ConfigManager --> PathHandler: utilise
+    ConfigManager --> Validators: utilise
+```
+
+### 4. Flux de création d'un environnement
+
+```mermaid
+sequenceDiagram
+    actor User as Utilisateur
+    participant CLI
+    participant EnvManager as Gestionnaire<br>d'Environnements
+    participant ConfigManager as Gestionnaire<br>de Configuration
+    participant System as Système
+    
+    User->>CLI: gestvenv create mon_projet --python python3.9
+    CLI->>EnvManager: create_env("mon_projet", "python3.9")
+    
+    EnvManager->>ConfigManager: get_env_config("mon_projet")
+    ConfigManager-->>EnvManager: None (n'existe pas)
+    
+    EnvManager->>System: Vérifier si python3.9 existe
+    System-->>EnvManager: OK
+    
+    EnvManager->>System: Créer environnement virtuel
+    System-->>EnvManager: Environnement créé
+    
+    EnvManager->>System: Installer pip
+    System-->>EnvManager: pip installé
+    
+    EnvManager->>ConfigManager: update_env_config("mon_projet", data)
+    ConfigManager->>ConfigManager: save_config()
+    ConfigManager-->>EnvManager: OK
+    
+    EnvManager-->>CLI: Success
+    CLI-->>User: "Environnement 'mon_projet' créé avec succès"
+```
+
+### 5. Flux d'installation de packages
+
+```mermaid
+sequenceDiagram
+    actor User as Utilisateur
+    participant CLI
+    participant PackageManager as Gestionnaire<br>de Packages
+    participant EnvManager as Gestionnaire<br>d'Environnements
+    participant System as Système
+    
+    User->>CLI: gestvenv install "flask,pytest"
+    CLI->>PackageManager: install_packages("flask,pytest")
+    
+    PackageManager->>EnvManager: get_active_env()
+    EnvManager-->>PackageManager: "mon_projet"
+    
+    PackageManager->>EnvManager: get_env_path("mon_projet")
+    EnvManager-->>PackageManager: "/chemin/vers/env"
+    
+    PackageManager->>System: pip install flask
+    System-->>PackageManager: flask installé
+    
+    PackageManager->>System: pip install pytest
+    System-->>PackageManager: pytest installé
+    
+    PackageManager->>EnvManager: update_env_packages("mon_projet", ["flask", "pytest"])
+    EnvManager-->>PackageManager: OK
+    
+    PackageManager-->>CLI: Success
+    CLI-->>User: "Packages installés avec succès"
+```
+
+### 6. Architecture du stockage de données
+
+```mermaid
+erDiagram
+    ENVIRONMENT {
+        string name
+        string path
+        string python_version
+        date created_at
+        array packages
+    }
+    
+    CONFIG {
+        array environments
+        string active_env
+        string default_python
+    }
+    
+    PACKAGE {
+        string name
+        string version
+        array dependencies
+    }
+    
+    ENV_EXPORT {
+        string name
+        string python_version
+        array packages
+        object metadata
+    }
+    
+    CONFIG ||--o{ ENVIRONMENT : contains
+    ENVIRONMENT ||--o{ PACKAGE : has
+    ENVIRONMENT ||--o{ ENV_EXPORT : exports
+```
+
+### 7. Cycle de vie d'un environnement
+
+```mermaid
+stateDiagram-v2
+    [*] --> Créé: gestvenv create
+    
+    Créé --> Actif: gestvenv activate
+    Actif --> Actif: gestvenv install/update
+    Actif --> Inactif: désactivation
+    
+    Inactif --> Actif: gestvenv activate
+    Inactif --> Exporté: gestvenv export
+    
+    Exporté --> Cloné: gestvenv import
+    Cloné --> Actif: gestvenv activate
+    
+    Créé --> Supprimé: gestvenv remove
+    Inactif --> Supprimé: gestvenv remove
+    
+    Supprimé --> [*]
+```
+
+### 8. Diagramme de déploiement
+
+```mermaid
+graph LR
+    subgraph Dev["Environnement de développement"]
+        DevEnv[GestVenv<br>Application]
+        DevVEnvs[(Environnements<br>de dev)]
+        DevEnv -->|gère| DevVEnvs
+    end
+    
+    subgraph Test["Environnement de test"]
+        TestEnv[GestVenv<br>Application]
+        TestVEnvs[(Environnements<br>de test)]
+        TestEnv -->|gère| TestVEnvs
+    end
+    
+    subgraph Prod["Environnement de production"]
+        ProdEnv[GestVenv<br>Application]
+        ProdVEnvs[(Environnements<br>de prod)]
+        ProdEnv -->|gère| ProdVEnvs
+    end
+    
+    Dev -->|export configs| Test
+    Test -->|export configs| Prod
+    
+    PyPI[(PyPI<br>Repository)] -.->|distribution| Dev
+    PyPI -.->|distribution| Test
+    PyPI -.->|distribution| Prod
+    
+    GitHub[(GitHub<br>Repository)] -.->|source| PyPI
+```
+
+### 9. Interaction des composants principaux
+
+```mermaid
+flowchart TD
+    CLI[Interface CLI]
+    
+    subgraph Core["Composants Core"]
+        EM[EnvManager]
+        PM[PackageManager]
+        CM[ConfigManager]
+    end
+    
+    subgraph Utils["Utilitaires"]
+        PH[PathHandler]
+        SC[SystemCommands]
+        VA[Validators]
+    end
+    
+    subgraph External["Systèmes Externes"]
+        FS[Système de Fichiers]
+        PIP[pip]
+        VENV[venv/virtualenv]
+    end
+    
+    CLI --> EM
+    CLI --> PM
+    CLI --> CM
+    
+    EM <--> CM
+    PM --> EM
+    
+    EM --> PH
+    EM --> SC
+    EM --> VA
+    
+    PM --> PH
+    PM --> SC
+    
+    CM --> PH
+    CM --> VA
+    
+    PH --> FS
+    SC --> PIP
+    SC --> VENV
+    
+    EM --> FS
+    EM --> VENV
+    PM --> PIP
+    CM --> FS
+```
+
+### 10. Processus d'import/export d'environnement
+
+```mermaid
+sequenceDiagram
+    actor User as Utilisateur
+    participant CLI
+    participant EM as EnvManager
+    participant CM as ConfigManager
+    participant PM as PackageManager
+    
+    Note over User,PM: Processus d'Export
+    User->>CLI: gestvenv export mon_projet --output config.json
+    CLI->>EM: export_env("mon_projet", "config.json")
+    EM->>CM: get_env_config("mon_projet")
+    CM-->>EM: {config}
+    EM->>PM: get_packages_info("mon_projet")
+    PM-->>EM: {packages}
+    EM->>EM: create_export_object(config, packages)
+    EM->>CLI: write_to_file("config.json", export_data)
+    CLI-->>User: "Configuration exportée avec succès"
+    
+    Note over User,PM: Processus d'Import
+    User->>CLI: gestvenv import config.json --name nouveau_projet
+    CLI->>EM: import_env("config.json", "nouveau_projet")
+    EM->>CLI: read_file("config.json")
+    CLI-->>EM: {export_data}
+    EM->>EM: create_env("nouveau_projet", export_data.python_version)
+    EM->>PM: install_packages("nouveau_projet", export_data.packages)
+    PM-->>EM: OK
+    EM->>CM: update_env_config("nouveau_projet", config_data)
+    CM-->>EM: OK
+    EM-->>CLI: Success
+    CLI-->>User: "Environnement importé avec succès"
+```
