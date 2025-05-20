@@ -49,7 +49,7 @@ def validate_python_version(version: str) -> Tuple[bool, str]:
     Valide une spécification de version Python.
     
     Args:
-        version (str): Version Python à valider (ex: "python3.9", "python", "3.8")
+        version (str): Version Python à valider (ex: "python3.9", "python", "3.10")
         
     Returns:
         Tuple[bool, str]: Tuple contenant (validité, message d'erreur si invalide)

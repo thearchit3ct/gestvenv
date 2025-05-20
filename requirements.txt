@@ -1,6 +1,7 @@
 # Dépendances principales
 argparse>=1.4.0
-pathlib>=1.0.1; python_version < '3.4'
+pathlib>=1.0.1
+python_version < '3.8'
 
 # Dépendances de développement
 pytest>=7.0.0

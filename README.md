@@ -24,7 +24,7 @@ GestVenv est un outil en ligne de commande qui simplifie et centralise la gestio
 pip install gestvenv
 
 # Installation depuis le code source
-git clone https://github.com/votrenom/gestvenv.git
+git clone https://github.com/thearchit3ct/gestvenv.git
 cd gestvenv
 pip install -e .
 ```

@@ -350,7 +350,7 @@ def get_available_python_versions() -> List[Dict[str, str]]:
     python_commands = ["python", "python3"]
     
     # Ajouter des versions spécifiques à vérifier
-    for minor in range(7, 13):  # Python 3.7 à 3.12
+    for minor in range(9, 14):  # Python 3.9 à 3.13
         python_commands.append(f"python3.{minor}")
     
     # Sous Windows, vérifier aussi 'py' avec différents sélecteurs
