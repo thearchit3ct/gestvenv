@@ -24,7 +24,7 @@ GestVenv est un outil en ligne de commande qui simplifie et centralise la gestio
 pip install gestvenv
 
 # Installation depuis le code source
-git clone https://github.com/votrenom/gestvenv.git
+git clone https://github.com/thearchit3ct/gestvenv.git
 cd gestvenv
 pip install -e .
 ```
@@ -110,30 +110,9 @@ gestvenv pyversions
 gestvenv docs
 ```
 
-## Structure du projet
-
-```
-gestvenv/
-├── __init__.py
-├── cli.py                # Interface en ligne de commande
-├── core/
-│   ├── __init__.py
-│   ├── env_manager.py    # Gestion des environnements
-│   ├── package_manager.py  # Gestion des packages
-│   └── config_manager.py   # Gestion des configurations
-├── utils/
-│   ├── __init__.py
-│   ├── path_handler.py     # Gestion des chemins
-│   ├── system_commands.py  # Commandes système
-│   └── validators.py       # Validation des entrées
-├── templates/
-│   └── default_config.json  # Configuration par défaut
-└── tests/                  # Tests unitaires et d'intégration
-```
-
 ## Prérequis
 
-- Python 3.7 ou supérieur
+- Python 3.9 ou supérieur
 - pip (généralement inclus avec Python)
 - Accès aux commandes système pour créer des environnements virtuels
 
@@ -178,7 +157,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## Auteur
 
-[Votre nom] - [votre.email@exemple.com]
+[Votre nom] - [thearchit3ct@outlook.fr]
 
 ---
 
