@@ -7,14 +7,14 @@ offrant une alternative unifiée aux outils existants comme venv, virtualenv et 
 """
 
 __version__ = "1.0.0"
-__author__ = "Votre nom"
-__email__ = "votre.email@exemple.com"
+__author__ = "thearchit3ct"
+__email__ = "thearchit3ct@outlook.fr"
 __license__ = "MIT"
 
 # Imports pour faciliter l'accès depuis l'extérieur
 from .core.env_manager import EnvironmentManager
 
 # Fonction pratique pour obtenir la version
-def get_version():
+def get_version() -> str:
     """Retourne la version actuelle de GestVenv."""
     return __version__
