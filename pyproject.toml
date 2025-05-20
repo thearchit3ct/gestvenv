@@ -75,6 +75,7 @@ disallow_untyped_defs = false
 disallow_incomplete_defs = false
 
 [tool.coverage.run]
+source = ["gestvenv"]
 omit = ["tests/*"]
 
 [tool.coverage.report]
