@@ -1,0 +1,147 @@
+name: GestVenv CI/CD
+
+on:
+  push:
+    branches: [ master, develop ]
+    tags:
+      - 'v*'
+  pull_request:
+    branches: [ master, develop ]
+
+jobs:
+  # JOB 1: LINTING ET VALIDATION DE CODE
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install flake8 black isort
+          pip install -e .
+      - name: Lint with flake8
+        run: |
+          flake8 gestvenv tests --count --select=E9,F63,F7,F82 --show-source --statistics
+          flake8 gestvenv tests --count --max-complexity=10 --max-line-length=127 --statistics
+        continue-on-error: true
+      - name: Check formatting with black
+        run: |
+          black --check gestvenv tests
+        continue-on-error: true
+      - name: Check imports with isort
+        run: |
+          isort --check-only --profile black gestvenv tests
+        continue-on-error: true
+
+  # JOB 2: TESTS SUR DIFFÉRENTES VERSIONS DE PYTHON ET OS
+  test:
+    needs: lint
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+    
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest pytest-cov
+          pip install -e .
+      - name: Test with pytest
+        run: |
+          pytest --cov=gestvenv tests/
+      - name: Upload coverage report
+        uses: codecov/codecov-action@v3
+        with:
+          fail_ci_if_error: false
+          verbose: true
+
+  # JOB 3: BUILD DE PACKAGE
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+      - name: Build package
+        run: |
+          python -m build
+      - name: Check package with twine
+        run: |
+          twine check dist/*
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+
+  # JOB 4: DÉPLOIEMENT SUR PYPI (SEULEMENT POUR LES TAGS)
+  deploy:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Download artifacts
+        uses: actions/download-artifact@v3
+        with:
+          name: dist
+          path: dist/
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install twine
+      - name: Publish package to PyPI
+        env:
+          TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+          TWINE_PASSWORD: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          twine upload dist/*
+
+  # JOB 5: GÉNÉRATION ET DÉPLOIEMENT DE LA DOCUMENTATION
+  docs:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install mkdocs mkdocs-material
+          pip install -e .
+      - name: Build documentation
+        run: |
+          mkdocs build
+      - name: Deploy to GitHub Pages
+        if: github.ref == 'refs/heads/master'
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./site
