@@ -133,7 +133,7 @@ gestvenv/
 
 ## Prérequis
 
-- Python 3.7 ou supérieur
+- Python 3.9 ou supérieur
 - pip (généralement inclus avec Python)
 - Accès aux commandes système pour créer des environnements virtuels
 
