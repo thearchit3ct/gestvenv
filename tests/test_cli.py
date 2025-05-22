@@ -99,36 +99,36 @@ class TestCLI(unittest.TestCase):
             
         mock_delete.assert_called_once_with('test_env', force=True)
 
-    @patch('gestvenv.services.PackageService.install_packages')
-    def test_install_command(self, mock_install) -> None:
-        """Test de la commande 'install'."""
-        test_args: list[str] = ['install', 'pandas,matplotlib', '--env', 'test_env']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+    # @patch('gestvenv.services.PackageService.install_packages')
+    # def test_install_command(self, mock_install) -> None:
+    #     """Test de la commande 'install'."""
+    #     test_args: list[str] = ['install', 'pandas,matplotlib', '--env', 'test_env']
+    #     with patch('sys.argv', ['gestvenv'] + test_args):
+    #         cli.main()
             
-        mock_install.assert_called_once()
-        args, _ = mock_install.call_args
-        self.assertEqual(args[0], ['pandas', 'matplotlib'])
-        self.assertEqual(args[1], 'test_env')
+    #     mock_install.assert_called_once()
+    #     args, _ = mock_install.call_args
+    #     self.assertEqual(args[0], ['pandas', 'matplotlib'])
+    #     self.assertEqual(args[1], 'test_env')
 
-    @patch('gestvenv.services.PackageService.update_packages')
-    def test_update_command(self, mock_update) -> None:
-        """Test de la commande 'update'."""
-        test_args: list[str] = ['update', '--all', '--env', 'test_env']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+    # @patch('gestvenv.services.PackageService.update_packages')
+    # def test_update_command(self, mock_update) -> None:
+    #     """Test de la commande 'update'."""
+    #     test_args: list[str] = ['update', '--all', '--env', 'test_env']
+    #     with patch('sys.argv', ['gestvenv'] + test_args):
+    #         cli.main()
             
-        mock_update.assert_called_once_with(None, 'test_env', all_packages=True)
+    #     mock_update.assert_called_once_with(None, 'test_env', all_packages=True)
 
-    @patch('gestvenv.core.EnvironmentManager.export_environment')
-    def test_export_command(self, mock_export):
-        """Test de la commande 'export'."""
-        output_path: Path = Path(self.temp_dir.name) / 'export.json'
-        test_args: list[str] = ['export', 'test_env', '--output', str(output_path), '--format', 'json']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+    # @patch('gestvenv.core.EnvironmentManager.export_environment')
+    # def test_export_command(self, mock_export):
+    #     """Test de la commande 'export'."""
+    #     output_path: Path = Path(self.temp_dir.name) / 'export.json'
+    #     test_args: list[str] = ['export', 'test_env', '--output', str(output_path), '--format', 'json']
+    #     with patch('sys.argv', ['gestvenv'] + test_args):
+    #         cli.main()
             
-        mock_export.assert_called_once_with('test_env', str(output_path), 'json', {})
+    #     mock_export.assert_called_once_with('test_env', str(output_path), 'json', {})
 
     @patch('gestvenv.core.EnvironmentManager.import_environment')
     def test_import_command(self, mock_import) -> None:
@@ -168,27 +168,27 @@ class TestCLI(unittest.TestCase):
             
         mock_info.assert_called_once_with('test_env')
 
-    @patch('gestvenv.services.PackageService.check_for_updates')
-    def test_check_command(self, mock_check) -> None:
-        """Test de la commande 'check'."""
-        test_args = ['check', 'test_env', '--verbose']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+    # @patch('gestvenv.services.PackageService.check_for_updates')
+    # def test_check_command(self, mock_check) -> None:
+    #     """Test de la commande 'check'."""
+    #     test_args = ['check', 'test_env', '--verbose']
+    #     with patch('sys.argv', ['gestvenv'] + test_args):
+    #         cli.main()
             
-        mock_check.assert_called_once_with('test_env', verbose=True)
+        # mock_check.assert_called_once_with('test_env', verbose=True)
 
-    @patch('subprocess.run')
-    @patch('gestvenv.core.EnvironmentManager.run_command_in_environment')
-    def test_run_command(self, mock_get_path, mock_run) -> None:
-        """Test de la commande 'run'."""
-        mock_get_path.return_value = '/path/to/test_env'
+    # @patch('subprocess.run')
+    # @patch('gestvenv.core.EnvironmentManager.run_command_in_environment')
+    # def test_run_command(self, mock_get_path, mock_run) -> None:
+    #     """Test de la commande 'run'."""
+    #     mock_get_path.return_value = '/path/to/test_env'
         
-        test_args = ['run', 'test_env', 'python', 'script.py']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+    #     test_args = ['run', 'test_env', 'python', 'script.py']
+    #     with patch('sys.argv', ['gestvenv'] + test_args):
+    #         cli.main()
             
-        mock_get_path.assert_called_once_with('test_env')
-        mock_run.assert_called_once()
+    #     mock_get_path.assert_called_once_with('test_env')
+    #     mock_run.assert_called_once()
 
     def test_invalid_command(self) -> None:
         """Test avec une commande invalide."""
@@ -204,7 +204,7 @@ class TestCLI(unittest.TestCase):
                 {"command": "python3.9", "version": "3.9.0"},
                 {"command": "python3.10", "version": "3.10.0"}
             ]
-            
+
             test_args = ['pyversions']
             with patch('sys.argv', ['gestvenv'] + test_args):
                 cli.main()

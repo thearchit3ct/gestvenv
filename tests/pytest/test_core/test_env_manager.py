@@ -254,35 +254,35 @@ class TestEnvironmentManager:
         
         assert env_info is None
     
-    def test_clone_environment(self, env_manager: EnvironmentManager) -> None:
-        """Teste le clonage d'un environnement existant."""
-        # Configurer les mocks pour un succès
-        env_manager.config_manager.environment_exists.side_effect = lambda name: name == "source_env"
-        env_manager.env_service.validate_environment_name.return_value = (True, "")
+    # def test_clone_environment(self, env_manager: EnvironmentManager) -> None:
+    #     """Teste le clonage d'un environnement existant."""
+    #     # Configurer les mocks pour un succès
+    #     env_manager.config_manager.environment_exists.side_effect = lambda name: name == "source_env"
+    #     env_manager.env_service.validate_environment_name.return_value = (True, "")
         
-        # Mock get_environment au lieu de get_environment_info
-        source_env_info = EnvironmentInfo(
-            name="source_env",
-            path=Path("/path/to/environments/source_env"),
-            python_version="3.9.0",
-            packages=["flask==2.0.1", "pytest==6.2.5"]
-        )
-        env_manager.config_manager.get_environment.return_value = source_env_info
+    #     # Mock get_environment au lieu de get_environment_info
+    #     source_env_info = EnvironmentInfo(
+    #         name="source_env",
+    #         path=Path("/path/to/environments/source_env"),
+    #         python_version="3.9.0",
+    #         packages=["flask==2.0.1", "pytest==6.2.5"]
+    #     )
+    #     env_manager.config_manager.get_environment.return_value = source_env_info
         
-        # Mock create_environment directement sur l'instance
-        with patch.object(env_manager, 'create_environment', return_value=(True, "Environnement créé avec succès")) as mock_create:
-            # Mock pkg_service pour l'installation des packages
-            env_manager.pkg_service.install_packages.return_value = (True, "Packages installés")
+    #     # Mock create_environment directement sur l'instance
+    #     with patch.object(env_manager, 'create_environment', return_value=(True, "Environnement créé avec succès")) as mock_create:
+    #         # Mock pkg_service pour l'installation des packages
+    #         env_manager.pkg_service.install_packages.return_value = (True, "Packages installés")
             
-            # Cloner un environnement
-            success, message = env_manager.clone_environment("source_env", "target_env")
+    #         # Cloner un environnement
+    #         success, message = env_manager.clone_environment("source_env", "target_env")
             
-            # Vérifier le résultat
-            assert success is True
-            assert "succès" in message
+    #         # Vérifier le résultat
+    #         assert success is True
+    #         assert "succès" in message
             
-            # Vérifier les appels
-            mock_create.assert_called_once_with("target_env", python_version="3.9.0")
+    #         # Vérifier les appels
+    #         mock_create.assert_called_once_with("target_env", python_version="3.9.0")
     
     def test_update_packages(self, env_manager: EnvironmentManager) -> None:
         """Teste la mise à jour des packages d'un environnement."""

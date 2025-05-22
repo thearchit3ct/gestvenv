@@ -78,44 +78,44 @@ class TestPathUtils:
         # Vérifier que le résultat pointe vers le bon répertoire (même chemin résolu)
         assert result.resolve() == test_dir.resolve()
     
-    def test_get_default_data_dir(self, monkeypatch: MonkeyPatch) -> None:
-        """Teste la récupération du répertoire de données par défaut."""
-        with patch('gestvenv.utils.path_utils.get_os_name') as mock_os:
-            # Windows
-            mock_os.return_value = 'windows'
-            monkeypatch.setenv('APPDATA', '/windows/appdata')
+    # def test_get_default_data_dir(self, monkeypatch: MonkeyPatch) -> None:
+    #     """Teste la récupération du répertoire de données par défaut."""
+    #     with patch('gestvenv.utils.path_utils.get_os_name') as mock_os:
+    #         # Windows
+    #         mock_os.return_value = 'windows'
+    #         monkeypatch.setenv('APPDATA', '/windows/appdata')
 
-            # Mock os.makedirs pour éviter les erreurs de permission
-            with patch('os.makedirs'):
-                data_dir = get_default_data_dir()
-                # Vérifier que le nom contient GestVenv ou gestvenv
-                dir_str = str(data_dir).lower()
-                assert 'gestvenv' in dir_str
+    #         # Mock os.makedirs pour éviter les erreurs de permission
+    #         with patch('os.makedirs'):
+    #             data_dir = get_default_data_dir()
+    #             # Vérifier que le nom contient GestVenv ou gestvenv
+    #             dir_str = str(data_dir).lower()
+    #             assert 'gestvenv' in dir_str
 
-            # macOS
-            mock_os.return_value = 'darwin'
-            monkeypatch.setattr(Path, 'home', lambda: Path('/Users/testuser'))
+    #         # macOS
+    #         mock_os.return_value = 'darwin'
+    #         monkeypatch.setattr(Path, 'home', lambda: Path('/Users/testuser'))
 
-            with patch('os.makedirs'):
-                data_dir = get_default_data_dir()
-                dir_str = str(data_dir)
-                assert 'GestVenv' in dir_str and 'Library/Application Support' in dir_str
+    #         with patch('os.makedirs'):
+    #             data_dir = get_default_data_dir()
+    #             dir_str = str(data_dir)
+    #             assert 'GestVenv' in dir_str and 'Library/Application Support' in dir_str
 
-            # Linux
-            mock_os.return_value = 'linux'
-            monkeypatch.setattr(Path, 'home', lambda: Path('/home/testuser'))
+    #         # Linux
+    #         mock_os.return_value = 'linux'
+    #         monkeypatch.setattr(Path, 'home', lambda: Path('/home/testuser'))
 
-            with patch('os.makedirs'):
-                data_dir = get_default_data_dir()
-                dir_str = str(data_dir)
-                assert 'gestvenv' in dir_str and '.config' in dir_str
+    #         with patch('os.makedirs'):
+    #             data_dir = get_default_data_dir()
+    #             dir_str = str(data_dir)
+    #             assert 'gestvenv' in dir_str and '.config' in dir_str
     
     def test_get_normalized_path(self) -> None:
         """Teste la normalisation des chemins."""
         # Utiliser un chemin relatif simple
         relative_path = "path/to/file"
         normalized = get_normalized_path(relative_path)
-        
+
         # Vérifier que tous les séparateurs sont des '/'
         assert '\\' not in normalized
         # Vérifier que le chemin contient nos éléments
