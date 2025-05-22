@@ -2,26 +2,26 @@ name: GestVenv CI/CD
 
 on:
   push:
-    branches: [ master, develop ]
+    branches: [ master, main, develop ]
     tags:
       - 'v*'
   pull_request:
-    branches: [ master, develop ]
+    branches: [ master, main, develop ]
 
 jobs:
   # JOB 1: LINTING ET VALIDATION DE CODE
   lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 black isort
+          pip install flake8 black isort mypy
           pip install -e .
       - name: Lint with flake8
         run: |
@@ -35,6 +35,10 @@ jobs:
       - name: Check imports with isort
         run: |
           isort --check-only --profile black gestvenv tests
+        continue-on-error: true
+      - name: Type checking with mypy
+        run: |
+          mypy gestvenv --ignore-missing-imports
         continue-on-error: true
 
   # JOB 2: TESTS SUR DIFFÉRENTES VERSIONS DE PYTHON ET OS
@@ -50,39 +54,76 @@ jobs:
     
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install pytest pytest-cov
+          pip install pytest pytest-cov pytest-xdist
           pip install -e .
       - name: Test with pytest
         run: |
-          pytest --cov=gestvenv tests/
-      - name: Upload coverage report
-        uses: codecov/codecov-action@v3
+          pytest --cov=gestvenv --cov-report=xml --cov-report=term-missing -v tests/
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
         with:
+          file: ./coverage.xml
+          flags: unittests
+          name: codecov-umbrella
           fail_ci_if_error: false
           verbose: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
-  # JOB 3: BUILD DE PACKAGE
-  build:
-    needs: test
+  # JOB 3: TESTS DE SÉCURITÉ
+  security:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Set up Python
-        uses: actions/setup-python@v3
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install build twine
+          pip install safety bandit
+          pip install -e .
+      - name: Run safety check
+        run: |
+          safety check
+        continue-on-error: true
+      - name: Run bandit security check
+        run: |
+          bandit -r gestvenv -f json -o bandit-report.json
+        continue-on-error: true
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-reports-${{ github.run_number }}
+          path: |
+            bandit-report.json
+          retention-days: 30
+
+  # JOB 4: BUILD DE PACKAGE
+  build:
+    needs: [test, security]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Nécessaire pour obtenir tous les tags
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel setuptools
       - name: Build package
         run: |
           python -m build
@@ -90,62 +131,171 @@ jobs:
         run: |
           twine check dist/*
       - name: Upload package artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: dist
+          name: python-package-distributions
           path: dist/
           retention-days: 7
 
-  # JOB 4: DÉPLOIEMENT SUR PYPI (SEULEMENT POUR LES TAGS)
-  deploy:
-    if: startsWith(github.ref, 'refs/tags/v')
+  # JOB 5: TESTS D'INSTALLATION
+  test-install:
     needs: build
-    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.9', '3.12']
+    runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v3
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
         with:
-          persist-credentials: false
-      - name: Download artifacts
-        uses: actions/download-artifact@v3
+          python-version: ${{ matrix.python-version }}
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
         with:
-          name: dist
+          name: python-package-distributions
           path: dist/
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-      - name: Install dependencies
+      - name: Test installation from wheel
         run: |
           python -m pip install --upgrade pip
-          pip install twine
-      - name: Publish package to PyPI
-        env:
-          TWINE_USERNAME: __token__
-          TWINE_PASSWORD: ${{ secrets.PYPI_TEST_API_TOKEN }}
+          pip install dist/*.whl
+          gestvenv --version
+          gestvenv --help
+      - name: Test basic functionality
         run: |
-          twine upload dist/*
+          gestvenv list
+          gestvenv pyversions
+        shell: bash
 
-  # JOB 5: GÉNÉRATION ET DÉPLOIEMENT DE LA DOCUMENTATION
+  # JOB 6: DOCUMENTATION
   docs:
-    needs: test
+    needs: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      - name: Install dependencies
+      - name: Install documentation dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install mkdocs mkdocs-material
+          pip install mkdocs mkdocs-material mkdocs-git-revision-date-localized-plugin
+          pip install mkdocs-minify-plugin mkdocs-macros-plugin mkdocstrings[python]
           pip install -e .
       - name: Build documentation
         run: |
-          mkdocs build
+          mkdocs build --strict
+      - name: Upload docs artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: documentation
+          path: site/
+          retention-days: 7
       - name: Deploy to GitHub Pages
-        if: github.ref == 'refs/heads/master'
+        if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         uses: peaceiris/actions-gh-pages@v3
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./site
+          cname: gestvenv.readthedocs.io  # Optionnel: si vous avez un domaine personnalisé
+
+  # JOB 7: DÉPLOIEMENT SUR PYPI (SEULEMENT POUR LES TAGS)
+  publish-to-pypi:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [test, security, build, test-install]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gestvenv
+    permissions:
+      id-token: write  # IMPORTANT: pour l'authentification trusted publisher
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          print-hash: true
+
+  # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
+  publish-to-testpypi:
+    name: Publish to TestPyPI
+    if: github.ref == 'refs/heads/develop'
+    needs: [test, security, build]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/gestvenv
+    permissions:
+      id-token: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+
+  # JOB 9: CRÉATION DE RELEASE GITHUB
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish-to-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Sign the dists with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v2.1.1
+        with:
+          inputs: >-
+            ./dist/*.tar.gz
+            ./dist/*.whl
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create
+          '${{ github.ref_name }}'
+          --repo '${{ github.repository }}'
+          --notes "Voir le [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) pour les détails."
+      - name: Upload artifact signatures to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          gh release upload
+          '${{ github.ref_name }}' dist/**
+          --repo '${{ github.repository }}'
+
+  # JOB 10: NOTIFICATION DE SUCCÈS
+  notify-success:
+    name: Notify Success
+    if: always() && (needs.publish-to-pypi.result == 'success' || needs.test.result == 'success')
+    needs: [test, build, publish-to-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify success
+        run: |
+          echo "✅ Pipeline executed successfully!"
+          echo "📦 Package: gestvenv"
+          echo "🏷️ Version: ${{ github.ref_name }}"
+          echo "🔗 Repository: ${{ github.repository }}"
