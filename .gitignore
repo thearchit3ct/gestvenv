@@ -1,4 +1,5 @@
 .gestenv
+.eggs
 __pycache__/
 *.pyo
 *.pyd

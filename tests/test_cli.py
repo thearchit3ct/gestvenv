@@ -43,7 +43,7 @@ class TestCLI(unittest.TestCase):
             json.dump(self.test_config, f)
         
         # Patch pour utiliser la configuration de test
-        patcher = patch('gestvenv.core.config_manager.get_config_path')
+        patcher = patch('gestvenv.core.config_manager')
         self.mock_get_config_path: MagicMock | AsyncMock = patcher.start()
         self.mock_get_config_path.return_value = self.config_path
         self.addCleanup(patcher.stop)
@@ -56,7 +56,7 @@ class TestCLI(unittest.TestCase):
     def test_create_command(self, mock_create_env) -> None:
         """Test de la commande 'create'."""
         # Simulation des arguments de ligne de commande
-        test_args: list[str] = ['create', 'new_project', '--python', 'python3.8', '--packages', 'flask,pytest']
+        test_args: list[str] = ['create', 'new_project', '--python', 'python3.10', '--packages', 'Faker-37.3.0,pytest']
         with patch('sys.argv', ['gestvenv'] + test_args):
             cli.main()
             
@@ -64,7 +64,7 @@ class TestCLI(unittest.TestCase):
         mock_create_env.assert_called_once()
         args, _ = mock_create_env.call_args
         self.assertEqual(args[0], 'new_project')
-        self.assertEqual(args[1], 'python3.8')
+        self.assertEqual(args[1], 'python3.10')
         self.assertEqual(args[2], ['flask', 'pytest'])
 
     @patch('gestvenv.core.EnvironmentManager.activate_environment')
@@ -96,7 +96,7 @@ class TestCLI(unittest.TestCase):
             
         mock_delete.assert_called_once_with('test_env', force=True)
 
-    @patch('gestvenv.core.package_manager.install_packages')
+    @patch('gestvenv.services.PackageService.install_packages')
     def test_install_command(self, mock_install) -> None:
         """Test de la commande 'install'."""
         test_args: list[str] = ['install', 'pandas,matplotlib', '--env', 'test_env']
@@ -108,7 +108,7 @@ class TestCLI(unittest.TestCase):
         self.assertEqual(args[0], ['pandas', 'matplotlib'])
         self.assertEqual(args[1], 'test_env')
 
-    @patch('gestvenv.core.package_manager.update_packages')
+    @patch('gestvenv.services.PackageService.update_packages')
     def test_update_command(self, mock_update) -> None:
         """Test de la commande 'update'."""
         test_args: list[str] = ['update', '--all', '--env', 'test_env']
@@ -165,7 +165,7 @@ class TestCLI(unittest.TestCase):
             
         mock_info.assert_called_once_with('test_env')
 
-    @patch('gestvenv.core.package_manager.check_dependencies')
+    @patch('gestvenv.services.PackageService.check_for_updates')
     def test_check_command(self, mock_check) -> None:
         """Test de la commande 'check'."""
         test_args = ['check', 'test_env', '--verbose']
@@ -175,7 +175,7 @@ class TestCLI(unittest.TestCase):
         mock_check.assert_called_once_with('test_env', verbose=True)
 
     @patch('subprocess.run')
-    @patch('gestvenv.core.EnvironmentManager.get_environment_path')
+    @patch('gestvenv.core.EnvironmentManager.run_command_in_environment')
     def test_run_command(self, mock_get_path, mock_run) -> None:
         """Test de la commande 'run'."""
         mock_get_path.return_value = '/path/to/test_env'
@@ -197,7 +197,7 @@ class TestCLI(unittest.TestCase):
     @patch('gestvenv.core.EnvironmentManager.get_python_versions')
     def test_pyversions_command(self, mock_get_versions) -> None:
         """Test de la commande 'pyversions'."""
-        mock_get_versions.return_value = ['python3.8', 'python3.9', 'python3.10']
+        mock_get_versions.return_value = ['python3.9', 'python3.10', 'python3.11']
         
         test_args = ['pyversions']
         with patch('sys.argv', ['gestvenv'] + test_args):
