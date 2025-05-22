@@ -120,7 +120,7 @@ class ConfigManager:
             try:
                 import subprocess
                 result = subprocess.run([cmd, "--version"], 
-                                       capture_output=True, text=True, check=False)
+                                       capture_output=True, shell=False, text=True, check=False)
                 if result.returncode == 0:
                     return cmd
             except Exception:

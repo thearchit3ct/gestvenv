@@ -215,10 +215,10 @@ def open_file(path: Union[str, Path]) -> bool:
             os.startfile(str(path_obj))
         elif os_name == "darwin":
             # macOS
-            subprocess.run(["open", str(path_obj)], check=False)
+            subprocess.run(["open", str(path_obj)], shell=False, check=False)
         else:
             # Linux et autres
-            subprocess.run(["xdg-open", str(path_obj)], check=False)
+            subprocess.run(["xdg-open", str(path_obj)], shell=False, check=False)
         return True
     except Exception as e:
         logger.error(f"Erreur lors de l'ouverture du fichier: {e}")

@@ -1,0 +1,23 @@
+/* Styles personnalisés pour GestVenv */
+:root {
+  --md-primary-fg-color: #2196F3;
+  --md-accent-fg-color: #03DAC6;
+}
+
+.md-header {
+  background: linear-gradient(45deg, #2196F3, #21CBF3);
+}
+
+.md-typeset h1 {
+  color: var(--md-primary-fg-color);
+}
+
+/* Terminal styling */
+.terminal {
+  background: #1e1e1e;
+  color: #d4d4d4;
+  padding: 1rem;
+  border-radius: 0.5rem;
+  font-family: 'Roboto Mono', monospace;
+}
+

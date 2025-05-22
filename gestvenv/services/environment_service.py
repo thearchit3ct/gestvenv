@@ -380,7 +380,7 @@ class EnvironmentService:
             import subprocess
             
             cmd = [python_cmd, "-m", "venv", str(env_path)]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.warning(f"Échec de la création avec venv: {result.stderr}")
@@ -390,7 +390,7 @@ class EnvironmentService:
                 
                 # Vérifier si virtualenv est installé
                 check_cmd = [python_cmd, "-m", "pip", "show", "virtualenv"]
-                check_result = subprocess.run(check_cmd, capture_output=True, text=True, check=False)
+                check_result = subprocess.run(check_cmd, capture_output=True, text=True, shell=False, check=False)
                 
                 if check_result.returncode != 0:
                     # Essayer d'installer virtualenv
@@ -404,7 +404,7 @@ class EnvironmentService:
                 
                 # Créer l'environnement avec virtualenv
                 venv_cmd = [python_cmd, "-m", "virtualenv", str(env_path)]
-                venv_result = subprocess.run(venv_cmd, capture_output=True, text=True, check=False)
+                venv_result = subprocess.run(venv_cmd, capture_output=True, text=True, shell=False, check=False)
                 
                 if venv_result.returncode != 0:
                     logger.error(f"Échec de la création avec virtualenv: {venv_result.stderr}")

@@ -71,7 +71,7 @@ class PackageService:
             cmd.extend(packages)
             
             # Exécuter la commande d'installation
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de l'installation des packages: {result.stderr}")
@@ -118,7 +118,7 @@ class PackageService:
             cmd.extend(packages)
             
             # Exécuter la commande de désinstallation
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la désinstallation des packages: {result.stderr}")
@@ -175,7 +175,7 @@ class PackageService:
             cmd.extend(packages_to_update)
             
             # Exécuter la commande de mise à jour
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la mise à jour des packages: {result.stderr}")
@@ -212,7 +212,7 @@ class PackageService:
             
             # Exécuter la commande pour lister les packages au format JSON
             cmd = [str(pip_exe), "list", "--format=json"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la récupération des packages installés: {result.stderr}")
@@ -256,7 +256,7 @@ class PackageService:
             
             # Exécuter la commande pour afficher les informations du package
             cmd = [str(pip_exe), "show", package_name]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la récupération des informations sur '{package_name}': {result.stderr}")
@@ -310,7 +310,7 @@ class PackageService:
             
             # Exécuter la commande pour générer requirements.txt
             cmd = [str(pip_exe), "freeze"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la génération du fichier requirements: {result.stderr}")
@@ -357,7 +357,7 @@ class PackageService:
             cmd = [str(pip_exe), "install", "-r", str(requirements_path)]
             
             # Exécuter la commande
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de l'installation depuis requirements: {result.stderr}")
@@ -395,7 +395,7 @@ class PackageService:
             
             # Exécuter la commande pour vérifier les mises à jour
             cmd = [str(pip_exe), "list", "--outdated", "--format=json"]
-            result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
             
             if result.returncode != 0:
                 logger.error(f"Échec de la vérification des mises à jour: {result.stderr}")
