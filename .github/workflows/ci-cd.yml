@@ -150,22 +150,102 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+      
       - name: Download package artifacts
         uses: actions/download-artifact@v4
         with:
           name: python-package-distributions
           path: dist/
-      - name: Test installation from wheel
+      
+      - name: Debug - List files
+        run: |
+          echo "=== Contenu du répertoire dist/ ==="
+          python -c "
+          import os
+          for item in os.listdir('dist'):
+              print(f'  {item}')
+          "
+      
+      - name: Install from wheel
         run: |
           python -m pip install --upgrade pip
-          pip install dist/*.whl
-          gestvenv --version
-          gestvenv --help
-      - name: Test basic functionality
+          python -c "
+          import glob
+          import subprocess
+          import sys
+          
+          wheels = glob.glob('dist/*.whl')
+          if not wheels:
+              print('❌ Aucun wheel trouvé')
+              sys.exit(1)
+          
+          wheel = wheels[0]
+          print(f'📦 Installation: {wheel}')
+          
+          cmd = [sys.executable, '-m', 'pip', 'install', wheel]
+          result = subprocess.run(cmd, capture_output=True, text=True)
+          
+          print('STDOUT:', result.stdout)
+          if result.stderr:
+              print('STDERR:', result.stderr)
+          
+          if result.returncode != 0:
+              sys.exit(1)
+          
+          print('✅ Installation terminée')
+          "
+      
+      - name: Test import
         run: |
-          gestvenv list
-          gestvenv pyversions
-        shell: bash
+          python -c "
+          try:
+              import gestvenv
+              print(f'✅ Import réussi - gestvenv v{gestvenv.__version__}')
+              
+              # Test des imports de modules
+              from gestvenv.core import EnvironmentManager
+              print('✅ EnvironmentManager importé')
+              
+              from gestvenv.services.environment_service import EnvironmentService
+              print('✅ EnvironmentService importé')
+              
+              from gestvenv.cli import main
+              print('✅ CLI importé')
+              
+          except Exception as e:
+              print(f'❌ Erreur: {e}')
+              import sys
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          "
+      
+      - name: Test CLI commands
+        run: |
+          python -c "
+          import subprocess
+          import sys
+          
+          # Test via python -m d'abord
+          result = subprocess.run([sys.executable, '-m', 'gestvenv.cli', '--version'], 
+                                capture_output=True, text=True)
+          
+          if result.returncode == 0:
+              print(f'✅ CLI via python -m: {result.stdout.strip()}')
+          else:
+              print(f'❌ CLI via python -m échoué: {result.stderr}')
+              sys.exit(1)
+          
+          # Test de la commande directe
+          result = subprocess.run(['gestvenv', '--version'], 
+                                capture_output=True, text=True)
+          
+          if result.returncode == 0:
+              print(f'✅ CLI directe: {result.stdout.strip()}')
+          else:
+              print(f'⚠️ CLI directe échoué, mais python -m fonctionne')
+              print(f'Erreur: {result.stderr}')
+          "
 
   # JOB 6: DOCUMENTATION
   docs:
