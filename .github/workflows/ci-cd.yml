@@ -69,7 +69,7 @@ jobs:
 
   # JOB 3: BUILD DE PACKAGE
   build:
-    # needs: test
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
