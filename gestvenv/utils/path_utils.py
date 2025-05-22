@@ -125,7 +125,14 @@ def get_normalized_path(path: Union[str, Path]) -> str:
     Returns:
         str: Chemin normalisé sous forme de chaîne
     """
-    return str(resolve_path(path)).replace("\\", "/")
+    if isinstance(path, str):
+        # Si c'est un chemin relatif simple, le garder tel quel mais normaliser les séparateurs
+        if not os.path.isabs(path) and not path.startswith('~'):
+            return path.replace("\\", "/")
+    
+    # Pour les autres cas, utiliser resolve_path
+    resolved = resolve_path(path)
+    return str(resolved).replace("\\", "/")
 
 def get_relative_path(path: Union[str, Path], base: Union[str, Path]) -> Path:
     """

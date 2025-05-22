@@ -87,21 +87,19 @@ class TestFormatUtils:
     def test_get_color_for_terminal(self, monkeypatch: MonkeyPatch) -> None:
         """Teste la récupération des codes couleur pour le terminal."""
         # Simuler un terminal qui supporte les couleurs
-        with MonkeyPatch() as mpatch:
-            # Simuler que le terminal supporte les couleurs
-            mpatch.setattr('gestvenv.utils.format_utils._supports_color', lambda: True)
-            
-            # Couleurs valides
-            assert get_color_for_terminal("red") != ""
-            assert get_color_for_terminal("green") != ""
-            assert get_color_for_terminal("bold") != ""
-            
-            # Couleur invalide
-            assert get_color_for_terminal("invalid_color") == ""
-            
-            # Terminal qui ne supporte pas les couleurs
-            mpatch.setattr('gestvenv.utils.format_utils._supports_color', lambda: False)
-            assert get_color_for_terminal("red") == ""
+        monkeypatch.setattr('gestvenv.utils.format_utils._supports_color', lambda: True)
+        
+        # Couleurs valides
+        assert get_color_for_terminal("red") != ""
+        assert get_color_for_terminal("green") != ""
+        assert get_color_for_terminal("bold") != ""
+        
+        # Couleur invalide
+        assert get_color_for_terminal("invalid_color") == ""
+        
+        # Terminal qui ne supporte pas les couleurs
+        monkeypatch.setattr('gestvenv.utils.format_utils._supports_color', lambda: False)
+        assert get_color_for_terminal("red") == ""
     
     def test_format_size(self) -> None:
         """Teste le formatage des tailles en octets."""

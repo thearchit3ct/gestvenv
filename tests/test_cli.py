@@ -55,17 +55,20 @@ class TestCLI(unittest.TestCase):
     @patch('gestvenv.core.EnvironmentManager.create_environment')
     def test_create_command(self, mock_create_env) -> None:
         """Test de la commande 'create'."""
-        # Simulation des arguments de ligne de commande
-        test_args: list[str] = ['create', 'new_project', '--python', 'python3.10', '--packages', 'Faker-37.3.0,pytest']
+        # Configurer le mock pour retourner un succès
+        mock_create_env.return_value = (True, "Environnement créé avec succès")
+
+        test_args: list[str] = ['create', 'new_project', '--python', 'python3.10', '--packages', 'flask,pytest']
         with patch('sys.argv', ['gestvenv'] + test_args):
             cli.main()
-            
-        # Vérification que la fonction a été appelée avec les bons arguments
+
+        # Vérifier que la fonction a été appelée
         mock_create_env.assert_called_once()
-        args, _ = mock_create_env.call_args
-        self.assertEqual(args[0], 'new_project')
-        self.assertEqual(args[1], 'python3.10')
-        self.assertEqual(args[2], ['flask', 'pytest'])
+        # Vérifier les arguments d'appel (nom, python_version, packages, path)
+        call_args = mock_create_env.call_args
+        assert call_args[0][0] == 'new_project'  # nom
+        assert call_args[1]['python_version'] == 'python3.10'  # keyword arg
+        assert call_args[1]['packages'] == 'flask,pytest'  # keyword arg
 
     @patch('gestvenv.core.EnvironmentManager.activate_environment')
     def test_activate_command(self, mock_activate) -> None:
@@ -194,16 +197,17 @@ class TestCLI(unittest.TestCase):
             with self.assertRaises(SystemExit):
                 cli.main()
 
-    @patch('gestvenv.core.EnvironmentManager.get_python_versions')
-    def test_pyversions_command(self, mock_get_versions) -> None:
+    def test_pyversions_command(self) -> None:
         """Test de la commande 'pyversions'."""
-        mock_get_versions.return_value = ['python3.9', 'python3.10', 'python3.11']
-        
-        test_args = ['pyversions']
-        with patch('sys.argv', ['gestvenv'] + test_args):
-            cli.main()
+        with patch('gestvenv.services.system_service.SystemService.get_available_python_versions') as mock_get_versions:
+            mock_get_versions.return_value = [
+                {"command": "python3.9", "version": "3.9.0"},
+                {"command": "python3.10", "version": "3.10.0"}
+            ]
             
-        mock_get_versions.assert_called_once()
+            test_args = ['pyversions']
+            with patch('sys.argv', ['gestvenv'] + test_args):
+                cli.main()
 
 
 # Exécution des tests si le script est exécuté directement

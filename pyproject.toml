@@ -28,7 +28,6 @@ classifiers = [
 ]
 keywords = ["virtual environment", "python", "venv", "environment manager"]
 dependencies = [
-    "argparse",
     "pathlib",
 ]
 
@@ -47,10 +46,15 @@ package-data = {"gestvenv.templates" = ["*.json"]}
 [tool.setuptools.package-dir]
 gestvenv = "gestvenv"
 
-[tool.pytest]
+[tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = "test_*.py"
 python_functions = "test_*"
+# Ajouter des options pour ignorer les warnings
+filterwarnings = [
+    "ignore::DeprecationWarning",
+    "ignore::PendingDeprecationWarning"
+]
 
 [tool.black]
 line-length = 100

@@ -57,7 +57,8 @@ class ConfigManager:
         # Assurer que le répertoire existe
         os.makedirs(config_dir, exist_ok=True)
         
-        return Path(os.path.join(config_dir, 'config.json'))
+        # Utiliser Path normalement, sans forcer WindowsPath sur Unix
+        return Path(config_dir) / 'config.json'
     
     def _load_config(self) -> ConfigInfo:
         """

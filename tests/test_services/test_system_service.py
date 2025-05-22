@@ -14,11 +14,9 @@ class TestSystemService:
     @pytest.fixture
     def system_service(self) -> Generator[SystemService, Any, None]:
         """Fixture pour créer une instance du service."""
-        # Mocker les dépendances
-        with patch('gestvenv.services.system_service.EnvironmentService') as mock_env_service:
-            service = SystemService()
-            service.env_service = mock_env_service()
-            yield service
+        service = SystemService()
+        service.env_service = MagicMock()
+        yield service
     
     def test_run_command(self, system_service: SystemService, mock_subprocess: MagicMock | AsyncMock) -> None:
         """Teste l'exécution de commandes."""

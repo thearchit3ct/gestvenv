@@ -15,13 +15,11 @@ class TestPackageService:
     @pytest.fixture
     def package_service(self) -> Generator[PackageService, Any, None]:
         """Fixture pour créer une instance du service."""
-        # Mocker les dépendances
-        with patch('gestvenv.services.package_service.EnvironmentService') as mock_env_service, \
-             patch('gestvenv.services.package_service.SystemService') as mock_sys_service:
-            service = PackageService()
-            service.env_service = mock_env_service()
-            service.sys_service = mock_sys_service()
-            yield service
+        service = PackageService()
+        # Mock les services directement
+        service.env_service = MagicMock()
+        service.sys_service = MagicMock()
+        yield service
     
     def test_install_packages(self, package_service: PackageService, mock_subprocess: MagicMock | AsyncMock) -> None:
         """Teste l'installation de packages."""

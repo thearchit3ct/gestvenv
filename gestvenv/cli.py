@@ -1054,23 +1054,28 @@ Flux de travail recommandé avec GestVenv:
             "pyversions": self.cmd_pyversions,
             "docs": self.cmd_docs
         }
-        
-        if parsed_args.command in commands:
-            try:
-                return commands[parsed_args.command](parsed_args)
-            except KeyboardInterrupt:
-                print("\nOpération interrompue.")
-                return 130  # Code standard pour SIGINT
-            except Exception as e:
-                if parsed_args.debug:
-                    # En mode debug, afficher la trace complète
-                    import traceback
-                    traceback.print_exc()
-                else:
-                    # En mode normal, afficher un message d'erreur plus convivial
-                    self.print_error(f"Erreur: {str(e)}")
-                    self.print_info("Pour plus de détails, exécutez la commande avec --debug")
-                return 1
+        if hasattr(parsed_args, 'command') and parsed_args.command:
+            command = parsed_args.command
+            if isinstance(command, list):
+                command = command[0] if command else None
+                
+            if command in commands:
+        # if parsed_args.command in commands:
+                try:
+                    return commands[parsed_args.command](parsed_args)
+                except KeyboardInterrupt:
+                    print("\nOpération interrompue.")
+                    return 130  # Code standard pour SIGINT
+                except Exception as e:
+                    if parsed_args.debug:
+                        # En mode debug, afficher la trace complète
+                        import traceback
+                        traceback.print_exc()
+                    else:
+                        # En mode normal, afficher un message d'erreur plus convivial
+                        self.print_error(f"Erreur: {str(e)}")
+                        self.print_info("Pour plus de détails, exécutez la commande avec --debug")
+            return 1
         else:
             self.print_error(f"Commande inconnue: {parsed_args.command}")
             self.parser.print_help()
