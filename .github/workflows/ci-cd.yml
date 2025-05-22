@@ -99,11 +99,11 @@ jobs:
         run: |
           # Exécuter bandit mais ne pas échouer sur les warnings
           bandit -r gestvenv -f json -o bandit-report.json || echo "Bandit terminé avec des warnings"
-
+          
           # Afficher un résumé lisible
           echo "=== Résumé des problèmes de sécurité ==="
           bandit -r gestvenv -f txt || echo "Voir bandit-report.json pour les détails"
-
+          
           # Vérifier seulement les problèmes critiques (HIGH/HIGH)
           echo "=== Vérification des problèmes critiques ==="
           bandit -r gestvenv -ll -i || echo "Aucun problème critique détecté"
@@ -318,8 +318,8 @@ jobs:
   # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
   publish-to-testpypi:
     name: Publish to TestPyPI
-    if: github.ref == 'refs/heads/develop'
-    needs: [build]
+    if: github.ref == 'refs/heads/master'
+    needs: [test, security, build]
     runs-on: ubuntu-latest
     environment:
       name: testpypi
