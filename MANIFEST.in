@@ -1,0 +1,37 @@
+# MANIFEST.in - Inclure tous les fichiers nécessaires
+
+# Fichiers de documentation
+include README.md
+include LICENSE
+include CHANGELOG.md
+include requirements.txt
+
+# Configuration
+include pyproject.toml
+include setup.py
+
+# Fichiers de données du package
+recursive-include gestvenv/templates *.json
+recursive-include gestvenv/templates *.txt
+
+# Inclure tous les modules Python
+recursive-include gestvenv *.py
+
+# Documentation
+recursive-include docs *.md
+recursive-include docs *.yml
+recursive-include docs *.yaml
+
+# Tests
+recursive-include tests *.py
+
+# Exclure les fichiers de développement
+global-exclude *.pyc
+global-exclude *.pyo
+global-exclude *.pyd
+global-exclude __pycache__
+global-exclude .git*
+global-exclude .DS_Store
+global-exclude *.so
+global-exclude .coverage
+global-exclude .pytest_cache

@@ -40,7 +40,7 @@ dependencies = [
 gestvenv = "gestvenv.cli:main"
 
 [tool.setuptools]
-packages = ["gestvenv", "gestvenv.core", "gestvenv.utils", "gestvenv.templates", "gestvenv.tests"]
+packages = ["gestvenv", "gestvenv.core", "gestvenv.utils", "gestvenv.templates", "gestvenv.services", "gestvenv.tests"]
 package-data = {"gestvenv.templates" = ["*.json"]}
 
 [tool.setuptools.package-dir]
