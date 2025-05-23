@@ -3,7 +3,7 @@
 GestVenv est un outil en ligne de commande qui simplifie et centralise la gestion des environnements virtuels Python. Il offre une interface unifiée pour créer, gérer et partager des environnements virtuels, remplaçant la nécessité d'utiliser plusieurs outils comme venv, virtualenv ou pipenv.
 
 ![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Python](https://img.shields.io/badge/python-3.7%2B-brightgreen)
+![Python](https://img.shields.io/badge/python-3.9%2B-brightgreen)
 ![Licence](https://img.shields.io/badge/licence-MIT-green)
 
 ## Fonctionnalités principales

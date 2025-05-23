@@ -1,0 +1,3 @@
+# global options
+
+Documentation en cours de rédaction...

@@ -1,0 +1,3 @@
+# contributing
+
+Documentation en cours de rédaction...

@@ -1,0 +1,3 @@
+# configuration
+
+Documentation en cours de rédaction...
