@@ -157,7 +157,7 @@ Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
 
 ## Auteur
 
-[Votre nom] - [thearchit3ct@outlook.fr]
+TheArchit3ct - thearchit3ct@outlook.fr
 
 ---
 
