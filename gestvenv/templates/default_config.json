@@ -37,7 +37,11 @@
     "package_cache_enabled": true,
     "check_updates_on_activate": true,
     "default_export_format": "json",
-    "show_virtual_env_in_prompt": true
+    "show_virtual_env_in_prompt": true,
+    "use_package_cache": true,
+    "offline_mode": false,
+    "cache_max_size_mb": 5000,
+    "cache_max_age_days": 90
   },
   "_example": {
     "environment_structure": {

@@ -50,7 +50,8 @@ class EnvironmentManager:
         self.sys_service = SystemService()
     
     def create_environment(self, name: str, python_version: Optional[str] = None,
-                           packages: Optional[str] = None, path: Optional[str] = None) -> Tuple[bool, str]:
+                     packages: Optional[str] = None, path: Optional[str] = None,
+                     offline: bool = False) -> Tuple[bool, str]:
         """
         Crée un nouvel environnement virtuel Python.
         
@@ -59,6 +60,7 @@ class EnvironmentManager:
             python_version: Version Python à utiliser.
             packages: Liste de packages à installer, séparés par des virgules.
             path: Chemin personnalisé pour l'environnement.
+            offline: Si True, utilise uniquement les packages du cache (mode hors ligne).
             
         Returns:
             Tuple contenant (succès, message).
@@ -82,7 +84,7 @@ class EnvironmentManager:
         python_cmd = python_version if python_version else self.config_manager.get_default_python()
         
         # Valider et analyser la liste de packages
-        package_list = []
+        package_list: List[str] = []
         if packages:
             valid, package_list, error = self.env_service.validate_packages_list(packages)
             if not valid:
@@ -102,7 +104,7 @@ class EnvironmentManager:
         # Installer les packages si spécifiés
         if package_list:
             try:
-                success, pkg_message = self.pkg_service.install_packages(name, package_list)
+                success, pkg_message = self.pkg_service.install_packages(name, package_list, offline=offline)
                 if not success:
                     # En cas d'échec, essayer de supprimer l'environnement créé
                     self.env_service.delete_environment(env_path)
@@ -409,7 +411,7 @@ class EnvironmentManager:
             return False, error
         
         # Valider et analyser les métadonnées si spécifiées
-        metadata_dict = {}
+        metadata_dict: Dict[str, str] = {}
         if metadata:
             valid, metadata_dict, error = self.env_service.validate_metadata(metadata)
             if not valid:

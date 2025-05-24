@@ -33,6 +33,7 @@ import sys
 import argparse
 import logging
 import textwrap
+# import datetime
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Callable
 
@@ -198,6 +199,58 @@ class CLI:
         docs_parser = subparsers.add_parser('docs', help='Affiche la documentation')
         docs_parser.add_argument('topic', nargs='?', help='Sujet spécifique de la documentation')
         
+        # Commande: cache
+        cache_parser = subparsers.add_parser('cache', help='Gère le cache de packages')
+        cache_subparsers = cache_parser.add_subparsers(dest='cache_command', title='commandes', help='Commande de cache à exécuter')
+
+        # Commande: cache list
+        cache_subparsers.add_parser('list', help='Liste les packages disponibles dans le cache')
+
+        # Commande: cache clean
+        cache_clean_parser = cache_subparsers.add_parser('clean', help='Nettoie le cache en supprimant les packages obsolètes')
+        cache_clean_parser.add_argument('--max-age', type=int, default=90, help='Âge maximum en jours pour les packages rarement utilisés')
+        cache_clean_parser.add_argument('--max-size', type=int, default=5000, help='Taille maximale du cache en Mo')
+
+        # Commande: cache info
+        cache_subparsers.add_parser('info', help='Affiche des informations sur le cache')
+
+        # Commande: cache add
+        cache_add_parser = cache_subparsers.add_parser('add', help='Ajoute un package au cache')
+        cache_add_parser.add_argument('packages', help='Liste de packages à ajouter au cache, séparés par des virgules')
+
+        # Commande: cache export
+        cache_export_parser = cache_subparsers.add_parser('export', help='Exporte le contenu du cache')
+        cache_export_parser.add_argument('--output', help='Chemin du fichier de sortie')
+
+        # Commande: cache import
+        cache_import_parser = cache_subparsers.add_parser('import', help='Importe des packages dans le cache')
+        cache_import_parser.add_argument('file', help='Chemin vers le fichier d\'export')
+
+        # Commande: cache remove
+        cache_remove_parser = cache_subparsers.add_parser('remove', help='Supprime des packages du cache')
+        cache_remove_parser.add_argument('packages', help='Liste de packages à supprimer du cache, séparés par des virgules')
+
+        # Options pour le mode hors ligne dans les commandes existantes
+        for cmd_parser in [create_parser, install_parser, update_parser]:
+            cmd_parser.add_argument('--offline', action='store_true', help='Utilise uniquement les packages du cache (mode hors ligne)')
+   
+        # Modifier le parseur pour la commande 'config'
+        # config_parser = subparsers.add_parser('config', help='Configure les paramètres par défaut')
+        # config_parser.add_argument('--set-python', dest='default_python',
+                                # help='Définit la commande Python par défaut')
+        config_parser.add_argument('--offline', dest='offline_mode', action='store_true',
+                                help='Active le mode hors ligne (utilise uniquement les packages du cache)')
+        config_parser.add_argument('--online', dest='online_mode', action='store_true',
+                                help='Désactive le mode hors ligne')
+        config_parser.add_argument('--enable-cache', dest='enable_cache', action='store_true',
+                                help='Active l\'utilisation du cache de packages')
+        config_parser.add_argument('--disable-cache', dest='disable_cache', action='store_true',
+                                help='Désactive l\'utilisation du cache de packages')
+        config_parser.add_argument('--cache-max-size', dest='cache_max_size', type=int,
+                                help='Définit la taille maximale du cache en Mo')
+        config_parser.add_argument('--cache-max-age', dest='cache_max_age', type=int,
+                                help='Définit l\'âge maximal des packages dans le cache en jours')
+   
         return parser
     
     def print_colored(self, text: str, color: str = "reset") -> None:
@@ -231,6 +284,7 @@ class CLI:
         self.print_colored(f"\n{message}", "bold")
         self.print_colored("=" * len(message))
     
+
     def cmd_create(self, args: argparse.Namespace) -> int:
         """
         Commande pour créer un nouvel environnement virtuel.
@@ -258,12 +312,49 @@ class CLI:
         if args.path:
             self.print_info(f"Chemin personnalisé: {args.path}")
         
+        # Vérifier si le mode hors ligne est spécifié ou actif globalement
+        offline_mode = args.offline if hasattr(args, 'offline') and args.offline else self.config_manager.get_offline_mode()
+        
+        if offline_mode:
+            self.print_info("Mode hors ligne activé - utilisation uniquement des packages du cache")
+            
+            # Vérifier si les packages sont disponibles dans le cache
+            if args.packages:
+                from gestvenv.services.cache_service import CacheService
+                cache_service = CacheService()
+                
+                packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
+                missing_packages = []
+                
+                for pkg in packages:
+                    # Extraire le nom et la version du package
+                    pkg_name = pkg.split('==')[0].split('>')[0].split('<')[0].strip()
+                    pkg_version = None
+                    
+                    if '==' in pkg:
+                        pkg_version = pkg.split('==')[1].strip()
+                    
+                    if not cache_service.has_package(pkg_name, pkg_version):
+                        missing_packages.append(pkg)
+                
+                if missing_packages:
+                    self.print_error(f"Mode hors ligne activé mais les packages suivants ne sont pas disponibles dans le cache: {', '.join(missing_packages)}")
+                    
+                    # Proposer des solutions
+                    self.print_info("\nSolutions possibles:")
+                    self.print_info("1. Désactiver le mode hors ligne: gestvenv config --online")
+                    self.print_info("2. Ajouter les packages manquants au cache: gestvenv cache add \"" + ','.join(missing_packages) + "\"")
+                    self.print_info("3. Créer l'environnement sans packages: gestvenv create " + args.name + " (puis installer les packages plus tard)")
+                    
+                    return 1
+        
         # Créer l'environnement
         success, message = self.env_manager.create_environment(
             args.name,
             python_version=args.python_version,
             packages=args.packages,
-            path=args.path
+            path=args.path,
+            offline=offline_mode
         )
         
         if success:
@@ -700,49 +791,138 @@ class CLI:
         return int(ret_code) if ret_code is not None else 1
     
     def cmd_config(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour configurer les paramètres par défaut.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        if args.default_python:
-            self.print_header("Configuration de Python par défaut")
-            
-            # Définir la commande Python par défaut
-            success, message = self.env_manager.set_default_python(args.default_python)
-            
-            if success:
-                self.print_success(message)
-            else:
-                self.print_error(message)
-                return 1
-        
-        if args.show or (not args.default_python):
-            self.print_header("Configuration actuelle")
-            
-            # Afficher les informations de configuration
-            default_python = self.config_manager.get_default_python()
-            active_env = self.env_manager.get_active_environment()
-            
-            print(f"Commande Python par défaut: {default_python}")
-            
-            if active_env:
-                print(f"Environnement actif: {active_env}")
-            else:
-                print("Aucun environnement actif")
-            
-            # Afficher les paramètres additionnels
-            settings = self.config_manager.config.settings
-            if settings:
-                print("\nParamètres:")
-                for key, value in settings.items():
-                    print(f"  {key}: {value}")
-        
-        return 0
+       """
+       Commande pour configurer les paramètres par défaut.
+    
+       Args:
+           args: Arguments de ligne de commande
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       # Variables pour suivre si des modifications ont été effectuées
+       modified = False
+    
+       if args.default_python:
+           self.print_header("Configuration de Python par défaut")
+
+           # Définir la commande Python par défaut
+           success, message = self.env_manager.set_default_python(args.default_python)
+
+           if success:
+               self.print_success(message)
+               modified = True
+           else:
+               self.print_error(message)
+               return 1
+    
+       # Gestion du mode hors ligne
+       if args.offline_mode and args.online_mode:
+           self.print_error("Options incompatibles: --offline et --online ne peuvent pas être utilisées ensemble")
+           return 1
+    
+       if args.offline_mode:
+           self.print_header("Activation du mode hors ligne")
+
+           if self.config_manager.set_offline_mode(True):
+               self.print_success("Mode hors ligne activé")
+               modified = True
+           else:
+               self.print_error("Échec de l'activation du mode hors ligne")
+               return 1
+    
+       if args.online_mode:
+           self.print_header("Désactivation du mode hors ligne")
+
+           if self.config_manager.set_offline_mode(False):
+               self.print_success("Mode hors ligne désactivé")
+               modified = True
+           else:
+               self.print_error("Échec de la désactivation du mode hors ligne")
+               return 1
+    
+       # Gestion du cache
+       if args.enable_cache and args.disable_cache:
+           self.print_error("Options incompatibles: --enable-cache et --disable-cache ne peuvent pas être utilisées ensemble")
+           return 1
+    
+       if args.enable_cache:
+           self.print_header("Activation du cache de packages")
+
+           if self.config_manager.set_cache_enabled(True):
+               self.print_success("Cache de packages activé")
+               modified = True
+           else:
+               self.print_error("Échec de l'activation du cache de packages")
+               return 1
+    
+       if args.disable_cache:
+           self.print_header("Désactivation du cache de packages")
+
+           if self.config_manager.set_cache_enabled(False):
+               self.print_success("Cache de packages désactivé")
+               modified = True
+           else:
+               self.print_error("Échec de la désactivation du cache de packages")
+               return 1
+    
+       # Configuration de la taille maximale du cache
+       if args.cache_max_size:
+           self.print_header(f"Configuration de la taille maximale du cache: {args.cache_max_size} Mo")
+
+           if self.config_manager.set_setting("cache_max_size_mb", args.cache_max_size):
+               self.print_success(f"Taille maximale du cache définie à {args.cache_max_size} Mo")
+               modified = True
+           else:
+               self.print_error("Échec de la configuration de la taille maximale du cache")
+               return 1
+    
+       # Configuration de l'âge maximal des packages dans le cache
+       if args.cache_max_age:
+           self.print_header(f"Configuration de l'âge maximal des packages: {args.cache_max_age} jours")
+
+           if self.config_manager.set_setting("cache_max_age_days", args.cache_max_age):
+               self.print_success(f"Âge maximal des packages défini à {args.cache_max_age} jours")
+               modified = True
+           else:
+               self.print_error("Échec de la configuration de l'âge maximal des packages")
+               return 1
+    
+       # Afficher la configuration actuelle
+       if args.show or not modified:
+           self.print_header("Configuration actuelle")
+
+           # Afficher les informations de configuration
+           default_python = self.config_manager.get_default_python()
+           active_env = self.env_manager.get_active_environment()
+
+           print(f"Commande Python par défaut: {default_python}")
+
+           if active_env:
+               print(f"Environnement actif: {active_env}")
+           else:
+               print("Aucun environnement actif")
+
+           # Afficher l'état du mode hors ligne et du cache
+           offline_mode = self.config_manager.get_offline_mode()
+           use_cache = self.config_manager.get_cache_enabled()
+           cache_max_size = self.config_manager.get_setting("cache_max_size_mb", 5000)
+           cache_max_age = self.config_manager.get_setting("cache_max_age_days", 90)
+
+           print(f"\nMode hors ligne: {get_color_for_terminal('green') if offline_mode else get_color_for_terminal('red')}{offline_mode}{get_color_for_terminal('reset')}")
+           print(f"Utilisation du cache: {get_color_for_terminal('green') if use_cache else get_color_for_terminal('red')}{use_cache}{get_color_for_terminal('reset')}")
+           print(f"Taille maximale du cache: {cache_max_size} Mo")
+           print(f"Âge maximal des packages: {cache_max_age} jours")
+
+           # Afficher les paramètres additionnels
+           settings = self.config_manager.config.settings
+           if settings:
+               print("\nAutres paramètres:")
+               for key, value in settings.items():
+                   if key not in ["offline_mode", "use_package_cache", "cache_max_size_mb", "cache_max_age_days"]:
+                       print(f"  {key}: {value}")
+    
+       return 0
     
     def cmd_check(self, args: argparse.Namespace) -> int:
         """
@@ -1080,6 +1260,537 @@ Flux de travail recommandé avec GestVenv:
             self.print_error(f"Commande inconnue: {parsed_args.command}")
             self.parser.print_help()
             return 1
+
+    def cmd_cache(self, args: argparse.Namespace) -> int:
+        """
+        Commande pour gérer le cache de packages.
+
+        Args:
+            args: Arguments de ligne de commande
+
+        Returns:
+            int: Code de retour (0 pour succès, autre pour erreur)
+        """
+        # Vérifier si une sous-commande a été spécifiée
+        if not hasattr(args, 'cache_command') or not args.cache_command:
+            self.print_error("Sous-commande de cache non spécifiée")
+            return 1
+
+        # Importer le service de cache
+        from gestvenv.services.cache_service import CacheService
+        cache_service = CacheService()
+
+        # Exécuter la sous-commande appropriée
+        if args.cache_command == 'list':
+            return self.cmd_cache_list(args, cache_service)
+        elif args.cache_command == 'clean':
+            return self.cmd_cache_clean(args, cache_service)
+        elif args.cache_command == 'info':
+            return self.cmd_cache_info(args, cache_service)
+        elif args.cache_command == 'add':
+            return self.cmd_cache_add(args, cache_service)
+        elif args.cache_command == 'export':
+            return self.cmd_cache_export(args, cache_service)
+        elif args.cache_command == 'import':
+            return self.cmd_cache_import(args, cache_service)
+        elif args.cache_command == 'remove':
+            return self.cmd_cache_remove(args, cache_service)
+        else:
+            self.print_error(f"Sous-commande de cache non reconnue: {args.cache_command}")
+            return 1
+
+    def cmd_cache_list(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour lister les packages dans le cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Packages disponibles dans le cache")
+    
+       # Récupérer les packages disponibles
+       available_packages = cache_service.get_available_packages()
+    
+       if not available_packages:
+           self.print_info("Aucun package dans le cache.")
+           return 0
+    
+       # Afficher les packages par ordre alphabétique
+       for package_name in sorted(available_packages.keys()):
+           versions = available_packages[package_name]
+           versions_str = ", ".join(sorted(versions, key=lambda v: [int(x) for x in v.split('.')]))
+
+           self.print_colored(f"{package_name}", "bold")
+           print(f"  Versions: {versions_str}")
+    
+       # Afficher les statistiques
+       stats = cache_service.get_cache_stats()
+       self.print_info(f"\nTotal: {stats['package_count']} package(s), {stats['version_count']} version(s)")
+       self.print_info(f"Taille totale: {self.format_size(stats['total_size_bytes'])}")
+    
+       return 0
+
+    def cmd_cache_clean(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour nettoyer le cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Nettoyage du cache")
+    
+       # Demander confirmation
+       confirm = input("Êtes-vous sûr de vouloir nettoyer le cache ? (o/N) ")
+       if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
+           self.print_info("Opération annulée.")
+           return 0
+    
+       # Récupérer les paramètres
+       max_age_days = args.max_age
+       max_size_mb = args.max_size
+    
+       self.print_info(f"Nettoyage du cache (âge max: {max_age_days} jours, taille max: {max_size_mb} Mo)")
+    
+       # Nettoyer le cache
+       removed_count, freed_space = cache_service.clean_cache(max_age_days, max_size_mb)
+    
+       if removed_count > 0:
+           self.print_success(f"{removed_count} package(s) supprimé(s), {self.format_size(freed_space)} libéré(s)")
+       else:
+           self.print_info("Aucun package à supprimer.")
+    
+       return 0
+
+    def cmd_cache_info(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour afficher des informations sur le cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Informations sur le cache")
+    
+       # Récupérer les statistiques du cache
+       stats = cache_service.get_cache_stats()
+    
+       from datetime import datetime
+       print(f"Répertoire du cache: {stats['cache_dir']}")
+       print(f"Nombre de packages: {stats['package_count']}")
+       print(f"Nombre de versions: {stats['version_count']}")
+       print(f"Taille totale: {self.format_size(stats['total_size_bytes'])}")
+    
+       if stats['package_count'] > 0:
+           print(f"Package le plus récent: {stats['latest_package']}")
+           latest_date = datetime.fromisoformat(stats['latest_added_at'])
+           print(f"Ajouté le: {format_timestamp(latest_date)}")
+    
+       # Récupérer l'état du mode hors ligne
+       from gestvenv.core.config_manager import ConfigManager
+       config = ConfigManager()
+       offline_mode = config.get_setting("offline_mode", False)
+       use_cache = config.get_setting("use_package_cache", True)
+    
+       print(f"\nMode hors ligne: {'Activé' if offline_mode else 'Désactivé'}")
+       print(f"Utilisation du cache: {'Activée' if use_cache else 'Désactivée'}")
+    
+       return 0
+
+    def cmd_cache_add(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour ajouter des packages au cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Ajout de packages au cache")
+    
+       # Récupérer la liste des packages
+       packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
+    
+       if not packages:
+           self.print_error("Aucun package spécifié")
+           return 1
+    
+       self.print_info(f"Téléchargement et mise en cache de {len(packages)} package(s)")
+    
+       # Créer un répertoire temporaire pour le téléchargement
+       import tempfile
+       import subprocess
+       import shutil
+       from pathlib import Path
+    
+       with tempfile.TemporaryDirectory() as temp_dir:
+           # Télécharger les packages
+           cmd = ["pip", "download", "--dest", temp_dir] + packages
+
+           self.print_info(f"Exécution de la commande: {' '.join(cmd)}")
+
+           try:
+               result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
+
+               if result.returncode != 0:
+                   self.print_error(f"Échec du téléchargement des packages: {result.stderr}")
+                   return 1
+
+               # Mettre en cache les packages téléchargés
+               added_count = 0
+
+               for file_name in os.listdir(temp_dir):
+                   file_path = Path(temp_dir) / file_name
+
+                   if file_path.suffix.lower() in ['.whl', '.tar.gz', '.zip']:
+                       # Obtenir les informations du package
+                       show_cmd = ["pip", "show", file_path.stem.split('-')[0]]
+                       show_result = subprocess.run(show_cmd, capture_output=True, text=True, shell=False, check=False)
+
+                       if show_result.returncode == 0:
+                           # Extraire les informations du package
+                           pkg_info = {}
+                           dependencies = []
+
+                           for line in show_result.stdout.splitlines():
+                               if ': ' in line:
+                                   key, value = line.split(': ', 1)
+                                   pkg_info[key.lower()] = value.strip()
+
+                                   # Récupérer les dépendances
+                                   if key.lower() == 'requires':
+                                       dependencies = [dep.strip() for dep in value.split(',') if dep.strip()]
+
+                           # Ajouter le package au cache
+                           if 'name' in pkg_info and 'version' in pkg_info:
+                               success = cache_service.add_package(
+                                   file_path,
+                                   pkg_info['name'],
+                                   pkg_info['version'],
+                                   dependencies
+                               )
+
+                               if success:
+                                   self.print_success(f"Package mis en cache: {pkg_info['name']}-{pkg_info['version']}")
+                                   added_count += 1
+                               else:
+                                   self.print_error(f"Échec de la mise en cache du package: {pkg_info['name']}-{pkg_info['version']}")
+
+               if added_count > 0:
+                   self.print_success(f"{added_count} package(s) ajouté(s) au cache avec succès")
+               else:
+                   self.print_warning("Aucun package n'a été ajouté au cache")
+
+               return 0 if added_count > 0 else 1
+
+           except Exception as e:
+               self.print_error(f"Erreur lors de l'ajout des packages au cache: {str(e)}")
+               return 1
+
+    def cmd_cache_export(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour exporter le contenu du cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Export du cache")
+    
+       # Récupérer les packages disponibles
+       available_packages = cache_service.get_available_packages()
+    
+       if not available_packages:
+           self.print_error("Aucun package dans le cache à exporter.")
+           return 1
+    
+       # Déterminer le chemin de sortie
+       import json
+       from datetime import datetime
+    
+       output_path = args.output
+       if not output_path:
+           # Générer un nom de fichier par défaut
+           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+           output_path = f"gestvenv_cache_export_{timestamp}.json"
+    
+       # Préparer les données d'export
+       export_data = {
+           "metadata": {
+               "version": "1.0",
+               "exported_at": datetime.now().isoformat(),
+               "packages_count": sum(len(versions) for versions in available_packages.values()),
+               "cache_stats": cache_service.get_cache_stats()
+           },
+           "packages": {}
+       }
+    
+       # Ajouter les packages au export
+       for package_name, versions in available_packages.items():
+           export_data["packages"][package_name] = {
+               "versions": {}
+           }
+
+           for version in versions:
+               # Récupérer les informations du package
+               package_info = cache_service.index.get(package_name, {}).get("versions", {}).get(version, {})
+
+               if package_info:
+                   export_data["packages"][package_name]["versions"][version] = {
+                       "added_at": package_info.get("added_at", ""),
+                       "dependencies": package_info.get("dependencies", []),
+                       "size": package_info.get("size", 0),
+                       "hash": package_info.get("hash", "")
+                   }
+    
+       # Écrire le fichier d'export
+       try:
+           with open(output_path, 'w', encoding='utf-8') as f:
+               json.dump(export_data, f, indent=2, ensure_ascii=False)
+
+           self.print_success(f"Export du cache réussi: {output_path}")
+
+           # Afficher les statistiques
+           stats = cache_service.get_cache_stats()
+           self.print_info(f"{stats['package_count']} package(s), {stats['version_count']} version(s) exporté(s)")
+
+           return 0
+       except Exception as e:
+           self.print_error(f"Erreur lors de l'export du cache: {str(e)}")
+           return 1
+
+    def cmd_cache_import(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour importer des packages dans le cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Import de packages dans le cache")
+    
+       # Vérifier si le fichier existe
+       import json
+       from pathlib import Path
+    
+       file_path = Path(args.file)
+       if not file_path.exists():
+           self.print_error(f"Le fichier d'export n'existe pas: {file_path}")
+           return 1
+    
+       # Charger le fichier d'export
+       try:
+           with open(file_path, 'r', encoding='utf-8') as f:
+               import_data = json.load(f)
+
+           # Valider le format du fichier
+           if "packages" not in import_data:
+               self.print_error("Format de fichier d'export invalide: clé 'packages' manquante")
+               return 1
+
+           # Compteurs pour les statistiques
+           total_packages = 0
+           imported_packages = 0
+
+           # Parcourir les packages à importer
+           for package_name, package_data in import_data["packages"].items():
+               if "versions" not in package_data:
+                   continue
+               
+               for version, version_data in package_data["versions"].items():
+                   total_packages += 1
+
+                   # Vérifier si le package existe déjà dans le cache
+                   if cache_service.has_package(package_name, version):
+                       self.print_info(f"Package déjà en cache: {package_name}-{version}")
+                       continue
+                   
+                   # Télécharger et ajouter le package au cache
+                   self.print_info(f"Téléchargement et mise en cache de {package_name}=={version}")
+
+                   # Créer un répertoire temporaire pour le téléchargement
+                   import tempfile
+                   import subprocess
+
+                   with tempfile.TemporaryDirectory() as temp_dir:
+                       # Télécharger le package
+                       cmd = ["pip", "download", "--dest", temp_dir, f"{package_name}=={version}"]
+
+                       try:
+                           result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
+
+                           if result.returncode != 0:
+                               self.print_error(f"Échec du téléchargement du package {package_name}=={version}: {result.stderr}")
+                               continue
+                           
+                           # Trouver le fichier téléchargé
+                           downloaded_files = list(Path(temp_dir).glob(f"{package_name.replace('-', '_')}*"))
+
+                           if not downloaded_files:
+                               self.print_error(f"Aucun fichier téléchargé pour {package_name}=={version}")
+                               continue
+                           
+                           # Ajouter le package au cache
+                           dependencies = version_data.get("dependencies", [])
+                           success = cache_service.add_package(
+                               downloaded_files[0],
+                               package_name,
+                               version,
+                               dependencies
+                           )
+
+                           if success:
+                               self.print_success(f"Package mis en cache: {package_name}-{version}")
+                               imported_packages += 1
+                           else:
+                               self.print_error(f"Échec de la mise en cache du package: {package_name}-{version}")
+
+                       except Exception as e:
+                           self.print_error(f"Erreur lors de l'import du package {package_name}=={version}: {str(e)}")
+
+           if imported_packages > 0:
+               self.print_success(f"{imported_packages}/{total_packages} package(s) importé(s) avec succès")
+           else:
+               self.print_warning("Aucun package n'a été importé")
+
+           return 0
+       except Exception as e:
+           self.print_error(f"Erreur lors de l'import du cache: {str(e)}")
+           return 1
+
+    def cmd_cache_remove(self, args: argparse.Namespace, cache_service: Any) -> int:
+       """
+       Commande pour supprimer des packages du cache.
+    
+       Args:
+           args: Arguments de ligne de commande
+           cache_service: Service de gestion du cache
+
+       Returns:
+           int: Code de retour (0 pour succès, autre pour erreur)
+       """
+       self.print_header("Suppression de packages du cache")
+    
+       # Récupérer la liste des packages
+       packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
+    
+       if not packages:
+           self.print_error("Aucun package spécifié")
+           return 1
+    
+       # Demander confirmation
+       packages_str = ", ".join(packages)
+       confirm = input(f"Êtes-vous sûr de vouloir supprimer ces packages du cache ?\n{packages_str}\n(o/N) ")
+    
+       if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
+           self.print_info("Opération annulée.")
+           return 0
+    
+       # Supprimer les packages
+       removed_count = 0
+       for package_spec in packages:
+           # Extraire le nom et la version du package
+           if "==" in package_spec:
+               package_name, version = package_spec.split("==", 1)
+           else:
+               package_name, version = package_spec, None
+
+           package_name = package_name.strip()
+
+           if version:
+               # Supprimer une version spécifique
+               if package_name in cache_service.index and version in cache_service.index[package_name]["versions"]:
+                   # Récupérer le chemin du package
+                   package_info = cache_service.index[package_name]["versions"][version]
+                   package_path = cache_service.cache_dir / package_info["path"]
+
+                   # Supprimer le fichier
+                   if package_path.exists():
+                       try:
+                           package_path.unlink()
+
+                           # Mettre à jour l'index
+                           del cache_service.index[package_name]["versions"][version]
+
+                           # Si c'était la dernière version, supprimer complètement le package
+                           if not cache_service.index[package_name]["versions"]:
+                               del cache_service.index[package_name]
+
+                           cache_service._save_index()
+
+                           self.print_success(f"Package supprimé du cache: {package_name}-{version}")
+                           removed_count += 1
+                       except Exception as e:
+                           self.print_error(f"Erreur lors de la suppression du package {package_name}-{version}: {str(e)}")
+                   else:
+                       self.print_warning(f"Fichier manquant pour {package_name}-{version}")
+               else:
+                   self.print_warning(f"Package non trouvé dans le cache: {package_name}-{version}")
+           else:
+               # Supprimer toutes les versions du package
+               if package_name in cache_service.index:
+                   versions = list(cache_service.index[package_name]["versions"].keys())
+
+                   for version in versions:
+                       # Récupérer le chemin du package
+                       package_info = cache_service.index[package_name]["versions"][version]
+                       package_path = cache_service.cache_dir / package_info["path"]
+
+                       # Supprimer le fichier
+                       if package_path.exists():
+                           try:
+                               package_path.unlink()
+                               removed_count += 1
+                           except Exception as e:
+                               self.print_error(f"Erreur lors de la suppression du package {package_name}-{version}: {str(e)}")
+
+                   # Supprimer le package de l'index
+                   del cache_service.index[package_name]
+                   cache_service._save_index()
+
+                   self.print_success(f"Toutes les versions de {package_name} supprimées du cache ({len(versions)} version(s))")
+               else:
+                   self.print_warning(f"Package non trouvé dans le cache: {package_name}")
+    
+       if removed_count > 0:
+           self.print_success(f"{removed_count} package(s) supprimé(s) du cache avec succès")
+       else:
+           self.print_warning("Aucun package n'a été supprimé du cache")
+    
+       return 0
+
+    # Fonction utilitaire pour formater la taille
+    def format_size(self, size_bytes: int) -> str:
+       """
+       Formate une taille en octets en une chaîne lisible.
+    
+       Args:
+           size_bytes: Taille en octets
+
+       Returns:
+           str: Taille formatée
+       """
+       from gestvenv.utils.format_utils import format_size
+       return format_size(size_bytes)
+
 
 def main() -> int:
     """

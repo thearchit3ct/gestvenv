@@ -527,3 +527,45 @@ class ConfigManager:
         except Exception as e:
             logger.error(f"Erreur lors de la restauration de la configuration: {str(e)}")
             return False
+        
+    def set_offline_mode(self, enabled: bool) -> bool:
+        """
+        Active ou désactive le mode hors ligne.
+        
+        Args:
+            enabled: True pour activer, False pour désactiver
+            
+        Returns:
+            bool: True si l'opération réussit, False sinon
+        """
+        return self.set_setting("offline_mode", enabled)
+    
+    def get_offline_mode(self) -> bool:
+        """
+        Vérifie si le mode hors ligne est activé.
+        
+        Returns:
+            bool: True si le mode hors ligne est activé
+        """
+        return self.get_setting("offline_mode", False)
+    
+    def set_cache_enabled(self, enabled: bool) -> bool:
+        """
+        Active ou désactive l'utilisation du cache de packages.
+        
+        Args:
+            enabled: True pour activer, False pour désactiver
+            
+        Returns:
+            bool: True si l'opération réussit, False sinon
+        """
+        return self.set_setting("use_package_cache", enabled)
+    
+    def get_cache_enabled(self) -> bool:
+        """
+        Vérifie si l'utilisation du cache de packages est activée.
+        
+        Returns:
+            bool: True si l'utilisation du cache est activée
+        """
+        return self.get_setting("use_package_cache", True)

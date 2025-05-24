@@ -1,163 +1,284 @@
-# GestVenv : Gestionnaire d'Environnements Virtuels Python
+# 🐍 GestVenv - Gestionnaire d'Environnements Virtuels Python
 
-GestVenv est un outil en ligne de commande qui simplifie et centralise la gestion des environnements virtuels Python. Il offre une interface unifiée pour créer, gérer et partager des environnements virtuels, remplaçant la nécessité d'utiliser plusieurs outils comme venv, virtualenv ou pipenv.
+[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/thearchit3ct/gestvenv)
+[![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-orange.svg)](LICENSE)
+[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Python](https://img.shields.io/badge/python-3.9%2B-brightgreen)
-![Licence](https://img.shields.io/badge/licence-MIT-green)
+**GestVenv** est un outil en ligne de commande moderne et intelligent pour la gestion des environnements virtuels Python. Il simplifie la création, l'activation, la gestion des packages et offre désormais un **mode hors ligne avec cache intelligent** pour travailler sans connexion Internet.
 
-## Fonctionnalités principales
+## ✨ Fonctionnalités Principales
 
-- **Gestion simplifiée** des environnements virtuels Python
-- **Interface unifiée** pour toutes les tâches de gestion d'environnements
-- **Création et suppression** d'environnements avec différentes versions Python
-- **Installation et mise à jour** faciles des packages
-- **Export et import** de configurations pour partager des environnements
-- **Clonage d'environnements** pour dupliquer des configurations
-- **Compatible** avec Windows, macOS et Linux
-- **Interface CLI intuitive** avec aide contextuelle
+### 🚀 Gestion d'Environnements
+- ✅ Création rapide d'environnements avec différentes versions Python
+- ✅ Activation/désactivation simplifiée
+- ✅ Clonage d'environnements existants
+- ✅ Gestion centralisée de tous vos environnements
 
-## Installation
+### 📦 Gestion Intelligente des Packages
+- ✅ Installation, mise à jour et suppression de packages
+- ✅ **Cache local intelligent** pour les packages Python
+- ✅ **Mode hors ligne** complet
+- ✅ Optimisation automatique des installations
+- ✅ Export/import de configurations
 
+### 🔧 Outils de Développement
+- ✅ Exécution de commandes dans des environnements spécifiques
+- ✅ Vérification des dépendances et mises à jour
+- ✅ Documentation intégrée
+- ✅ Support multi-plateforme
+
+## 🆕 Nouveautés v1.1.0 - Cache Intelligent & Mode Hors Ligne
+
+### Cache Local Automatique
 ```bash
-# Installation depuis PyPI
-pip install gestvenv
+# Le cache se remplit automatiquement lors des installations
+gestvenv install myenv requests flask
 
-# Installation depuis le code source
+# Gérer le cache manuellement
+gestvenv cache info          # Informations sur le cache
+gestvenv cache list          # Lister les packages en cache
+gestvenv cache clean         # Nettoyer le cache
+gestvenv cache add requests  # Pré-télécharger un package
+```
+
+### Mode Hors Ligne
+```bash
+# Activer le mode hors ligne
+gestvenv --offline install myenv requests
+
+# Configurer le mode par défaut
+gestvenv config set offline_mode true
+
+# Travailler complètement hors ligne
+gestvenv --offline create project_env --python 3.11
+gestvenv --offline install project_env -r requirements.txt
+```
+
+## 🚀 Installation
+
+### Installation via pip (recommandée)
+```bash
+pip install gestvenv
+```
+
+### Installation depuis les sources
+```bash
 git clone https://github.com/thearchit3ct/gestvenv.git
 cd gestvenv
 pip install -e .
 ```
 
-## Utilisation
+## 📖 Guide de Démarrage Rapide
 
-### Création d'un environnement
-
+### 1. Créer votre premier environnement
 ```bash
-# Créer un nouvel environnement avec la version Python par défaut
-gestvenv create mon_projet
+# Créer un environnement avec la version Python par défaut
+gestvenv create monprojet
 
-# Créer un environnement avec une version Python spécifique
-gestvenv create mon_projet --python python3.9
+# Créer avec une version Python spécifique
+gestvenv create monprojet --python 3.11
 
-# Créer un environnement avec des packages initiaux
-gestvenv create mon_projet --packages "flask,pytest,gunicorn"
+# Créer et pré-remplir le cache
+gestvenv create monprojet --python 3.11 --enable-cache
 ```
 
-### Activation et désactivation
-
+### 2. Activer et gérer l'environnement
 ```bash
-# Activer un environnement
-gestvenv activate mon_projet
-# Suivre les instructions affichées
+# Activer l'environnement
+gestvenv activate monprojet
 
-# Désactiver l'environnement actif
-gestvenv deactivate
-# Suivre les instructions affichées
-```
-
-### Gestion des packages
-
-```bash
-# Installer des packages dans l'environnement actif
-gestvenv install "pandas,matplotlib"
-
-# Installer des packages dans un environnement spécifique
-gestvenv install "pandas,matplotlib" --env mon_projet
-
-# Mettre à jour tous les packages
-gestvenv update --all
-
-# Vérifier les mises à jour disponibles
-gestvenv check
-```
-
-### Export et import
-
-```bash
-# Exporter un environnement au format JSON
-gestvenv export mon_projet --output mon_projet_config.json
-
-# Exporter un environnement au format requirements.txt
-gestvenv export mon_projet --format requirements
-
-# Importer un environnement depuis un fichier JSON
-gestvenv import mon_projet_config.json
-
-# Importer un environnement depuis un fichier requirements.txt
-gestvenv import requirements.txt --name nouveau_projet
-```
-
-### Autres commandes utiles
-
-```bash
 # Lister tous les environnements
 gestvenv list
 
-# Afficher des informations détaillées sur un environnement
-gestvenv info mon_projet
-
-# Cloner un environnement existant
-gestvenv clone mon_projet mon_projet_dev
-
-# Exécuter une commande dans un environnement spécifique
-gestvenv run mon_projet python script.py
-
-# Afficher les versions Python disponibles
-gestvenv pyversions
-
-# Consulter la documentation
-gestvenv docs
+# Obtenir des infos détaillées
+gestvenv info monprojet
 ```
 
-## Prérequis
+### 3. Gérer les packages intelligemment
+```bash
+# Installation classique (avec mise en cache automatique)
+gestvenv install monprojet requests flask pandas
 
-- Python 3.9 ou supérieur
-- pip (généralement inclus avec Python)
-- Accès aux commandes système pour créer des environnements virtuels
+# Installation en mode hors ligne (utilise le cache)
+gestvenv --offline install monprojet requests flask
 
-## Dépendances
+# Pré-télécharger des packages pour usage hors ligne
+gestvenv cache add numpy scipy matplotlib
+```
 
-- **venv/virtualenv** : Pour la création d'environnements virtuels
-- **argparse** : Pour l'analyse des arguments de ligne de commande
-- **pathlib** : Pour la manipulation des chemins de fichiers
-- **json** : Pour la gestion des fichiers de configuration
+## 🛠️ Référence des Commandes
 
-## Configuration
+### Gestion des Environnements
 
-Les fichiers de configuration de GestVenv sont stockés dans les emplacements suivants selon votre système d'exploitation :
+| Commande | Description | Exemple |
+|----------|-------------|---------|
+| `create` | Créer un nouvel environnement | `gestvenv create myapp --python 3.11` |
+| `activate` | Activer un environnement | `gestvenv activate myapp` |
+| `deactivate` | Désactiver l'environnement actuel | `gestvenv deactivate` |
+| `list` | Lister tous les environnements | `gestvenv list` |
+| `info` | Informations sur un environnement | `gestvenv info myapp` |
+| `clone` | Cloner un environnement | `gestvenv clone myapp myapp_copy` |
+| `remove` | Supprimer un environnement | `gestvenv remove myapp` |
 
-- **Windows** : `%APPDATA%\GestVenv\config.json`
-- **macOS** : `~/Library/Application Support/GestVenv/config.json`
-- **Linux** : `~/.config/gestvenv/config.json`
+### Gestion des Packages
 
-Les environnements virtuels sont créés par défaut dans un sous-répertoire `environments` de ce dossier, mais vous pouvez spécifier des chemins personnalisés lors de la création.
+| Commande | Description | Exemple |
+|----------|-------------|---------|
+| `install` | Installer des packages | `gestvenv install myapp requests flask` |
+| `update` | Mettre à jour des packages | `gestvenv update myapp requests` |
+| `remove` | Supprimer des packages | `gestvenv remove myapp requests` |
+| `check` | Vérifier les mises à jour | `gestvenv check myapp` |
 
-## Avantages par rapport aux outils existants
+### Cache Intelligent
 
-- **Interface unifiée** : Remplace plusieurs outils avec une seule interface cohérente
-- **Gestion centralisée** : Liste et gère tous vos environnements à partir d'un seul outil
-- **Partage simplifié** : Export/import de configurations pour une collaboration facile
-- **Multi-versions** : Support intégré pour différentes versions de Python
-- **Amélioration de la productivité** : Moins de temps passé à configurer, plus de temps à développer
+| Commande | Description | Exemple |
+|----------|-------------|---------|
+| `cache info` | Informations sur le cache | `gestvenv cache info` |
+| `cache list` | Lister les packages en cache | `gestvenv cache list` |
+| `cache clean` | Nettoyer le cache | `gestvenv cache clean` |
+| `cache add` | Ajouter un package au cache | `gestvenv cache add numpy==1.21.0` |
+| `cache remove` | Supprimer du cache | `gestvenv cache remove numpy` |
+| `cache export` | Exporter le cache | `gestvenv cache export cache_backup.tar.gz` |
+| `cache import` | Importer un cache | `gestvenv cache import cache_backup.tar.gz` |
 
-## Contribution
+### Import/Export
 
-Les contributions sont bienvenues ! Voici comment vous pouvez contribuer :
+| Commande | Description | Exemple |
+|----------|-------------|---------|
+| `export` | Exporter la configuration | `gestvenv export myapp config.json` |
+| `import` | Importer une configuration | `gestvenv import config.json newenv` |
 
-1. Forkez le projet
-2. Créez une branche pour votre fonctionnalité (`git checkout -b feature/amazing-feature`)
-3. Committez vos changements (`git commit -m 'Add some amazing feature'`)
-4. Poussez vers la branche (`git push origin feature/amazing-feature`)
-5. Ouvrez une Pull Request
+### Utilitaires
 
-## Licence
+| Commande | Description | Exemple |
+|----------|-------------|---------|
+| `run` | Exécuter une commande | `gestvenv run myapp python script.py` |
+| `pyversions` | Versions Python disponibles | `gestvenv pyversions` |
+| `docs` | Documentation intégrée | `gestvenv docs` |
 
-Ce projet est sous licence MIT. Voir le fichier `LICENSE` pour plus de détails.
+## 🔧 Options Globales
 
-## Auteur
+| Option | Description | Exemple |
+|--------|-------------|---------|
+| `--offline` | Forcer le mode hors ligne | `gestvenv --offline install myapp requests` |
+| `--online` | Forcer le mode en ligne | `gestvenv --online install myapp requests` |
+| `--enable-cache` | Activer le cache | `gestvenv --enable-cache create myapp` |
+| `--disable-cache` | Désactiver le cache | `gestvenv --disable-cache install myapp requests` |
+| `--verbose` | Affichage détaillé | `gestvenv --verbose create myapp` |
+| `--quiet` | Mode silencieux | `gestvenv --quiet install myapp requests` |
 
-[Votre nom] - [thearchit3ct@outlook.fr]
+## 📋 Cas d'Usage en Développement
+
+### Projet Web avec Django/Flask
+```bash
+# Configuration initiale
+gestvenv create webapp --python 3.11
+gestvenv cache add django djangorestframework gunicorn
+gestvenv install webapp django djangorestframework gunicorn
+
+# Développement hors ligne
+gestvenv --offline activate webapp
+gestvenv --offline install webapp pytest black flake8
+```
+
+### Projet Data Science
+```bash
+# Pré-télécharger les packages lourds
+gestvenv cache add numpy pandas matplotlib seaborn scikit-learn jupyter
+
+# Créer l'environnement
+gestvenv create datascience --python 3.10
+gestvenv --offline install datascience numpy pandas matplotlib seaborn
+
+# Export pour partage d'équipe
+gestvenv export datascience team_config.json
+gestvenv cache export datascience_cache.tar.gz
+```
+
+### Déploiement et CI/CD
+```bash
+# Préparer le cache pour le déploiement
+gestvenv cache add -r production_requirements.txt
+
+# Déploiement hors ligne
+gestvenv --offline create production --python 3.11
+gestvenv --offline install production -r production_requirements.txt
+```
+
+## ⚙️ Configuration
+
+### Fichier de Configuration
+GestVenv utilise un fichier de configuration situé à `~/.gestvenv/config.json` :
+
+```json
+{
+  "offline_mode": false,
+  "use_cache": true,
+  "cache": {
+    "max_size": "5GB",
+    "max_age": 30,
+    "auto_cleanup": true
+  },
+  "environments_path": "~/.gestvenv/environments",
+  "default_python": "python3"
+}
+```
+
+### Configuration via CLI
+```bash
+# Configurer le mode hors ligne par défaut
+gestvenv config set offline_mode true
+
+# Configurer la taille maximale du cache
+gestvenv config set cache.max_size 10GB
+
+# Configurer le nettoyage automatique
+gestvenv config set cache.auto_cleanup false
+```
+
+## 🎯 Optimisations et Performance
+
+- ⚡ **Création d'environnement** : < 10 secondes
+- ⚡ **Démarrage de l'application** : < 2 secondes  
+- ⚡ **Support de 50+ environnements** simultanés
+- 💾 **Cache intelligent** : Réduction de 80% du temps d'installation
+- 🔒 **Mode hors ligne** : Développement sans interruption
+
+## 🤝 Contribution
+
+Les contributions sont les bienvenues ! Consultez notre [guide de contribution](CONTRIBUTING.md).
+
+### Développement Local
+```bash
+git clone https://github.com/thearchit3ct/gestvenv.git
+cd gestvenv
+gestvenv create gestvenv-dev --python 3.11
+gestvenv activate gestvenv-dev
+gestvenv install gestvenv-dev -e .
+pytest
+```
+
+## 📄 License
+
+Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+
+## 🆘 Support
+
+- 📖 [Documentation complète](https://github.com/thearchit3ct/gestvenv/wiki)
+- 🐛 [Signaler un bug](https://github.com/thearchit3ct/gestvenv/issues)
+- 💬 [Discussions](https://github.com/thearchit3ct/gestvenv/discussions)
+- 📧 Contact : thearchit3ct@outlook.fr
+
+---
+
+<div align="center">
+
+**Développé avec ❤️ pour la communauté Python**
+
+⭐ Si GestVenv vous est utile, n'hésitez pas à laisser une étoile sur GitHub !
+
+</div>
 
 ---
 

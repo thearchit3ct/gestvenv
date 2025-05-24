@@ -9,11 +9,14 @@ import os
 import re
 import json
 import logging
+import tempfile
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union
 
 from ..core.models import PackageInfo
+from .cache_service import CacheService
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -25,9 +28,17 @@ class PackageService:
         """Initialise le service de gestion des packages."""
         from .environment_service import EnvironmentService
         from .system_service import SystemService
+        from .cache_service import CacheService
         
         self.env_service = EnvironmentService()
         self.sys_service = SystemService()
+        self.cache_service = CacheService()
+        
+        # Récupérer le mode hors ligne des paramètres
+        from ..core.config_manager import ConfigManager
+        config = ConfigManager()
+        self.offline_mode = config.get_setting("offline_mode", False)
+        self.use_cache = config.get_setting("use_package_cache", True)
     
     def install_packages(self, env_name: str, packages: Union[str, List[str]], 
                         upgrade: bool = False) -> Tuple[bool, str]:
@@ -61,13 +72,141 @@ class PackageService:
             if not pip_exe:
                 return False, f"pip non trouvé dans l'environnement '{env_name}'"
             
-            # Construire la commande d'installation
+            # Vérifier si le mode hors ligne est activé et si tous les packages sont disponibles dans le cache
+            if self.offline_mode:
+                # Vérifier la disponibilité des packages dans le cache
+                missing_packages = []
+                for pkg in packages:
+                    # Extraire le nom et la version du package
+                    pkg_name = pkg.split('==')[0].split('>')[0].split('<')[0].strip()
+                    pkg_version = None
+                    
+                    if '==' in pkg:
+                        pkg_version = pkg.split('==')[1].strip()
+                    
+                    if not self.cache_service.has_package(pkg_name, pkg_version):
+                        missing_packages.append(pkg)
+                
+                if missing_packages:
+                    return False, f"Mode hors ligne activé mais les packages suivants ne sont pas disponibles dans le cache: {', '.join(missing_packages)}"
+            
+            # Si le cache est activé, utiliser les packages du cache si disponibles
+            if self.use_cache:
+                # Filtrer les packages qui sont disponibles dans le cache
+                cached_packages = []
+                non_cached_packages = []
+                
+                for pkg in packages:
+                    # Extraire le nom et la version du package
+                    pkg_name = pkg.split('==')[0].split('>')[0].split('<')[0].strip()
+                    pkg_version = None
+                    
+                    if '==' in pkg:
+                        pkg_version = pkg.split('==')[1].strip()
+                    
+                    if self.cache_service.has_package(pkg_name, pkg_version):
+                        cached_packages.append(pkg)
+                    else:
+                        non_cached_packages.append(pkg)
+                
+                # Installer les packages depuis le cache
+                if cached_packages:
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        # Copier les fichiers wheel du cache vers le répertoire temporaire
+                        wheel_files = []
+                        for pkg in cached_packages:
+                            pkg_name = pkg.split('==')[0].split('>')[0].split('<')[0].strip()
+                            pkg_version = None
+                            
+                            if '==' in pkg:
+                                pkg_version = pkg.split('==')[1].strip()
+                            
+                            # Récupérer le package du cache
+                            pkg_path = self.cache_service.get_package(pkg_name, pkg_version)
+                            if pkg_path:
+                                # Copier le fichier wheel dans le répertoire temporaire
+                                dest_path = Path(temp_dir) / pkg_path.name
+                                shutil.copy2(pkg_path, dest_path)
+                                wheel_files.append(str(dest_path))
+                        
+                        # Installer les fichiers wheel
+                        if wheel_files:
+                            cmd = [str(pip_exe), "install"]
+                            
+                            if upgrade:
+                                cmd.append("--upgrade")
+                            
+                            # Ajouter les chemins des fichiers wheel
+                            cmd.extend(wheel_files)
+                            
+                            # Exécuter la commande d'installation
+                            result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
+                            
+                            if result.returncode != 0:
+                                logger.error(f"Échec de l'installation des packages depuis le cache: {result.stderr}")
+                                return False, f"Échec de l'installation des packages depuis le cache: {result.stderr}"
+                
+                # Si tous les packages sont installés depuis le cache, terminer
+                if not non_cached_packages:
+                    return True, f"{len(cached_packages)} package(s) installé(s) avec succès depuis le cache"
+                
+                # Continuer avec les packages non mis en cache
+                packages = non_cached_packages
+                
+                # Si mode hors ligne mais des packages ne sont pas dans le cache
+                if self.offline_mode and packages:
+                    return False, f"Mode hors ligne activé mais les packages suivants ne sont pas disponibles dans le cache: {', '.join(packages)}"
+            
+            # Construire la commande d'installation pour les packages restants
             cmd = [str(pip_exe), "install"]
             
             if upgrade:
                 cmd.append("--upgrade")
             
-            # Ajouter les packages à la commande
+            # Télécharger les packages dans un répertoire temporaire pour mise en cache
+            if self.use_cache and not self.offline_mode:
+                with tempfile.TemporaryDirectory() as temp_dir:
+                    # Ajouter l'option pour télécharger les packages sans les installer
+                    download_cmd = cmd + ["--dest", temp_dir] + packages
+                    
+                    # Exécuter la commande de téléchargement
+                    result = subprocess.run(download_cmd, capture_output=True, text=True, shell=False, check=False)
+                    
+                    if result.returncode != 0:
+                        logger.error(f"Échec du téléchargement des packages: {result.stderr}")
+                    else:
+                        # Mettre en cache les packages téléchargés
+                        for file_name in os.listdir(temp_dir):
+                            file_path = Path(temp_dir) / file_name
+                            if file_path.suffix.lower() in ['.whl', '.tar.gz', '.zip']:
+                                # Obtenir les informations du package depuis pip show
+                                show_cmd = [str(pip_exe), "show", file_path.stem.split('-')[0]]
+                                show_result = subprocess.run(show_cmd, capture_output=True, text=True, shell=False, check=False)
+                                
+                                if show_result.returncode == 0:
+                                    # Extraire les informations du package
+                                    pkg_info = {}
+                                    dependencies = []
+                                    
+                                    for line in show_result.stdout.splitlines():
+                                        if ': ' in line:
+                                            key, value = line.split(': ', 1)
+                                            pkg_info[key.lower()] = value.strip()
+                                            
+                                            # Récupérer les dépendances
+                                            if key.lower() == 'requires':
+                                                dependencies = [dep.strip() for dep in value.split(',') if dep.strip()]
+                                    
+                                    # Ajouter le package au cache
+                                    if 'name' in pkg_info and 'version' in pkg_info:
+                                        self.cache_service.add_package(
+                                            file_path,
+                                            pkg_info['name'],
+                                            pkg_info['version'],
+                                            dependencies
+                                        )
+            
+            # Installer les packages
             cmd.extend(packages)
             
             # Exécuter la commande d'installation
