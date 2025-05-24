@@ -1,6 +1,6 @@
 # GestVenv - Gestionnaire d'Environnements Virtuels Python
 
-![GestVenv Logo](https://img.shields.io/badge/GestVenv-1.0.0-blue)
+![GestVenv Logo](https://img.shields.io/badge/GestVenv-1.1.0-blue)
 
 Bienvenue dans la documentation de **GestVenv**, un outil moderne pour gérer vos environnements virtuels Python.
 

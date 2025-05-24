@@ -5,6 +5,31 @@ Tous les changements notables apportés au projet GestVenv seront documentés da
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-05-24
+
+### Ajouté
+
+- **Mode hors ligne et cache intelligent**:
+
+  - Implémentation d'un système de cache local pour les packages Python
+  - Mode hors ligne permettant de travailler sans connexion Internet
+  - Nouvelles commandes pour gérer le cache (`gestvenv cache list|clean|info|add|export|import|remove`)
+  - Options de configuration pour le mode hors ligne et le cache (`--offline`, `--online`, `--enable-cache`, `--disable-cache`)
+  - Support pour le téléchargement préalable de packages dans le cache
+  - Optimisation de l'installation des packages grâce au cache
+- Amélioration de la documentation avec des instructions pour le mode hors ligne et le cache
+- Ajout d'options de paramétrage du cache (taille maximale, âge maximal)
+
+### Modifié
+
+- Optimisation du processus d'installation des packages pour utiliser le cache quand disponible
+- Intégration du mode hors ligne dans toutes les commandes manipulant des packages
+- Mise à jour du format de configuration pour inclure les paramètres liés au cache
+
+### Corrigé
+
+- Meilleure gestion des erreurs lors de l'installation de packages
+
 ## [1.0.0] - 2025-05-18
 
 ### Ajouté

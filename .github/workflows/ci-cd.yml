@@ -318,7 +318,7 @@ jobs:
   # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
   publish-to-testpypi:
     name: Publish to TestPyPI
-    if: github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/develop'
     needs: [test, security, build]
     runs-on: ubuntu-latest
     environment:
