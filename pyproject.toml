@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "gestvenv"
-version = "1.0.0"
+version = "1.1.0"
 description = "Gestionnaire d'Environnements Virtuels Python"
 readme = "README.md"
 authors = [
