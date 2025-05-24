@@ -1,510 +1,579 @@
-# GestVenv - Documentation des commandes et utilisation dans un projet de développement
+# 📚 Guide Complet d'Utilisation de GestVenv
 
-## Sommaire
+## Table des Matières
+1. [Installation et Configuration](#installation-et-configuration)
+2. [Commandes de Base](#commandes-de-base)
+3. [Mode Hors Ligne et Cache](#mode-hors-ligne-et-cache)
+4. [Workflows de Développement](#workflows-de-développement)
+5. [Gestion Avancée](#gestion-avancée)
+6. [Exemples Pratiques](#exemples-pratiques)
+7. [Résolution de Problèmes](#résolution-de-problèmes)
 
-1. [Introduction](#1-introduction)
-2. [Installation](#2-installation)
-3. [Commandes de base](#3-commandes-de-base)
-4. [Gestion des environnements](#4-gestion-des-environnements)
-5. [Gestion des packages](#5-gestion-des-packages)
-6. [Import et export de configurations](#6-import-et-export-de-configurations)
-7. [Utilisation dans un projet de développement](#7-utilisation-dans-un-projet-de-développement)
-8. [Intégration avec d'autres outils](#8-intégration-avec-dautres-outils)
-9. [Bonnes pratiques](#9-bonnes-pratiques)
-10. [Dépannage](#10-dépannage)
+## 🚀 Installation et Configuration
 
-## 1. Introduction
-
-GestVenv est un gestionnaire d'environnements virtuels Python qui simplifie et centralise la gestion des environnements virtuels. Il offre une interface unifiée pour créer, gérer et partager des environnements virtuels, remplaçant la nécessité d'utiliser plusieurs outils comme venv, virtualenv ou pipenv.
-
-### Avantages clés
-
-- **Interface unifiée** pour toutes les opérations liées aux environnements virtuels
-- **Gestion centralisée** de tous vos environnements
-- **Simplification du partage** d'environnements entre développeurs
-- **Support multi-versions** de Python
-- **Compatible** avec Windows, macOS et Linux
-
-## 2. Installation
-
-### Installation depuis PyPI
-
+### Installation Initiale
 ```bash
+# Installation via pip
 pip install gestvenv
-```
 
-### Installation depuis le code source
-
-```bash
-git clone https://github.com/thearchit3ct/gestvenv.git
-cd gestvenv
-pip install -e .
-```
-
-### Vérification de l'installation
-
-```bash
+# Vérification de l'installation
 gestvenv --version
+
+# Initialisation de la configuration
+gestvenv config init
 ```
 
-## 3. Commandes de base
-
-GestVenv utilise une interface en ligne de commande avec la structure suivante :
-
-```
-gestvenv <commande> [options] [arguments]
-```
-
-### Obtenir de l'aide
-
+### Configuration Personnalisée
 ```bash
-# Aide générale
-gestvenv --help
+# Afficher la configuration actuelle
+gestvenv config show
 
-# Aide sur une commande spécifique
-gestvenv create --help
+# Définir le répertoire des environnements
+gestvenv config set environments_path ~/Projects/.venvs
 
-# Documentation détaillée
-gestvenv docs
-gestvenv docs commandes  # Documentation spécifique aux commandes
+# Configurer le cache
+gestvenv config set cache.max_size 8GB
+gestvenv config set cache.max_age 60  # 60 jours
+gestvenv config set cache.auto_cleanup true
+
+# Mode hors ligne par défaut
+gestvenv config set offline_mode false
+gestvenv config set use_cache true
 ```
 
-### Liste des commandes principales
+## 🛠️ Commandes de Base
 
-| Commande | Description |
-|----------|-------------|
-| `create` | Crée un nouvel environnement virtuel |
-| `activate` | Active un environnement virtuel |
-| `deactivate` | Désactive l'environnement actif |
-| `delete` | Supprime un environnement virtuel |
-| `list` | Liste tous les environnements virtuels |
-| `info` | Affiche des informations sur un environnement |
-| `install` | Installe des packages dans un environnement |
-| `uninstall` | Désinstalle des packages d'un environnement |
-| `update` | Met à jour des packages dans un environnement |
-| `export` | Exporte la configuration d'un environnement |
-| `import` | Importe une configuration d'environnement |
-| `clone` | Clone un environnement existant |
-| `run` | Exécute une commande dans un environnement |
-| `config` | Configure les paramètres par défaut |
-| `check` | Vérifie les mises à jour disponibles pour les packages |
-| `pyversions` | Liste les versions Python disponibles sur le système |
-| `docs` | Affiche la documentation |
+### 1. Gestion des Environnements
 
-## 4. Gestion des environnements
-
-### Création d'un environnement
-
+#### Création d'Environnements
 ```bash
-# Création simple avec Python par défaut
-gestvenv create mon_projet
+# Environnement basique
+gestvenv create monapp
 
-# Spécifier une version Python
-gestvenv create mon_projet --python python3.9
+# Avec version Python spécifique
+gestvenv create monapp --python 3.11
 
-# Inclure des packages initiaux
-gestvenv create mon_projet --packages "flask,pytest,gunicorn"
+# Avec description
+gestvenv create monapp --python 3.11 --description "Application web principale"
 
-# Spécifier un chemin personnalisé
-gestvenv create mon_projet --path "/chemin/personnalise/mon_projet"
+# Création avec packages initiaux
+gestvenv create monapp --python 3.11 --packages "flask requests"
+
+# Création avec requirements.txt
+gestvenv create monapp --python 3.11 -r requirements.txt
 ```
 
-### Activation et désactivation
-
-```bash
-# Activer un environnement
-gestvenv activate mon_projet
-# Suivre les instructions affichées pour compléter l'activation
-
-# Désactiver l'environnement actif
-gestvenv deactivate
-# Suivre les instructions affichées
-```
-
-> **Note :** Contrairement à d'autres gestionnaires d'environnements virtuels, GestVenv affiche les commandes à exécuter pour activer/désactiver l'environnement, car un script Python ne peut pas directement modifier l'environnement du shell parent.
-
-### Listing et informations
-
+#### Gestion Active
 ```bash
 # Lister tous les environnements
 gestvenv list
+gestvenv list --detailed  # Avec plus d'informations
 
-# Afficher des informations détaillées
-gestvenv list --verbose
+# Informations détaillées
+gestvenv info monapp
 
-# Informations complètes sur un environnement spécifique
-gestvenv info mon_projet
+# Activation
+gestvenv activate monapp
+
+# Désactivation
+gestvenv deactivate
+
+# Suppression
+gestvenv remove monapp
+gestvenv remove monapp --force  # Sans confirmation
 ```
 
-### Suppression d'un environnement
-
+#### Clonage d'Environnements
 ```bash
-# Avec confirmation
-gestvenv delete mon_projet
+# Clonage simple
+gestvenv clone monapp monapp_test
 
-# Sans confirmation
-gestvenv delete mon_projet --force
+# Clonage avec nouvelle version Python
+gestvenv clone monapp monapp_py311 --python 3.11
+
+# Clonage partiel (sans les données)
+gestvenv clone monapp monapp_clean --packages-only
 ```
 
-### Clonage d'un environnement
+### 2. Gestion des Packages
 
+#### Installation
 ```bash
-gestvenv clone mon_projet mon_projet_dev
+# Installation simple
+gestvenv install monapp requests flask
+
+# Installation avec versions spécifiques
+gestvenv install monapp "requests>=2.28.0" "flask==2.2.0"
+
+# Installation depuis requirements.txt
+gestvenv install monapp -r requirements.txt
+gestvenv install monapp -r dev-requirements.txt
+
+# Installation en mode développement
+gestvenv install monapp -e .  # Package local en mode éditable
 ```
 
-## 5. Gestion des packages
-
-### Installation de packages
-
+#### Mise à Jour
 ```bash
-# Dans l'environnement actif
-gestvenv install "flask,pytest"
-
-# Dans un environnement spécifique
-gestvenv install "flask,matplotlib" --env mon_projet
-
-# Spécifier des versions
-gestvenv install "flask==2.0.1,pytest>=6.0.0"
-```
-
-### Désinstallation de packages
-
-```bash
-# Dans l'environnement actif
-gestvenv uninstall "flask,pytest"
-
-# Dans un environnement spécifique
-gestvenv uninstall "flask" --env mon_projet
-```
-
-### Mise à jour de packages
-
-```bash
-# Vérifier les mises à jour disponibles
-gestvenv check
-
-# Mettre à jour des packages spécifiques
-gestvenv update "flask,pytest"
+# Mettre à jour un package
+gestvenv update monapp requests
 
 # Mettre à jour tous les packages
-gestvenv update --all
+gestvenv update monapp --all
 
-# Dans un environnement spécifique
-gestvenv update --all --env mon_projet
+# Vérifier les mises à jour disponibles
+gestvenv check monapp
+gestvenv check monapp --outdated  # Seulement les obsolètes
 ```
 
-### Exécution de commandes dans un environnement
-
+#### Suppression
 ```bash
-# Exécuter un script Python
-gestvenv run mon_projet python script.py
+# Supprimer un package
+gestvenv remove monapp requests
 
-# Exécuter un module
-gestvenv run mon_projet python -m pytest
+# Supprimer plusieurs packages
+gestvenv remove monapp requests flask pandas
 
-# Exécuter d'autres commandes
-gestvenv run mon_projet npm install
+# Supprimer avec dépendances
+gestvenv remove monapp requests --dependencies
 ```
 
-## 6. Import et export de configurations
+## 🏠 Mode Hors Ligne et Cache
 
-### Export de configuration
+### 3. Gestion du Cache
 
+#### Informations sur le Cache
 ```bash
-# Au format JSON (par défaut)
-gestvenv export mon_projet
+# Informations générales
+gestvenv cache info
 
-# Spécifier un chemin de sortie
-gestvenv export mon_projet --output mon_projet_config.json
+# Statistiques détaillées
+gestvenv cache stats
 
-# Au format requirements.txt
-gestvenv export mon_projet --format requirements
-
-# Ajouter des métadonnées
-gestvenv export mon_projet --add-metadata "description:Projet Web Flask,auteur:Alice"
+# Espace utilisé par package
+gestvenv cache list --sizes
 ```
 
-### Import de configuration
-
+#### Ajout Manuel au Cache
 ```bash
-# Depuis un fichier JSON
-gestvenv import mon_projet_config.json
+# Ajouter un package
+gestvenv cache add requests
 
-# Depuis un fichier requirements.txt
-gestvenv import requirements.txt --name nouveau_projet
+# Ajouter avec version spécifique
+gestvenv cache add "requests==2.28.0"
 
-# Spécifier un nom différent
-gestvenv import mon_projet_config.json --name autre_nom
+# Ajouter depuis requirements.txt
+gestvenv cache add -r requirements.txt
+
+# Pré-téléchargement pour plusieurs plateformes
+gestvenv cache add numpy --platforms "win_amd64,macosx_10_9_x86_64,linux_x86_64"
 ```
 
-## 7. Utilisation dans un projet de développement
-
-### Initialisation d'un nouveau projet
-
+#### Gestion du Cache
 ```bash
-# 1. Créer le répertoire du projet
-mkdir mon_nouveau_projet
-cd mon_nouveau_projet
+# Lister les packages en cache
+gestvenv cache list
+gestvenv cache list --filter requests  # Filtrer par nom
 
-# 2. Initialiser un dépôt Git (optionnel)
-git init
+# Nettoyer le cache
+gestvenv cache clean  # Cleanup automatique
+gestvenv cache clean --all  # Suppression complète
+gestvenv cache clean --older-than 30  # Plus de 30 jours
 
-# 3. Créer un environnement virtuel
-gestvenv create env --python python3.9
-
-# 4. Activer l'environnement
-gestvenv activate env
-# Suivre les instructions d'activation
-
-# 5. Installer les packages de base
-gestvenv install "flask,pytest,python-dotenv"
-
-# 6. Créer un fichier requirements.txt pour le projet
-gestvenv export env --format requirements --output requirements.txt
-
-# 7. Ajouter des fichiers au .gitignore
-echo ".env" >> .gitignore
-echo "__pycache__/" >> .gitignore
+# Supprimer un package spécifique
+gestvenv cache remove requests
+gestvenv cache remove "requests==2.28.0"
 ```
 
-### Configuration pour le développement et la production
-
-Pour maintenir séparés les environnements de développement et de production :
-
+#### Import/Export du Cache
 ```bash
-# Créer un environnement de développement
-gestvenv create dev_env --python python3.9 --packages "flask,pytest,python-dotenv,debugpy"
+# Exporter le cache
+gestvenv cache export backup_cache.tar.gz
+gestvenv cache export backup_cache.tar.gz --compress
 
-# Créer un environnement de production
-gestvenv create prod_env --python python3.9 --packages "flask,gunicorn,python-dotenv"
+# Importer un cache
+gestvenv cache import backup_cache.tar.gz
+gestvenv cache import backup_cache.tar.gz --merge  # Fusionner avec l'existant
 
-# Exporter les configurations
-gestvenv export dev_env --format requirements --output requirements-dev.txt
-gestvenv export prod_env --format requirements --output requirements.txt
+# Synchroniser entre machines
+gestvenv cache export --format json cache_index.json
+gestvenv cache import cache_index.json --download-missing
 ```
 
-### Workflow quotidien de développement
+### 4. Mode Hors Ligne
 
+#### Utilisation Basique
 ```bash
-# 1. Activer l'environnement
-gestvenv activate dev_env
-# Suivre les instructions
+# Forcer le mode hors ligne pour une commande
+gestvenv --offline install monapp requests flask
 
-# 2. Vérifier les mises à jour disponibles
-gestvenv check
+# Créer un environnement hors ligne
+gestvenv --offline create projet_offline --python 3.11
 
-# 3. Mettre à jour les packages si nécessaire
-gestvenv update --all
-
-# 4. Installer de nouveaux packages pour le développement
-gestvenv install "black,flake8"
-
-# 5. Exécuter des tests
-gestvenv run dev_env pytest
-
-# 6. Mettre à jour le fichier requirements
-gestvenv export dev_env --format requirements --output requirements-dev.txt
+# Vérifier la disponibilité hors ligne
+gestvenv cache check-offline -r requirements.txt
 ```
 
-### Collaboration en équipe
-
-Pour faciliter la collaboration entre développeurs :
-
+#### Configuration Persistante
 ```bash
-# Développeur 1: Exporter la configuration
-gestvenv export dev_env --output projet_config.json --add-metadata "description:Configuration de développement,équipe:Backend"
+# Activer le mode hors ligne par défaut
+gestvenv config set offline_mode true
 
-# Ajouter au dépôt Git
-git add projet_config.json
-git commit -m "Ajouter la configuration d'environnement"
-git push
+# Retour au mode en ligne
+gestvenv config set offline_mode false
 
-# Développeur 2: Récupérer et importer la configuration
-git pull
-gestvenv import projet_config.json --name dev_env
+# Mode hybride (utilise le cache quand disponible)
+gestvenv config set cache.fallback_to_online true
 ```
 
-## 8. Intégration avec d'autres outils
+## 💼 Workflows de Développement
 
-### Intégration avec Visual Studio Code
+### 5. Projet Web (Django/Flask)
 
-1. Ouvrir le projet dans VS Code
-2. Ouvrir la palette de commandes (Ctrl+Shift+P ou Cmd+Shift+P)
-3. Sélectionner "Python: Select Interpreter"
-4. Choisir l'interpréteur Python de votre environnement GestVenv
-
-Path pour VS Code sur différents OS:
-- Windows: `C:\Users\[username]\.gestvenv\environments\[env_name]\Scripts\python.exe`
-- macOS/Linux: `~/.config/gestvenv/environments/[env_name]/bin/python`
-
-### Intégration avec pytest
-
+#### Setup Initial
 ```bash
-# Configuration de pytest avec un environnement GestVenv
-gestvenv run mon_projet pytest -v tests/
+# Créer l'environnement de développement
+gestvenv create webapp --python 3.11 --description "Application web principale"
+
+# Pré-télécharger les dépendances communes
+gestvenv cache add django djangorestframework gunicorn
+gestvenv cache add pytest pytest-django black flake8 mypy
+
+# Installation des dépendances
+gestvenv activate webapp
+gestvenv install webapp django djangorestframework
+gestvenv install webapp pytest pytest-django --dev  # Dépendances de développement
 ```
 
-Pour configurer un fichier `pytest.ini` :
-
-```ini
-[pytest]
-testpaths = tests
-python_path = .
-```
-
-### Intégration avec tox
-
-Exemple de fichier `tox.ini` :
-
-```ini
-[tox]
-envlist = py38,py39
-isolated_build = True
-
-[testenv]
-deps = -r{toxinidir}/requirements-test.txt
-commands =
-    pytest {posargs:tests}
-```
-
-Utilisation avec GestVenv :
-
+#### Développement Quotidien
 ```bash
-# 1. Exporter les dépendances de test
-gestvenv export test_env --format requirements --output requirements-test.txt
+# Activation de l'environnement
+gestvenv activate webapp
 
-# 2. Exécuter tox
-gestvenv run main_env tox
+# Installation de nouvelles dépendances
+gestvenv install webapp redis celery
+
+# Tests et linting (mode hors ligne)
+gestvenv --offline run webapp pytest
+gestvenv --offline run webapp black .
+gestvenv --offline run webapp flake8 .
+
+# Export pour partage
+gestvenv export webapp webapp_config.json
 ```
 
-## 9. Bonnes pratiques
+### 6. Projet Data Science
 
-### Structure de projet recommandée
-
-```
-mon_projet/
-├── .git/
-├── .gitignore
-├── README.md
-├── setup.py ou pyproject.toml
-├── requirements.txt
-├── requirements-dev.txt
-├── gestvenv_config.json
-├── mon_module/
-│   ├── __init__.py
-│   └── ...
-└── tests/
-    ├── __init__.py
-    └── ...
-```
-
-### Versionnage des dépendances
-
-Pour assurer la reproductibilité de l'environnement, fixez les versions dans vos exports :
-
+#### Configuration Environnement
 ```bash
-# Exporter avec les versions exactes (recommandé pour production)
-gestvenv export prod_env --format requirements --output requirements.txt
+# Créer environnement data science
+gestvenv create datascience --python 3.10
 
-# Pour le développement, vous pouvez être plus flexible
-gestvenv install "pytest>=6.0.0,black" --env dev_env
+# Pré-télécharger packages lourds (recommandé avant déplacement)
+gestvenv cache add numpy pandas matplotlib seaborn
+gestvenv cache add scikit-learn jupyter notebook
+gestvenv cache add plotly dash streamlit
+
+# Installation par étapes
+gestvenv install datascience numpy pandas matplotlib
+gestvenv install datascience scikit-learn jupyter
+gestvenv install datascience plotly dash  # Optionnel
 ```
 
-### Gestion des différents environnements
-
-Il est recommandé de maintenir différents environnements pour différentes phases du projet :
-
-1. **dev_env** - Pour le développement, avec des outils de débogage et de test
-2. **test_env** - Pour les tests automatisés
-3. **prod_env** - Pour la production, avec seulement les dépendances nécessaires
-
-### Automatisation avec des scripts
-
-Créez des scripts shell/batch pour automatiser les opérations courantes :
-
+#### Workflow d'Analyse
 ```bash
-#!/bin/bash
-# setup_dev.sh
+# Activation et lancement Jupyter
+gestvenv activate datascience
+gestvenv run datascience jupyter notebook
 
-# Configurer l'environnement de développement
-gestvenv create dev_env --python python3.9
-gestvenv activate dev_env
-# ... instructions d'activation affichées ...
+# Installation de packages additionnels
+gestvenv install datascience seaborn plotly
 
-# Installer les dépendances
-gestvenv install "flask,pytest,black,flake8,python-dotenv"
-
-# Exporter la configuration
-gestvenv export dev_env --format requirements --output requirements-dev.txt
+# Sauvegarde de l'état
+gestvenv export datascience ds_env.json
+gestvenv cache export ds_cache.tar.gz
 ```
 
-## 10. Dépannage
+### 7. Projet DevOps/CI-CD
 
-### Problèmes d'activation
-
-**Problème**: La commande d'activation ne fonctionne pas.
-
-**Solution**: 
-- Assurez-vous d'exécuter la commande exacte affichée par `gestvenv activate`.
-- Sur Windows, assurez-vous d'utiliser CMD ou PowerShell comme indiqué.
-- Sur Linux/macOS, utilisez `source` comme indiqué.
-
+#### Préparation Déploiement
 ```bash
-# Exemple correct sur Linux/macOS
-source /chemin/vers/env/bin/activate
+# Environnement de production
+gestvenv create production --python 3.11
 
-# Exemple correct sur Windows
-C:\chemin\vers\env\Scripts\activate.bat
+# Cache des dépendances de production
+gestvenv cache add -r requirements.txt
+gestvenv cache add -r requirements-prod.txt
+
+# Installation hors ligne (simulation CI/CD)
+gestvenv --offline install production -r requirements.txt
+gestvenv --offline install production -r requirements-prod.txt
+
+# Test de l'environnement
+gestvenv run production python -m pytest
 ```
 
-### Conflits de packages
-
-**Problème**: Erreurs lors de l'installation des packages à cause de conflits de dépendances.
-
-**Solution**:
+#### Gestion Multi-Environnements
 ```bash
-# Vérifier les conflits potentiels
-gestvenv info mon_env
+# Environnement de test
+gestvenv clone production test
+gestvenv install test pytest-cov coverage
 
-# Installer les packages un par un
-gestvenv install flask
-gestvenv install pytest
+# Environnement de staging
+gestvenv clone production staging
+gestvenv install staging debug-toolbar
+
+# Synchronisation des caches entre environnements
+gestvenv cache export production_cache.tar.gz
+# Sur autre machine/serveur:
+gestvenv cache import production_cache.tar.gz
 ```
 
-### Versions Python manquantes
+## 🔧 Gestion Avancée
 
-**Problème**: La version Python spécifiée n'est pas disponible.
+### 8. Import/Export
 
-**Solution**:
+#### Export de Configurations
 ```bash
-# Vérifier les versions disponibles
+# Export JSON complet
+gestvenv export monapp config.json
+
+# Export requirements.txt
+gestvenv export monapp requirements.txt --format requirements
+
+# Export avec métadonnées
+gestvenv export monapp config.json --include-metadata
+
+# Export pour distribution
+gestvenv export monapp dist_config.json --production-ready
+```
+
+#### Import de Configurations
+```bash
+# Import depuis JSON
+gestvenv import config.json nouveau_env
+
+# Import depuis requirements.txt
+gestvenv import requirements.txt nouveau_env --format requirements
+
+# Import avec résolution des conflits
+gestvenv import config.json existing_env --merge --resolve-conflicts
+```
+
+### 9. Exécution de Commandes
+
+#### Commandes Simples
+```bash
+# Exécuter un script
+gestvenv run monapp python script.py
+
+# Commande avec arguments
+gestvenv run monapp python manage.py migrate
+
+# Commande interactive
+gestvenv run monapp python -i
+```
+
+#### Commandes Complexes
+```bash
+# Exécution avec variables d'environnement
+gestvenv run monapp --env DEBUG=True python manage.py runserver
+
+# Exécution en arrière-plan
+gestvenv run monapp --background celery worker
+
+# Exécution avec timeout
+gestvenv run monapp --timeout 300 python long_script.py
+```
+
+### 10. Outils de Diagnostic
+
+#### Vérification de Santé
+```bash
+# Vérifier un environnement
+gestvenv doctor monapp
+
+# Vérification complète
+gestvenv doctor monapp --full
+
+# Réparation automatique
+gestvenv doctor monapp --fix
+```
+
+#### Informations Système
+```bash
+# Versions Python disponibles
 gestvenv pyversions
 
-# Installer la version Python manquante, puis réessayer
-# Exemple: installer Python 3.9 puis
-gestvenv create mon_env --python python3.9
+# Informations système
+gestvenv system-info
+
+# État du cache
+gestvenv cache health-check
 ```
 
-### Réinitialisation de la configuration
+## 🎯 Exemples Pratiques
 
-**Problème**: Configuration corrompue ou problèmes avec les environnements.
-
-**Solution**:
+### Scenario 1: Nouveau Projet API REST
 ```bash
-# Supprimer le fichier de configuration
-# Windows: %APPDATA%\GestVenv\config.json
-# macOS: ~/Library/Application Support/GestVenv/config.json
-# Linux: ~/.config/gestvenv/config.json
+# 1. Création de l'environnement
+gestvenv create api_project --python 3.11 --description "API REST avec FastAPI"
 
-# Réinitialiser en exécutant une commande simple
-gestvenv list
+# 2. Installation des dépendances principales
+gestvenv install api_project fastapi uvicorn pydantic sqlalchemy
+
+# 3. Ajout des outils de développement
+gestvenv install api_project pytest httpx black isort mypy
+
+# 4. Configuration pour le travail hors ligne
+gestvenv cache add fastapi uvicorn pytest httpx
+
+# 5. Test hors ligne
+gestvenv --offline activate api_project
+gestvenv --offline run api_project pytest
+
+# 6. Export pour l'équipe
+gestvenv export api_project api_project.json
+gestvenv cache export api_cache.tar.gz
+```
+
+### Scenario 2: Migration de Projet Existant
+```bash
+# 1. Analyser le projet existant
+cat requirements.txt | head -10
+
+# 2. Pré-télécharger toutes les dépendances
+gestvenv cache add -r requirements.txt
+gestvenv cache add -r dev-requirements.txt
+
+# 3. Créer le nouvel environnement
+gestvenv create legacy_migration --python 3.9
+
+# 4. Installation hors ligne
+gestvenv --offline install legacy_migration -r requirements.txt
+
+# 5. Tests de migration
+gestvenv run legacy_migration python -m pytest tests/
+
+# 6. Validation
+gestvenv doctor legacy_migration --full
+```
+
+### Scenario 3: Développement Multi-Projet
+```bash
+# Projet principal
+gestvenv create main_app --python 3.11
+gestvenv install main_app django redis celery
+
+# Microservice 1
+gestvenv clone main_app microservice_1
+gestvenv install microservice_1 fastapi
+
+# Microservice 2  
+gestvenv clone main_app microservice_2
+gestvenv install microservice_2 flask
+
+# Gestion centralisée du cache
+gestvenv cache list --by-project
+gestvenv cache clean --projects main_app,microservice_1,microservice_2
+```
+
+## 🆘 Résolution de Problèmes
+
+### Problèmes Courants
+
+#### Cache Corrompu
+```bash
+# Vérifier l'intégrité du cache
+gestvenv cache verify
+
+# Nettoyer le cache corrompu
+gestvenv cache clean --corrupted
+
+# Reconstruire le cache
+gestvenv cache rebuild
+```
+
+#### Environnement Endommagé
+```bash
+# Diagnostic
+gestvenv doctor monapp
+
+# Réparation
+gestvenv doctor monapp --fix
+
+# Reconstruction complète
+gestvenv remove monapp
+gestvenv import backup_config.json monapp
+```
+
+#### Problèmes de Performance
+```bash
+# Optimisation du cache
+gestvenv cache optimize
+
+# Nettoyage des anciens packages
+gestvenv cache clean --older-than 30
+
+# Défragmentation
+gestvenv cache defrag
+```
+
+### Debugging Avancé
+
+#### Mode Verbose
+```bash
+# Installation avec logs détaillés
+gestvenv --verbose install monapp requests
+
+# Diagnostic complet
+gestvenv --verbose doctor monapp --full
+
+# Cache avec détails
+gestvenv --verbose cache info
+```
+
+#### Logs et Traces
+```bash
+# Afficher les logs récents
+gestvenv logs
+
+# Logs spécifiques à un environnement
+gestvenv logs monapp
+
+# Export des logs pour support
+gestvenv logs --export debug.log
+```
+
+### Configuration de Récupération
+```bash
+# Sauvegarde de configuration
+gestvenv config backup
+
+# Restauration
+gestvenv config restore backup_config.json
+
+# Reset complet
+gestvenv config reset --confirm
 ```
 
 ---
 
-Pour toute question supplémentaire ou assistance, veuillez consulter la documentation en ligne ou ouvrir une issue sur le dépôt GitHub du projet.
+## 💡 Conseils et Bonnes Pratiques
 
-```bash
-# Afficher la documentation complète
-gestvenv docs
-```
+### Optimisation du Cache
+- Pré-téléchargez les packages lourds (numpy, pandas, tensorflow) avant de partir en déplacement
+- Utilisez `gestvenv cache clean --older-than 30` régulièrement
+- Configurez une taille de cache adaptée à votre espace disque
+
+### Workflow d'Équipe
+- Partagez les fichiers de configuration JSON plutôt que les environnements complets
+- Utilisez l'export/import de cache pour synchroniser les équipes
+- Documentez vos environnements avec `--description`
+
+### Sécurité
+- Ne jamais partager d'environnements contenant des secrets
+- Utilisez des requirements.txt pour les déploiements de production
+- Vérifiez l'intégrité avec `gestvenv doctor` avant les déploiements
+
+Cette documentation couvre tous les aspects de GestVenv. Pour des questions spécifiques, consultez `gestvenv docs` ou visitez notre [documentation en ligne](https://github.com/thearchit3ct/gestvenv/wiki).
