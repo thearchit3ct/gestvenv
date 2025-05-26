@@ -1,37 +1,66 @@
 # GestVenv - Gestionnaire d'Environnements Virtuels Python
 
-![GestVenv Logo](https://img.shields.io/badge/GestVenv-1.1.0-blue)
+Bienvenue dans la documentation de **GestVenv**, l'outil moderne pour gérer vos environnements virtuels Python avec simplicité et efficacité.
 
-Bienvenue dans la documentation de **GestVenv**, un outil moderne pour gérer vos environnements virtuels Python.
+## 🚀 Qu'est-ce que GestVenv ?
 
-## 🚀 Démarrage rapide
+GestVenv est un gestionnaire d'environnements virtuels Python qui simplifie et centralise la gestion de vos projets Python. Il offre une alternative unifiée aux outils existants comme `venv`, `virtualenv` et `pipenv`.
+
+### ✨ Fonctionnalités principales
+
+- **Gestion simplifiée** : Créez, activez et gérez vos environnements en quelques commandes
+- **Support moderne** : Compatible avec `pyproject.toml` et les standards Python modernes
+- **Performance optimisée** : Intégration avec `uv` pour des installations 10x plus rapides
+- **Cache intelligent** : Mode hors ligne avec cache local des packages
+- **Multi-plateforme** : Fonctionne sur Windows, macOS et Linux
+
+## 🏁 Démarrage rapide
+
+### Installation
 
 ```bash
-# Installation
 pip install gestvenv
+```
 
-# Créer votre premier environnement
+### Premiers pas
+
+```bash
+# Créer un nouvel environnement
 gestvenv create mon_projet
 
 # Activer l'environnement
 gestvenv activate mon_projet
+
+# Installer des packages
+gestvenv install mon_projet "requests flask pytest"
+
+# Lister vos environnements
+gestvenv list
 ```
 
-## 📖 Navigation
+## 📚 Navigation de la documentation
 
-- **[Guide de démarrage](getting-started/installation.md)** - Installation et premiers pas
-- **[Guide utilisateur](user-guide/environment-management.md)** - Fonctionnalités détaillées
-- **[Référence CLI](cli-reference/overview.md)** - Documentation des commandes
-- **[Guide développeur](developer-guide/architecture.md)** - Architecture et contribution
+- **[Installation](installation.md)** : Guide d'installation détaillé
+- **[Guide Utilisateur](user-guide.md)** : Utilisation quotidienne de GestVenv
+- **[Guide Développeur](developer-guide.md)** : Intégration et développement avancé
+- **[Référence API](api/)** : Documentation technique complète
+- **[Exemples](examples/)** : Cas d'usage pratiques
 
-## ✨ Fonctionnalités principales
+## 🆕 Nouveautés v1.1
 
-- 🎯 **Interface unifiée** pour tous vos environnements virtuels
-- 🔄 **Import/Export** de configurations
-- 🛡️ **Gestion sécurisée** des environnements
-- 🌐 **Multi-plateforme** (Windows, macOS, Linux)
-- 📦 **Gestion avancée** des packages
+GestVenv v1.1 apporte des fonctionnalités modernes :
 
----
+- ✅ **Support pyproject.toml** : Compatible avec les standards Python modernes
+- ✅ **Intégration uv** : Performances 10x supérieures pour l'installation de packages
+- ✅ **Cache intelligent** : Mode hors ligne avec cache local
+- ✅ **Détection automatique** : Reconnaissance automatique du type de projet
 
-**Version actuelle :** 1.0.0 | **[GitHub](https://github.com/thearchit3ct/gestvenv)** | **[PyPI](https://pypi.org/project/gestvenv/)**
+## 🤝 Communauté et Support
+
+- **GitHub** : [thearchit3ct/gestvenv](https://github.com/thearchit3ct/gestvenv)
+- **Issues** : [Signaler un bug](https://github.com/thearchit3ct/gestvenv/issues)
+- **Discussions** : [Forum communautaire](https://github.com/thearchit3ct/gestvenv/discussions)
+
+## 📄 License
+
+GestVenv est distribué sous licence MIT. Voir le fichier [LICENSE](https://github.com/thearchit3ct/gestvenv/blob/main/LICENSE) pour plus de détails.

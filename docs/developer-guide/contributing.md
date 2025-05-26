@@ -6,7 +6,7 @@ Merci de votre intérêt pour contribuer à GestVenv ! Ce document explique comm
 
 Avant de commencer, assurez-vous d'avoir installé :
 
-- Python 3.7 ou supérieur
+- Python 3.9 ou supérieur
 - Git
 - pip
 - Un éditeur de code (VS Code, PyCharm, etc.)
@@ -23,7 +23,7 @@ Avant de commencer, assurez-vous d'avoir installé :
 
 3. **Configurer le dépôt upstream** :
    ```bash
-   git remote add upstream https://github.com/original-owner/gestvenv.git
+   git remote add upstream https://github.com/thearchit3ct/gestvenv.git
    ```
 
 4. **Créer un environnement virtuel** :
@@ -49,8 +49,8 @@ Avant de commencer, assurez-vous d'avoir installé :
 
 ### 1. Choisir une tâche
 
-- Consultez les [issues ouvertes](https://github.com/original-owner/gestvenv/issues) sur GitHub
-- Vérifiez les [projets](https://github.com/original-owner/gestvenv/projects) pour voir les fonctionnalités planifiées
+- Consultez les [issues ouvertes](https://github.com/thearchit3ct/gestvenv/issues) sur GitHub
+- Vérifiez les [projets](https://github.com/thearchit3ct/gestvenv/projects) pour voir les fonctionnalités planifiées
 - Créez une nouvelle issue si vous avez identifié un bug ou une amélioration
 
 ### 2. Créer une branche
