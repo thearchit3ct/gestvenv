@@ -1,8 +1,8 @@
 # 🎉 GestVenv v1.1.1 - Release Notes
 
-**Date de Release** : 27 janvier 2025  
+**Date de Release** : 26 mai 2025  
 **Type** : Patch Release (Corrections critiques)  
-**Compatibilité** : Compatible avec GestVenv v1.1.0  
+**Compatibilité** : Compatible avec GestVenv v1.1.1  
 
 ---
 
@@ -180,7 +180,6 @@ gestvenv cache info                  # Vérifier état
 ### **v1.2.0 Prévue** (Juillet 2025)
 - 🎯 **Support pyproject.toml complet** (PEP 621)
 - 🎯 **Intégration uv backend** (performances 10x)
-- 🎯 **Templates de projets** intégrés
 
 ### **Feedback & Contributions**
 - 💬 [Discussions GitHub](https://github.com/thearchit3ct/gestvenv/discussions)
