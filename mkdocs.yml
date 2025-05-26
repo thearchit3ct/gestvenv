@@ -77,7 +77,7 @@ nav:
   - Accueil: index.md
   - Installation: getting-started/installation.md
   - Guide Utilisateur: 
-    - Démarrage rapide: getting-started/fist-environment.md
+    - Démarrage rapide: getting-started/first-environment.md
     - Commandes de base: getting-started/basic-commands.md
     # - installation: getting-started/installation.md
   - Guide Développeur:

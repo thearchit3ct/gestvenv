@@ -40,9 +40,9 @@ gestvenv list
 
 ## 📚 Navigation de la documentation
 
-- **[Installation](installation.md)** : Guide d'installation détaillé
-- **[Guide Utilisateur](user-guide.md)** : Utilisation quotidienne de GestVenv
-- **[Guide Développeur](developer-guide.md)** : Intégration et développement avancé
+- **[Installation](getting-started/installation.md)** : Guide d'installation détaillé
+- **[Guide Utilisateur](getting-started/basic-commands.md)** : Utilisation quotidienne de GestVenv
+- **[Guide Développeur](developer-guide/)** : Intégration et développement avancé
 - **[Référence API](api/)** : Documentation technique complète
 - **[Exemples](examples/)** : Cas d'usage pratiques
 
