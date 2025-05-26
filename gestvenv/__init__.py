@@ -6,7 +6,7 @@ GestVenv est un outil qui simplifie et centralise la gestion des environnements 
 offrant une alternative unifiée aux outils existants comme venv, virtualenv et pipenv.
 """
 
-__version__ = "1.0.0"
+__version__ = "1.1.1"
 __author__ = "thearchit3ct"
 __email__ = "thearchit3ct@outlook.fr"
 __license__ = "MIT"
