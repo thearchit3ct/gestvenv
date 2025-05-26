@@ -1301,204 +1301,229 @@ Flux de travail recommandé avec GestVenv:
             return 1
 
     def cmd_cache_list(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour lister les packages dans le cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
+        """
+        Commande pour lister les packages dans le cache - VERSION CORRIGÉE
+        """
+        try:
+            self.print_header("Packages disponibles dans le cache")
 
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Packages disponibles dans le cache")
-    
-       # Récupérer les packages disponibles
-       available_packages = cache_service.get_available_packages()
-    
-       if not available_packages:
-           self.print_info("Aucun package dans le cache.")
-           return 0
-    
-       # Afficher les packages par ordre alphabétique
-       for package_name in sorted(available_packages.keys()):
-           versions = available_packages[package_name]
-           versions_str = ", ".join(sorted(versions, key=lambda v: [int(x) for x in v.split('.')]))
+            # Récupérer les packages disponibles
+            available_packages = cache_service.get_available_packages()
 
-           self.print_colored(f"{package_name}", "bold")
-           print(f"  Versions: {versions_str}")
-    
-       # Afficher les statistiques
-       stats = cache_service.get_cache_stats()
-       self.print_info(f"\nTotal: {stats['package_count']} package(s), {stats['version_count']} version(s)")
-       self.print_info(f"Taille totale: {self.format_size(stats['total_size_bytes'])}")
-    
-       return 0
+            if not available_packages:
+                self.print_info("Aucun package dans le cache.")
+                self.print_info("\nUtilisez 'gestvenv cache add <package>' pour ajouter des packages.")
+                return 0
+
+            # Afficher les packages par ordre alphabétique
+            for package_name in sorted(available_packages.keys()):
+                versions = available_packages[package_name]
+
+                # Trier les versions (version la plus récente en premier)
+                try:
+                    sorted_versions = sorted(
+                        versions, 
+                        key=lambda v: [int(x) if x.isdigit() else x for x in v.split('.')],
+                        reverse=True
+                    )
+                except (ValueError, AttributeError):
+                    sorted_versions = sorted(versions)
+
+                versions_str = ", ".join(sorted_versions)
+
+                self.print_colored(f"{package_name}", "bold")
+                print(f"  Versions: {versions_str}")
+
+            # Afficher les statistiques
+            stats = cache_service.get_cache_stats()
+            package_count = len(available_packages)
+            version_count = sum(len(versions) for versions in available_packages.values())
+            total_size = stats.get('total_size_bytes', 0)
+
+            self.print_info(f"\nTotal: {package_count} package(s), {version_count} version(s)")
+            if total_size > 0:
+                size_formatted = self.format_size(total_size)
+                self.print_info(f"Taille totale: {size_formatted}")
+
+            return 0
+
+        except Exception as e:
+            self.print_error(f"Erreur lors de la liste des packages du cache: {str(e)}")
+            return 1
 
     def cmd_cache_clean(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour nettoyer le cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
+        """
+        Commande pour nettoyer le cache - VERSION CORRIGÉE
+        """
+        try:
+            self.print_header("Nettoyage du cache")
 
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Nettoyage du cache")
-    
-       # Demander confirmation
-       confirm = input("Êtes-vous sûr de vouloir nettoyer le cache ? (o/N) ")
-       if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-           self.print_info("Opération annulée.")
-           return 0
-    
-       # Récupérer les paramètres
-       max_age_days = args.max_age
-       max_size_mb = args.max_size
-    
-       self.print_info(f"Nettoyage du cache (âge max: {max_age_days} jours, taille max: {max_size_mb} Mo)")
-    
-       # Nettoyer le cache
-       removed_count, freed_space = cache_service.clean_cache(max_age_days, max_size_mb)
-    
-       if removed_count > 0:
-           self.print_success(f"{removed_count} package(s) supprimé(s), {self.format_size(freed_space)} libéré(s)")
-       else:
-           self.print_info("Aucun package à supprimer.")
-    
-       return 0
+            # Récupérer les paramètres de nettoyage
+            max_age = getattr(args, 'max_age', 90)
+            max_size = getattr(args, 'max_size', 5000)
+
+            # Demander confirmation si pas en mode force
+            force_clean = getattr(args, 'force', False)
+            if not force_clean:
+                # Afficher les statistiques actuelles
+                stats = cache_service.get_cache_stats()
+                current_size_mb = stats.get('total_size_bytes', 0) / (1024 * 1024)
+
+                print(f"Taille actuelle du cache: {current_size_mb:.1f} MB")
+                print(f"Paramètres de nettoyage:")
+                print(f"  • Âge maximum: {max_age} jours")
+                print(f"  • Taille maximale: {max_size} MB")
+
+                confirm = input("\nÊtes-vous sûr de vouloir nettoyer le cache ? (o/N) ")
+                if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
+                    self.print_info("Opération annulée.")
+                    return 0
+
+            self.print_info(f"Nettoyage du cache (âge max: {max_age} jours, taille max: {max_size} MB)")
+
+            # Nettoyer le cache
+            try:
+                removed_count, freed_space = cache_service.clean_cache(max_age, max_size)
+
+                if removed_count > 0:
+                    freed_mb = freed_space / (1024 * 1024)
+                    self.print_success(f"{removed_count} package(s) supprimé(s)")
+                    self.print_success(f"{freed_mb:.1f} MB libéré(s)")
+                else:
+                    self.print_info("Aucun package à supprimer. Le cache est déjà optimisé.")
+
+                return 0
+
+            except Exception as e:
+                self.print_error(f"Erreur lors du nettoyage du cache: {str(e)}")
+                return 1
+
+        except Exception as e:
+            self.print_error(f"Erreur dans la commande de nettoyage: {str(e)}")
+            return 1
 
     def cmd_cache_info(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour afficher des informations sur le cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
+        """
+        Commande pour afficher des informations sur le cache - VERSION CORRIGÉE
+        """
+        try:
+            self.print_header("Informations sur le cache")
 
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Informations sur le cache")
-    
-       # Récupérer les statistiques du cache
-       stats = cache_service.get_cache_stats()
-    
-       from datetime import datetime
-       print(f"Répertoire du cache: {stats['cache_dir']}")
-       print(f"Nombre de packages: {stats['package_count']}")
-       print(f"Nombre de versions: {stats['version_count']}")
-       print(f"Taille totale: {self.format_size(stats['total_size_bytes'])}")
-    
-       if stats['package_count'] > 0:
-           print(f"Package le plus récent: {stats['latest_package']}")
-           latest_date = datetime.fromisoformat(stats['latest_added_at'])
-           print(f"Ajouté le: {format_timestamp(latest_date)}")
-    
-       # Récupérer l'état du mode hors ligne
-       from gestvenv.core.config_manager import ConfigManager
-       config = ConfigManager()
-       offline_mode = config.get_setting("offline_mode", False)
-       use_cache = config.get_setting("use_package_cache", True)
-    
-       print(f"\nMode hors ligne: {'Activé' if offline_mode else 'Désactivé'}")
-       print(f"Utilisation du cache: {'Activée' if use_cache else 'Désactivée'}")
-    
-       return 0
+            # Récupérer les statistiques du cache
+            stats = cache_service.get_cache_stats()
+
+            # Afficher les informations de base
+            print(f"Répertoire du cache: {stats.get('cache_dir', 'Inconnu')}")
+            print(f"Nombre de packages: {stats.get('package_count', 0)}")
+            print(f"Nombre de versions: {stats.get('version_count', 0)}")
+
+            # Formater la taille totale
+            total_size = stats.get('total_size_bytes', 0)
+            if total_size > 0:
+                size_formatted = self.format_size(total_size)
+                print(f"Taille totale: {size_formatted}")
+            else:
+                print("Taille totale: 0 B")
+
+            # Afficher le package le plus récent si disponible
+            latest_package = stats.get('latest_package')
+            if latest_package:
+                latest_date = stats.get('latest_added_at', '')
+                if latest_date:
+                    try:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(latest_date)
+                        formatted_date = dt.strftime("%Y-%m-%d %H:%M:%S")
+                        print(f"Package le plus récent: {latest_package}")
+                        print(f"Ajouté le: {formatted_date}")
+                    except Exception:
+                        print(f"Package le plus récent: {latest_package}")
+
+            # Récupérer l'état du mode hors ligne
+            try:
+                from gestvenv.core.config_manager import ConfigManager
+                config = ConfigManager()
+                offline_mode = config.get_setting("offline_mode", False)
+                use_cache = config.get_setting("use_package_cache", True)
+
+                print(f"\nMode hors ligne: {'Activé' if offline_mode else 'Désactivé'}")
+                print(f"Utilisation du cache: {'Activée' if use_cache else 'Désactivée'}")
+            except Exception as e:
+                self.print_warning(f"Impossible de récupérer la configuration: {e}")
+
+            return 0
+
+        except Exception as e:
+            self.print_error(f"Erreur lors de la récupération des informations du cache: {str(e)}")
+            return 1
 
     def cmd_cache_add(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour ajouter des packages au cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
+        """
+        Commande pour ajouter des packages au cache - VERSION CORRIGÉE
 
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Ajout de packages au cache")
-    
-       # Récupérer la liste des packages
-       packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
-    
-       if not packages:
-           self.print_error("Aucun package spécifié")
-           return 1
-    
-       self.print_info(f"Téléchargement et mise en cache de {len(packages)} package(s)")
-    
-       # Créer un répertoire temporaire pour le téléchargement
-       import tempfile
-       import subprocess
-       import shutil
-       from pathlib import Path
-    
-       with tempfile.TemporaryDirectory() as temp_dir:
-           # Télécharger les packages
-           cmd = ["pip", "download", "--dest", temp_dir] + packages
+        Args:
+            args: Arguments de ligne de commande
+            cache_service: Service de cache
 
-           self.print_info(f"Exécution de la commande: {' '.join(cmd)}")
+        Returns:
+            int: Code de retour (0 = succès, 1 = erreur)
+        """
+        try:
+            self.print_header("Ajout de packages au cache")
 
-           try:
-               result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
+            # Récupérer la liste des packages depuis les arguments
+            packages_str = getattr(args, 'packages', '')
 
-               if result.returncode != 0:
-                   self.print_error(f"Échec du téléchargement des packages: {result.stderr}")
-                   return 1
+            if not packages_str:
+                self.print_error("Aucun package spécifié")
+                return 1
 
-               # Mettre en cache les packages téléchargés
-               added_count = 0
+            # Parser et valider les packages
+            packages = [pkg.strip() for pkg in packages_str.split(',') if pkg.strip()]
 
-               for file_name in os.listdir(temp_dir):
-                   file_path = Path(temp_dir) / file_name
+            if not packages:
+                self.print_error("Aucun package valide spécifié")
+                return 1
 
-                   if file_path.suffix.lower() in ['.whl', '.tar.gz', '.zip']:
-                       # Obtenir les informations du package
-                       show_cmd = ["pip", "show", file_path.stem.split('-')[0]]
-                       show_result = subprocess.run(show_cmd, capture_output=True, text=True, shell=False, check=False)
+            self.print_info(f"Téléchargement et mise en cache de {len(packages)} package(s)")
 
-                       if show_result.returncode == 0:
-                           # Extraire les informations du package
-                           pkg_info = {}
-                           dependencies = []
+            # Utiliser le service de cache corrigé
+            try:
+                added_count, errors = cache_service.download_and_cache_packages(packages)
 
-                           for line in show_result.stdout.splitlines():
-                               if ': ' in line:
-                                   key, value = line.split(': ', 1)
-                                   pkg_info[key.lower()] = value.strip()
+                # Afficher les résultats
+                if added_count > 0:
+                    self.print_success(f"{added_count} package(s) ajouté(s) au cache avec succès")
 
-                                   # Récupérer les dépendances
-                                   if key.lower() == 'requires':
-                                       dependencies = [dep.strip() for dep in value.split(',') if dep.strip()]
+                    # Afficher les erreurs s'il y en a, mais ne pas faire échouer complètement
+                    if errors:
+                        self.print_warning(f"{len(errors)} erreur(s) rencontrée(s):")
+                        for error in errors[:5]:  # Limiter à 5 erreurs affichées
+                            self.print_warning(f"  • {error}")
+                        if len(errors) > 5:
+                            self.print_warning(f"  • ... et {len(errors) - 5} autres erreurs")
 
-                           # Ajouter le package au cache
-                           if 'name' in pkg_info and 'version' in pkg_info:
-                               success = cache_service.add_package(
-                                   file_path,
-                                   pkg_info['name'],
-                                   pkg_info['version'],
-                                   dependencies
-                               )
+                    return 0  # Succès partiel acceptable
+                else:
+                    self.print_error("Aucun package n'a pu être ajouté au cache")
 
-                               if success:
-                                   self.print_success(f"Package mis en cache: {pkg_info['name']}-{pkg_info['version']}")
-                                   added_count += 1
-                               else:
-                                   self.print_error(f"Échec de la mise en cache du package: {pkg_info['name']}-{pkg_info['version']}")
+                    # Afficher les erreurs pour diagnostic
+                    if errors:
+                        self.print_error("Erreurs rencontrées:")
+                        for error in errors[:10]:  # Limiter à 10 erreurs
+                            self.print_error(f"  • {error}")
+                        if len(errors) > 10:
+                            self.print_error(f"  • ... et {len(errors) - 10} autres erreurs")
 
-               if added_count > 0:
-                   self.print_success(f"{added_count} package(s) ajouté(s) au cache avec succès")
-               else:
-                   self.print_warning("Aucun package n'a été ajouté au cache")
+                    return 1
 
-               return 0 if added_count > 0 else 1
+            except Exception as e:
+                self.print_error(f"Erreur lors de l'ajout des packages au cache: {str(e)}")
+                return 1
 
-           except Exception as e:
-               self.print_error(f"Erreur lors de l'ajout des packages au cache: {str(e)}")
-               return 1
+        except Exception as e:
+            self.print_error(f"Erreur générale dans la commande cache add: {str(e)}")
+            return 1
 
     def cmd_cache_export(self, args: argparse.Namespace, cache_service: Any) -> int:
        """
@@ -1678,119 +1703,105 @@ Flux de travail recommandé avec GestVenv:
            return 1
 
     def cmd_cache_remove(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour supprimer des packages du cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
-
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Suppression de packages du cache")
-    
-       # Récupérer la liste des packages
-       packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
-    
-       if not packages:
-           self.print_error("Aucun package spécifié")
-           return 1
-    
-       # Demander confirmation
-       packages_str = ", ".join(packages)
-       confirm = input(f"Êtes-vous sûr de vouloir supprimer ces packages du cache ?\n{packages_str}\n(o/N) ")
-    
-       if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-           self.print_info("Opération annulée.")
-           return 0
-    
-       # Supprimer les packages
-       removed_count = 0
-       for package_spec in packages:
-           # Extraire le nom et la version du package
-           if "==" in package_spec:
-               package_name, version = package_spec.split("==", 1)
-           else:
-               package_name, version = package_spec, None
-
-           package_name = package_name.strip()
-
-           if version:
-               # Supprimer une version spécifique
-               if package_name in cache_service.index and version in cache_service.index[package_name]["versions"]:
-                   # Récupérer le chemin du package
-                   package_info = cache_service.index[package_name]["versions"][version]
-                   package_path = cache_service.cache_dir / package_info["path"]
-
-                   # Supprimer le fichier
-                   if package_path.exists():
-                       try:
-                           package_path.unlink()
-
-                           # Mettre à jour l'index
-                           del cache_service.index[package_name]["versions"][version]
-
-                           # Si c'était la dernière version, supprimer complètement le package
-                           if not cache_service.index[package_name]["versions"]:
-                               del cache_service.index[package_name]
-
-                           cache_service._save_index()
-
-                           self.print_success(f"Package supprimé du cache: {package_name}-{version}")
-                           removed_count += 1
-                       except Exception as e:
-                           self.print_error(f"Erreur lors de la suppression du package {package_name}-{version}: {str(e)}")
-                   else:
-                       self.print_warning(f"Fichier manquant pour {package_name}-{version}")
-               else:
-                   self.print_warning(f"Package non trouvé dans le cache: {package_name}-{version}")
-           else:
-               # Supprimer toutes les versions du package
-               if package_name in cache_service.index:
-                   versions = list(cache_service.index[package_name]["versions"].keys())
-
-                   for version in versions:
-                       # Récupérer le chemin du package
-                       package_info = cache_service.index[package_name]["versions"][version]
-                       package_path = cache_service.cache_dir / package_info["path"]
-
-                       # Supprimer le fichier
-                       if package_path.exists():
-                           try:
-                               package_path.unlink()
-                               removed_count += 1
-                           except Exception as e:
-                               self.print_error(f"Erreur lors de la suppression du package {package_name}-{version}: {str(e)}")
-
-                   # Supprimer le package de l'index
-                   del cache_service.index[package_name]
-                   cache_service._save_index()
-
-                   self.print_success(f"Toutes les versions de {package_name} supprimées du cache ({len(versions)} version(s))")
-               else:
-                   self.print_warning(f"Package non trouvé dans le cache: {package_name}")
-    
-       if removed_count > 0:
-           self.print_success(f"{removed_count} package(s) supprimé(s) du cache avec succès")
-       else:
-           self.print_warning("Aucun package n'a été supprimé du cache")
-    
-       return 0
+        """
+        Commande pour supprimer des packages spécifiques du cache
+        """
+        try:
+            self.print_header("Suppression de packages du cache")
+            
+            # Récupérer la liste des packages
+            packages_str = getattr(args, 'packages', '')
+            if not packages_str:
+                self.print_error("Aucun package spécifié")
+                return 1
+            
+            packages = [pkg.strip() for pkg in packages_str.split(',') if pkg.strip()]
+            
+            if not packages:
+                self.print_error("Aucun package valide spécifié")
+                return 1
+            
+            # Demander confirmation
+            packages_display = ", ".join(packages)
+            confirm = input(f"Êtes-vous sûr de vouloir supprimer ces packages du cache ?\n{packages_display}\n(o/N) ")
+            
+            if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
+                self.print_info("Opération annulée.")
+                return 0
+            
+            # Supprimer les packages
+            removed_count = 0
+            errors = []
+            
+            for package_spec in packages:
+                try:
+                    # Parser le nom et la version du package
+                    if "==" in package_spec:
+                        package_name, version = package_spec.split("==", 1)
+                    else:
+                        package_name, version = package_spec, None
+                    
+                    package_name = package_name.strip()
+                    
+                    if version:
+                        # Supprimer une version spécifique
+                        success, message = cache_service.remove_package(package_name, version)
+                        if success:
+                            self.print_success(message)
+                            removed_count += 1
+                        else:
+                            self.print_warning(message)
+                            errors.append(message)
+                    else:
+                        # Supprimer toutes les versions du package
+                        success, message = cache_service.remove_package(package_name)
+                        if success:
+                            self.print_success(message)
+                            # Le message contient déjà le nombre de versions supprimées
+                            removed_count += 1
+                        else:
+                            self.print_warning(message)
+                            errors.append(message)
+                            
+                except Exception as e:
+                    error_msg = f"Erreur lors de la suppression de {package_spec}: {str(e)}"
+                    self.print_error(error_msg)
+                    errors.append(error_msg)
+            
+            # Résumé des résultats
+            if removed_count > 0:
+                self.print_success(f"{removed_count} package(s) supprimé(s) du cache avec succès")
+            else:
+                self.print_warning("Aucun package n'a été supprimé du cache")
+            
+            if errors:
+                self.print_warning(f"{len(errors)} erreur(s) rencontrée(s)")
+            
+            return 0 if removed_count > 0 else 1
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la suppression des packages: {str(e)}")
+            return 1
 
     # Fonction utilitaire pour formater la taille
     def format_size(self, size_bytes: int) -> str:
-       """
-       Formate une taille en octets en une chaîne lisible.
-    
-       Args:
-           size_bytes: Taille en octets
-
-       Returns:
-           str: Taille formatée
-       """
-       from gestvenv.utils.format_utils import format_size
-       return format_size(size_bytes)
+        """
+        Formate une taille en octets en une chaîne lisible.
+        
+        Args:
+            size_bytes: Taille en octets
+            
+        Returns:
+            str: Taille formatée
+        """
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 * 1024:
+            return f"{size_bytes / 1024:.1f} KiB"
+        elif size_bytes < 1024 * 1024 * 1024:
+            return f"{size_bytes / (1024 * 1024):.1f} MiB"
+        else:
+            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GiB"
 
 
 def main() -> int:
