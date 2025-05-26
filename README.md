@@ -1,6 +1,6 @@
 # 🐍 GestVenv - Gestionnaire d'Environnements Virtuels Python
 
-[![Version](https://img.shields.io/badge/version-1.1.0-blue.svg)](https://github.com/thearchit3ct/gestvenv)
+[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/thearchit3ct/gestvenv)
 [![Python](https://img.shields.io/badge/python-3.8+-green.svg)](https://python.org)
 [![License](https://img.shields.io/badge/license-MIT-orange.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()

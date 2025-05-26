@@ -50,7 +50,7 @@ from gestvenv.utils.system_utils import get_terminal_size, get_current_username
 from gestvenv.utils.validation_utils import parse_key_value_string
 
 # Version de l'application
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 # Configuration du logging
 logging.basicConfig(
