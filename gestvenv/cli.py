@@ -50,7 +50,7 @@ from gestvenv.utils.system_utils import get_terminal_size, get_current_username
 from gestvenv.utils.validation_utils import parse_key_value_string
 
 # Version de l'application
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 
 # Configuration du logging
 logging.basicConfig(
@@ -1232,7 +1232,8 @@ Flux de travail recommandé avec GestVenv:
             "config": self.cmd_config,
             "check": self.cmd_check,
             "pyversions": self.cmd_pyversions,
-            "docs": self.cmd_docs
+            "docs": self.cmd_docs,
+            "cache": self.cmd_cache
         }
         if hasattr(parsed_args, 'command') and parsed_args.command:
             command = parsed_args.command
