@@ -5,6 +5,10 @@ on:
     branches: [ master, main, develop ]
     tags:
       - 'v*'
+    paths:
+      - 'gestvenv/**'
+      - 'tests/**'
+      - '.github/workflows/ci-cd.yml'
   pull_request:
     branches: [ master, main, develop ]
 
