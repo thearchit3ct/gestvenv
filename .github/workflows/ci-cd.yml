@@ -120,7 +120,7 @@ jobs:
   # JOB 4: BUILD DE PACKAGE
   build:
     needs: [test, security]
-    paths:
+    path: |
       - 'getsvenv/**.py'
       - '.github/workflows/ci-cd.yml'
     runs-on: ubuntu-latest
