@@ -93,7 +93,7 @@ jobs:
           pip install -e .
       - name: Run safety check
         run: |
-          safety check
+          safety scan
         continue-on-error: true
       - name: Run bandit security check
         run: |
@@ -120,6 +120,9 @@ jobs:
   # JOB 4: BUILD DE PACKAGE
   build:
     needs: [test, security]
+    paths:
+      - 'getsvenv/**.py'
+      - '.github/workflows/ci-cd.yml'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -318,7 +321,7 @@ jobs:
   # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
   publish-to-testpypi:
     name: Publish to TestPyPI
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/master'
     needs: [test, security, build]
     runs-on: ubuntu-latest
     environment:
@@ -340,7 +343,10 @@ jobs:
 
   # JOB 9: CRÉATION DE RELEASE GITHUB
   github-release:
-    name: Create GitHub Release
+    name: >-
+      Create GitHub Release
+      Sign the Python 🐍 distribution 📦 with Sigstore
+      and upload them to GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [publish-to-pypi]
     runs-on: ubuntu-latest
