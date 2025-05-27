@@ -5,6 +5,10 @@ on:
     branches: [ master, main, develop ]
     tags:
       - 'v*'
+    paths:
+      - 'gestvenv/**'
+      - 'tests/**'
+      - '.github/workflows/ci-cd.yml'
   pull_request:
     branches: [ master, main, develop ]
 
@@ -318,7 +322,7 @@ jobs:
   # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
   publish-to-testpypi:
     name: Publish to TestPyPI
-    if: github.ref == 'refs/heads/develop'
+    if: github.ref == 'refs/heads/master'
     needs: [test, security, build]
     runs-on: ubuntu-latest
     environment:
@@ -340,7 +344,10 @@ jobs:
 
   # JOB 9: CRÉATION DE RELEASE GITHUB
   github-release:
-    name: Create GitHub Release
+    name: >-
+      Create GitHub Release
+      Sign the Python 🐍 distribution 📦 with Sigstore
+      and upload them to GitHub Release
     if: startsWith(github.ref, 'refs/tags/v')
     needs: [publish-to-pypi]
     runs-on: ubuntu-latest
