@@ -97,7 +97,7 @@ jobs:
           pip install -e .
       - name: Run safety check
         run: |
-          safety scan
+          safety check
         continue-on-error: true
       - name: Run bandit security check
         run: |
