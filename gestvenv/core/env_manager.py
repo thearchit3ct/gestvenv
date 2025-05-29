@@ -10,9 +10,10 @@ import sys
 import json
 import platform
 import logging
+import tempfile
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any, Union, Set
 
 # Import des modules internes
 from .models import EnvironmentInfo, PackageInfo, EnvironmentHealth
@@ -50,8 +51,10 @@ class EnvironmentManager:
         self.sys_service = SystemService()
     
     def create_environment(self, name: str, python_version: Optional[str] = None,
-                     packages: Optional[str] = None, path: Optional[str] = None,
-                     offline: bool = False) -> Tuple[bool, str]:
+                         packages: Optional[str] = None, path: Optional[str] = None,
+                         offline: bool = False, requirements_file: Optional[str] = None,
+                         description: Optional[str] = None,
+                         metadata: Optional[Dict[str, str]] = None) -> Tuple[bool, str]:
         """
         Crée un nouvel environnement virtuel Python.
         
@@ -61,6 +64,9 @@ class EnvironmentManager:
             packages: Liste de packages à installer, séparés par des virgules.
             path: Chemin personnalisé pour l'environnement.
             offline: Si True, utilise uniquement les packages du cache (mode hors ligne).
+            requirements_file: Chemin vers un fichier requirements.txt.
+            description: Description de l'environnement.
+            metadata: Métadonnées supplémentaires.
             
         Returns:
             Tuple contenant (succès, message).
@@ -101,10 +107,24 @@ class EnvironmentManager:
         if not success:
             return False, message
         
-        # Installer les packages si spécifiés
-        if package_list:
+        # Installer les packages si spécifiés (soit depuis packages, soit depuis requirements.txt)
+        if package_list or requirements_file:
             try:
-                success, pkg_message = self.pkg_service.install_packages(name, package_list, offline=offline)
+                if requirements_file:
+                    requirements_path = Path(requirements_file)
+                    if not requirements_path.exists():
+                        # Nettoyer en cas d'erreur
+                        self.env_service.delete_environment(env_path)
+                        return False, f"Le fichier requirements '{requirements_file}' n'existe pas"
+                    
+                    success, pkg_message = self.pkg_service.install_from_requirements(
+                        name, requirements_path, offline=offline
+                    )
+                else:
+                    success, pkg_message = self.pkg_service.install_packages(
+                        name, package_list, offline=offline
+                    )
+                
                 if not success:
                     # En cas d'échec, essayer de supprimer l'environnement créé
                     self.env_service.delete_environment(env_path)
@@ -117,6 +137,13 @@ class EnvironmentManager:
         # Obtenir la version Python réelle
         python_version_actual = self.sys_service.check_python_version(python_cmd)
         
+        # Préparer les métadonnées
+        env_metadata = metadata or {}
+        if description:
+            env_metadata['description'] = description
+        env_metadata['created_by'] = 'gestvenv'
+        env_metadata['creation_method'] = 'cli'
+        
         # Créer l'objet EnvironmentInfo
         env_info = EnvironmentInfo(
             name=name,
@@ -124,7 +151,8 @@ class EnvironmentManager:
             python_version=python_version_actual or python_cmd,
             created_at=datetime.now(),
             packages=package_list,
-            health=self.env_service.check_environment_health(name, env_path)
+            health=self.env_service.check_environment_health(name, env_path),
+            metadata=env_metadata
         )
         
         # Ajouter l'environnement à la configuration
@@ -261,7 +289,7 @@ class EnvironmentManager:
                 health = EnvironmentHealth(exists=False)
             
             # Ajouter les informations de l'environnement à la liste
-            result.append({
+            env_data = {
                 "name": name,
                 "path": str(env_info.path),
                 "python_version": env_info.python_version,
@@ -270,7 +298,15 @@ class EnvironmentManager:
                 "active": name == active_env,
                 "health": health.to_dict(),
                 "exists": exists
-            })
+            }
+            
+            # Ajouter la description si disponible
+            if hasattr(env_info, 'metadata') and env_info.metadata:
+                description = env_info.metadata.get('description')
+                if description:
+                    env_data['description'] = description
+            
+            result.append(env_data)
         
         return result
     
@@ -328,6 +364,15 @@ class EnvironmentManager:
             "exists": exists,
         }
         
+        # Ajouter les métadonnées si disponibles
+        if hasattr(env_info, 'metadata') and env_info.metadata:
+            result['metadata'] = env_info.metadata
+            
+            # Extraire la description pour un accès facile
+            description = env_info.metadata.get('description')
+            if description:
+                result['description'] = description
+        
         # Ajouter des informations supplémentaires si l'environnement existe
         if exists:
             result.update({
@@ -338,13 +383,107 @@ class EnvironmentManager:
         
         return result
     
-    def clone_environment(self, source_name: str, target_name: str) -> Tuple[bool, str]:
+    def install_packages(self, env_name: str, packages: Optional[str] = None,
+                        requirements_file: Optional[str] = None,
+                        editable: bool = False, dev: bool = False,
+                        offline: bool = False) -> Tuple[bool, str]:
+        """
+        Installe des packages dans un environnement virtuel.
+        
+        Args:
+            env_name: Nom de l'environnement.
+            packages: Liste de packages à installer, séparés par des virgules.
+            requirements_file: Chemin vers un fichier requirements.txt.
+            editable: Si True, installe en mode éditable (-e).
+            dev: Si True, installe les dépendances de développement.
+            offline: Force le mode hors ligne pour cette opération.
+            
+        Returns:
+            Tuple contenant (succès, message).
+        """
+        # Vérifier si l'environnement existe
+        if not self.config_manager.environment_exists(env_name):
+            return False, f"L'environnement '{env_name}' n'existe pas"
+        
+        # Vérifier qu'au moins une source de packages est spécifiée
+        if not packages and not requirements_file:
+            return False, "Aucun package ou fichier requirements spécifié"
+        
+        # Préparer le chemin du fichier requirements
+        req_path = None
+        if requirements_file:
+            req_path = Path(requirements_file)
+            if not req_path.exists():
+                return False, f"Le fichier requirements '{requirements_file}' n'existe pas"
+        
+        # Installer les packages
+        try:
+            success, message = self.pkg_service.install_packages(
+                env_name, 
+                packages if packages else [],
+                offline=offline,
+                requirements_file=req_path,
+                editable=editable,
+                dev=dev
+            )
+            
+            if success:
+                # Mettre à jour la configuration avec les nouveaux packages
+                self._update_environment_packages(env_name)
+            
+            return success, message
+            
+        except Exception as e:
+            return False, f"Erreur lors de l'installation des packages: {str(e)}"
+    
+    def uninstall_packages(self, env_name: str, packages: str,
+                          with_dependencies: bool = False,
+                          force: bool = False) -> Tuple[bool, str]:
+        """
+        Désinstalle des packages d'un environnement virtuel.
+        
+        Args:
+            env_name: Nom de l'environnement.
+            packages: Liste de packages à désinstaller, séparés par des virgules.
+            with_dependencies: Si True, désinstalle aussi les dépendances.
+            force: Si True, ne demande pas de confirmation pour les dépendances.
+            
+        Returns:
+            Tuple contenant (succès, message).
+        """
+        # Vérifier si l'environnement existe
+        if not self.config_manager.environment_exists(env_name):
+            return False, f"L'environnement '{env_name}' n'existe pas"
+        
+        # Désinstaller les packages
+        try:
+            success, message = self.pkg_service.uninstall_packages(
+                env_name, 
+                packages,
+                with_dependencies=with_dependencies,
+                force=force
+            )
+            
+            if success:
+                # Mettre à jour la configuration
+                self._update_environment_packages(env_name)
+            
+            return success, message
+            
+        except Exception as e:
+            return False, f"Erreur lors de la désinstallation des packages: {str(e)}"
+    
+    def clone_environment(self, source_name: str, target_name: str,
+                         include_packages: bool = True,
+                         description: Optional[str] = None) -> Tuple[bool, str]:
         """
         Clone un environnement existant vers un nouveau.
         
         Args:
             source_name: Nom de l'environnement source.
             target_name: Nom du nouvel environnement.
+            include_packages: Si True, copie aussi les packages installés.
+            description: Description optionnelle pour le nouvel environnement.
             
         Returns:
             Tuple contenant (succès, message).
@@ -367,13 +506,29 @@ class EnvironmentManager:
         if not source_info:
             return False, f"Impossible d'obtenir les informations de l'environnement source '{source_name}'"
         
+        # Préparer les métadonnées pour le clone
+        clone_metadata = {
+            'cloned_from': source_name,
+            'cloned_at': datetime.now().isoformat()
+        }
+        if description:
+            clone_metadata['description'] = description
+        elif hasattr(source_info, 'metadata') and source_info.metadata:
+            original_desc = source_info.metadata.get('description')
+            if original_desc:
+                clone_metadata['description'] = f"Clone de {source_name}: {original_desc}"
+        
         # Créer un nouvel environnement avec la même version Python
-        success, message = self.create_environment(target_name, source_info.python_version)
+        success, message = self.create_environment(
+            target_name, 
+            source_info.python_version,
+            metadata=clone_metadata
+        )
         if not success:
             return False, f"Erreur lors de la création du nouvel environnement: {message}"
         
-        # Installer les mêmes packages que dans l'environnement source
-        if source_info.packages:
+        # Installer les mêmes packages que dans l'environnement source si demandé
+        if include_packages and source_info.packages:
             try:
                 success, pkg_message = self.pkg_service.install_packages(target_name, source_info.packages)
                 if not success:
@@ -388,7 +543,9 @@ class EnvironmentManager:
         return True, f"Environnement '{source_name}' cloné avec succès vers '{target_name}'"
     
     def export_environment(self, name: str, output_path: Optional[str] = None,
-                          format_type: str = "json", metadata: Optional[str] = None) -> Tuple[bool, str]:
+                          format_type: str = "json", metadata: Optional[str] = None,
+                          include_metadata: bool = False,
+                          production_ready: bool = False) -> Tuple[bool, str]:
         """
         Exporte la configuration d'un environnement.
         
@@ -397,6 +554,8 @@ class EnvironmentManager:
             output_path: Chemin de sortie pour le fichier d'export.
             format_type: Format d'export ('json' ou 'requirements').
             metadata: Métadonnées supplémentaires à inclure.
+            include_metadata: Si True, inclut les métadonnées détaillées.
+            production_ready: Si True, optimise l'export pour la production.
             
         Returns:
             Tuple contenant (succès, message ou chemin du fichier).
@@ -416,6 +575,23 @@ class EnvironmentManager:
             valid, metadata_dict, error = self.env_service.validate_metadata(metadata)
             if not valid:
                 return False, error
+        
+        # Ajouter des métadonnées supplémentaires si demandé
+        if include_metadata:
+            env_info = self.config_manager.get_environment(name)
+            if env_info and hasattr(env_info, 'metadata') and env_info.metadata:
+                metadata_dict.update(env_info.metadata)
+        
+        # Ajouter des métadonnées de production si demandé
+        if production_ready:
+            metadata_dict.update({
+                'production_ready': 'true',
+                'exported_for': 'production',
+                'environment_type': 'production'
+            })
+            
+            # Pour la production, on peut exclure certains packages de développement
+            # Cette logique pourrait être implémentée dans le service de packages
         
         # Déléguer l'export au service approprié selon le format
         if format_type.lower() == "requirements":
@@ -451,13 +627,16 @@ class EnvironmentManager:
             except Exception as e:
                 return False, f"Erreur lors de l'export au format JSON: {str(e)}"
     
-    def import_environment(self, input_path: str, name: Optional[str] = None) -> Tuple[bool, str]:
+    def import_environment(self, input_path: str, name: Optional[str] = None,
+                          merge: bool = False, resolve_conflicts: bool = False) -> Tuple[bool, str]:
         """
         Importe un environnement depuis un fichier de configuration.
         
         Args:
             input_path: Chemin vers le fichier de configuration.
             name: Nom à utiliser pour le nouvel environnement.
+            merge: Si True, fusionne avec un environnement existant.
+            resolve_conflicts: Si True, résout automatiquement les conflits.
             
         Returns:
             Tuple contenant (succès, message).
@@ -480,6 +659,18 @@ class EnvironmentManager:
                 env_name = result["env_name"]
                 config = result["config"]
                 
+                # Vérifier les conflits si l'environnement existe déjà
+                if self.config_manager.environment_exists(env_name):
+                    if not merge:
+                        return False, f"L'environnement '{env_name}' existe déjà. Utilisez --merge pour le fusionner."
+                    
+                    if merge and not resolve_conflicts:
+                        return False, f"L'environnement '{env_name}' existe déjà. Utilisez --resolve-conflicts pour résoudre automatiquement les conflits."
+                    
+                    # Logique de fusion/résolution de conflits
+                    if merge and resolve_conflicts:
+                        return self._merge_environment_config(env_name, config)
+                
                 return self.create_environment(
                     env_name,
                     python_version=config["python_version"],
@@ -496,25 +687,32 @@ class EnvironmentManager:
                 if not valid:
                     return False, error
                 
-                # Vérifier si l'environnement existe déjà
+                # Vérifier les conflits
                 if self.config_manager.environment_exists(name):
-                    return False, f"L'environnement '{name}' existe déjà"
+                    if not merge:
+                        return False, f"L'environnement '{name}' existe déjà"
+                    
+                    if merge and not resolve_conflicts:
+                        return False, f"L'environnement '{name}' existe déjà. Utilisez --resolve-conflicts pour résoudre automatiquement les conflits."
                 
-                # Créer l'environnement
-                success, message = self.create_environment(name)
-                if not success:
-                    return False, f"Erreur lors de la création de l'environnement: {message}"
+                # Créer l'environnement s'il n'existe pas
+                if not self.config_manager.environment_exists(name):
+                    success, message = self.create_environment(name)
+                    if not success:
+                        return False, f"Erreur lors de la création de l'environnement: {message}"
                 
                 # Installer les packages depuis le fichier requirements.txt
                 try:
                     success, pkg_message = self.pkg_service.install_from_requirements(name, resolved_path)
                     if not success:
-                        # En cas d'échec, essayer de supprimer l'environnement créé
-                        self.delete_environment(name, force=True)
+                        # En cas d'échec et si on vient de créer l'environnement, le supprimer
+                        if not merge:
+                            self.delete_environment(name, force=True)
                         return False, f"Erreur lors de l'installation des packages: {pkg_message}"
                 except Exception as e:
-                    # En cas d'erreur, essayer de supprimer l'environnement créé
-                    self.delete_environment(name, force=True)
+                    # En cas d'erreur et si on vient de créer l'environnement, le supprimer
+                    if not merge:
+                        self.delete_environment(name, force=True)
                     return False, f"Erreur lors de l'installation des packages: {str(e)}"
                 
                 return True, f"Environnement importé avec succès depuis {resolved_path} sous le nom '{name}'"
@@ -523,6 +721,44 @@ class EnvironmentManager:
         
         except Exception as e:
             return False, f"Erreur lors de l'import de l'environnement: {str(e)}"
+    
+    def _merge_environment_config(self, env_name: str, config: Dict[str, Any]) -> Tuple[bool, str]:
+        """
+        Fusionne une configuration importée avec un environnement existant.
+        
+        Args:
+            env_name: Nom de l'environnement existant.
+            config: Configuration à fusionner.
+            
+        Returns:
+            Tuple contenant (succès, message).
+        """
+        try:
+            # Obtenir l'environnement existant
+            existing_env = self.config_manager.get_environment(env_name)
+            if not existing_env:
+                return False, f"Impossible d'obtenir les informations de l'environnement '{env_name}'"
+            
+            # Fusionner les packages
+            existing_packages = set(existing_env.packages)
+            new_packages = set(config.get("packages", []))
+            
+            # Packages à ajouter
+            packages_to_add = new_packages - existing_packages
+            
+            if packages_to_add:
+                # Installer les nouveaux packages
+                success, message = self.pkg_service.install_packages(env_name, list(packages_to_add))
+                if not success:
+                    return False, f"Erreur lors de l'installation des nouveaux packages: {message}"
+                
+                # Mettre à jour la configuration
+                self._update_environment_packages(env_name)
+            
+            return True, f"Configuration fusionnée avec succès dans l'environnement '{env_name}'"
+            
+        except Exception as e:
+            return False, f"Erreur lors de la fusion de la configuration: {str(e)}"
     
     def set_default_python(self, python_cmd: str) -> Tuple[bool, str]:
         """
@@ -559,13 +795,19 @@ class EnvironmentManager:
         """
         return self.config_manager.get_active_environment()
     
-    def run_command_in_environment(self, env_name: str, command: List[str]) -> Tuple[int, str, str]:
+    def run_command_in_environment(self, env_name: str, command: List[str],
+                                  env_vars: Optional[Dict[str, str]] = None,
+                                  timeout: Optional[int] = None,
+                                  background: bool = False) -> Tuple[int, str, str]:
         """
         Exécute une commande dans un environnement virtuel spécifique.
         
         Args:
             env_name: Nom de l'environnement.
             command: Commande à exécuter.
+            env_vars: Variables d'environnement supplémentaires.
+            timeout: Timeout en secondes.
+            background: Si True, exécute en arrière-plan.
             
         Returns:
             Tuple contenant (code de retour, sortie standard, sortie d'erreur).
@@ -579,11 +821,65 @@ class EnvironmentManager:
         if not env_info:
             return 1, "", f"Impossible d'obtenir les informations de l'environnement '{env_name}'"
         
-        # Exécuter la commande dans l'environnement
-        return self.sys_service.run_in_environment(env_name, env_info.path, command)
+        # Préparer l'environnement d'exécution
+        if env_vars:
+            # Créer une copie de l'environnement actuel et ajouter les nouvelles variables
+            execution_env = os.environ.copy()
+            execution_env.update(env_vars)
+            
+            # Exécuter la commande avec les variables d'environnement personnalisées
+            return self._run_with_custom_env(env_name, env_info.path, command, execution_env, timeout, background)
+        else:
+            # Exécuter normalement
+            return self.sys_service.run_in_environment(env_name, env_info.path, command)
+    
+    def _run_with_custom_env(self, env_name: str, env_path: Path, command: List[str],
+                            env_vars: Dict[str, str], timeout: Optional[int],
+                            background: bool) -> Tuple[int, str, str]:
+        """Exécute une commande avec des variables d'environnement personnalisées."""
+        import subprocess
+        
+        try:
+            # Obtenir l'exécutable Python de l'environnement
+            python_exe = self.env_service.get_python_executable(env_name, env_path)
+            
+            if not python_exe:
+                return 1, "", f"Impossible de trouver l'exécutable Python pour l'environnement '{env_name}'"
+            
+            # Préparer la commande avec l'exécutable Python de l'environnement
+            cmd = [str(python_exe)] + command
+            
+            # Exécuter la commande
+            if background:
+                # Exécution en arrière-plan
+                process = subprocess.Popen(
+                    cmd,
+                    env=env_vars,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True
+                )
+                return 0, f"Processus démarré en arrière-plan (PID: {process.pid})", ""
+            else:
+                # Exécution normale avec timeout optionnel
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    env=env_vars,
+                    timeout=timeout,
+                    check=False
+                )
+                
+                return result.returncode, result.stdout, result.stderr
+                
+        except subprocess.TimeoutExpired:
+            return 1, "", f"Commande interrompue après {timeout} secondes"
+        except Exception as e:
+            return 1, "", f"Erreur lors de l'exécution de la commande: {str(e)}"
     
     def update_packages(self, env_name: str, packages: Optional[str] = None, 
-                        all_packages: bool = False) -> Tuple[bool, str]:
+                        all_packages: bool = False, offline: bool = False) -> Tuple[bool, str]:
         """
         Met à jour des packages dans un environnement virtuel.
         
@@ -591,6 +887,7 @@ class EnvironmentManager:
             env_name: Nom de l'environnement.
             packages: Liste de packages à mettre à jour séparés par des virgules.
             all_packages: Si True, met à jour tous les packages.
+            offline: Force le mode hors ligne pour cette opération.
             
         Returns:
             Tuple contenant (succès, message).
@@ -619,7 +916,7 @@ class EnvironmentManager:
         
         # Mettre à jour les packages
         try:
-            success, message = self.pkg_service.update_packages(env_name, package_list, all_packages)
+            success, message = self.pkg_service.update_packages(env_name, package_list, all_packages, offline)
             if not success:
                 return False, message
         except Exception as e:
@@ -627,24 +924,7 @@ class EnvironmentManager:
         
         # Mettre à jour la configuration avec les nouveaux packages
         try:
-            # Récupérer la liste mise à jour des packages installés
-            installed_packages = self.pkg_service.list_installed_packages(env_name)
-            
-            # Mettre à jour l'environnement dans la configuration
-            env_info.packages_installed = [
-                PackageInfo(name=pkg["name"], version=pkg["version"])
-                for pkg in installed_packages
-            ]
-            
-            # Mettre à jour les packages configurés si nécessaire
-            if all_packages or package_list:
-                env_info.packages = [
-                    f"{pkg['name']}=={pkg['version']}"
-                    for pkg in installed_packages
-                ]
-            
-            # Sauvegarder les modifications
-            self.config_manager.update_environment(env_info)
+            self._update_environment_packages(env_name)
         except Exception as e:
             logger.warning(f"Erreur lors de la mise à jour de la configuration: {str(e)}")
             # Ne pas échouer complètement, car les packages ont été mis à jour
@@ -687,4 +967,342 @@ class EnvironmentManager:
         except Exception as e:
             logger.error(f"Erreur lors de la vérification des mises à jour: {str(e)}")
             return False, [], f"Erreur lors de la vérification des mises à jour: {str(e)}"
-
+    
+    def diagnose_environment(self, env_name: str, full_check: bool = False) -> Tuple[bool, Dict[str, Any]]:
+        """
+        Diagnostique la santé d'un environnement virtuel.
+        
+        Args:
+            env_name: Nom de l'environnement à diagnostiquer.
+            full_check: Si True, effectue un diagnostic complet.
+            
+        Returns:
+            Tuple contenant (santé globale, rapport de diagnostic).
+        """
+        try:
+            # Vérifier si l'environnement existe dans la configuration
+            if not self.config_manager.environment_exists(env_name):
+                return False, {
+                    "status": "error",
+                    "message": f"L'environnement '{env_name}' n'existe pas dans la configuration",
+                    "checks": {}
+                }
+            
+            # Obtenir les informations de l'environnement
+            env_info = self.config_manager.get_environment(env_name)
+            if not env_info:
+                return False, {
+                    "status": "error",
+                    "message": f"Impossible d'obtenir les informations de l'environnement '{env_name}'",
+                    "checks": {}
+                }
+            
+            # Effectuer les vérifications de base
+            checks = {}
+            overall_health = True
+            
+            # 1. Vérifier l'existence physique
+            exists = self.env_service.check_environment_exists(env_info.path)
+            checks["physical_existence"] = {
+                "status": "ok" if exists else "error",
+                "message": "Environnement physiquement présent" if exists else "Environnement manquant sur le disque"
+            }
+            if not exists:
+                overall_health = False
+            
+            # 2. Vérifier la santé de l'environnement
+            if exists:
+                health = self.env_service.check_environment_health(env_name, env_info.path)
+                
+                checks["python_executable"] = {
+                    "status": "ok" if health.python_available else "error",
+                    "message": "Exécutable Python disponible" if health.python_available else "Exécutable Python manquant"
+                }
+                
+                checks["pip_executable"] = {
+                    "status": "ok" if health.pip_available else "error",
+                    "message": "pip disponible" if health.pip_available else "pip manquant"
+                }
+                
+                checks["activation_script"] = {
+                    "status": "ok" if health.activation_script_exists else "warning",
+                    "message": "Script d'activation présent" if health.activation_script_exists else "Script d'activation manquant"
+                }
+                
+                if not health.python_available or not health.pip_available:
+                    overall_health = False
+            
+            # 3. Vérifications approfondies si demandé
+            if full_check and exists:
+                # Vérifier les packages installés
+                try:
+                    installed_packages = self.pkg_service.list_installed_packages(env_name)
+                    checks["packages_accessible"] = {
+                        "status": "ok",
+                        "message": f"{len(installed_packages)} packages installés et accessibles"
+                    }
+                    
+                    # Vérifier les mises à jour disponibles
+                    updates = self.pkg_service.check_for_updates(env_name)
+                    if updates:
+                        checks["package_updates"] = {
+                            "status": "info",
+                            "message": f"{len(updates)} mise(s) à jour disponible(s)"
+                        }
+                    else:
+                        checks["package_updates"] = {
+                            "status": "ok",
+                            "message": "Tous les packages sont à jour"
+                        }
+                        
+                except Exception as e:
+                    checks["packages_accessible"] = {
+                        "status": "warning",
+                        "message": f"Erreur lors de la vérification des packages: {str(e)}"
+                    }
+                
+                # Vérifier l'espace disque
+                try:
+                    free_space = self.sys_service.get_free_disk_space(env_info.path)
+                    if free_space < 100 * 1024 * 1024:  # Moins de 100 MB
+                        checks["disk_space"] = {
+                            "status": "warning",
+                            "message": f"Espace disque faible: {free_space // (1024*1024)} MB disponible"
+                        }
+                    else:
+                        checks["disk_space"] = {
+                            "status": "ok",
+                            "message": f"Espace disque suffisant: {free_space // (1024*1024)} MB disponible"
+                        }
+                except Exception as e:
+                    checks["disk_space"] = {
+                        "status": "info",
+                        "message": f"Impossible de vérifier l'espace disque: {str(e)}"
+                    }
+            
+            # Préparer le rapport final
+            report = {
+                "status": "healthy" if overall_health else "unhealthy",
+                "environment": env_name,
+                "path": str(env_info.path),
+                "python_version": env_info.python_version,
+                "checks": checks,
+                "recommendations": []
+            }
+            
+            # Ajouter des recommandations basées sur les vérifications
+            if not overall_health:
+                if not exists:
+                    report["recommendations"].append("Recréer l'environnement virtuel")
+                elif not checks.get("python_executable", {}).get("status") == "ok":
+                    report["recommendations"].append("Réinstaller Python dans l'environnement")
+                elif not checks.get("pip_executable", {}).get("status") == "ok":
+                    report["recommendations"].append("Réinstaller pip dans l'environnement")
+            
+            if full_check and "package_updates" in checks and checks["package_updates"]["status"] == "info":
+                report["recommendations"].append("Mettre à jour les packages obsolètes")
+            
+            return overall_health, report
+            
+        except Exception as e:
+            logger.error(f"Erreur lors du diagnostic de l'environnement: {str(e)}")
+            return False, {
+                "status": "error",
+                "message": f"Erreur lors du diagnostic: {str(e)}",
+                "checks": {}
+            }
+    
+    def repair_environment(self, env_name: str, auto_fix: bool = False) -> Tuple[bool, List[str]]:
+        """
+        Tente de réparer un environnement virtuel endommagé.
+        
+        Args:
+            env_name: Nom de l'environnement à réparer.
+            auto_fix: Si True, applique automatiquement les corrections.
+            
+        Returns:
+            Tuple contenant (succès, liste des actions effectuées).
+        """
+        actions = []
+        
+        try:
+            # Diagnostiquer d'abord l'environnement
+            is_healthy, diagnosis = self.diagnose_environment(env_name, full_check=True)
+            
+            if is_healthy:
+                return True, ["L'environnement est déjà en bonne santé"]
+            
+            # Obtenir les informations de l'environnement
+            env_info = self.config_manager.get_environment(env_name)
+            if not env_info:
+                return False, ["Impossible d'obtenir les informations de l'environnement"]
+            
+            # Vérifier les problèmes et les corriger
+            checks = diagnosis.get("checks", {})
+            
+            # 1. Environnement physiquement manquant
+            if checks.get("physical_existence", {}).get("status") == "error":
+                if auto_fix:
+                    # Recréer l'environnement
+                    success, message = self.env_service.create_environment(
+                        env_name, 
+                        env_info.python_version, 
+                        env_info.path
+                    )
+                    if success:
+                        actions.append("Environnement recréé")
+                    else:
+                        actions.append(f"Échec de la recréation: {message}")
+                        return False, actions
+                else:
+                    actions.append("Recommandation: Recréer l'environnement virtuel")
+            
+            # 2. pip manquant
+            if checks.get("pip_executable", {}).get("status") == "error":
+                if auto_fix:
+                    # Tenter de réinstaller pip
+                    python_exe = self.env_service.get_python_executable(env_name, env_info.path)
+                    if python_exe:
+                        try:
+                            import subprocess
+                            result = subprocess.run([
+                                str(python_exe), "-m", "ensurepip", "--upgrade"
+                            ], capture_output=True, text=True, check=False)
+                            
+                            if result.returncode == 0:
+                                actions.append("pip réinstallé avec succès")
+                            else:
+                                actions.append(f"Échec de la réinstallation de pip: {result.stderr}")
+                        except Exception as e:
+                            actions.append(f"Erreur lors de la réinstallation de pip: {str(e)}")
+                    else:
+                        actions.append("Impossible de trouver l'exécutable Python pour réinstaller pip")
+                else:
+                    actions.append("Recommandation: Réinstaller pip")
+            
+            # 3. Packages manquants (si spécifiés dans la configuration)
+            if env_info.packages and auto_fix:
+                try:
+                    # Vérifier quels packages sont manquants
+                    installed_packages = self.pkg_service.list_installed_packages(env_name)
+                    installed_names = {pkg["name"].lower() for pkg in installed_packages}
+                    
+                    missing_packages = []
+                    for pkg_spec in env_info.packages:
+                        pkg_name = pkg_spec.split('==')[0].split('>')[0].split('<')[0].strip().lower()
+                        if pkg_name not in installed_names:
+                            missing_packages.append(pkg_spec)
+                    
+                    if missing_packages:
+                        success, message = self.pkg_service.install_packages(env_name, missing_packages)
+                        if success:
+                            actions.append(f"Packages manquants réinstallés: {', '.join(missing_packages)}")
+                        else:
+                            actions.append(f"Échec de la réinstallation des packages: {message}")
+                
+                except Exception as e:
+                    actions.append(f"Erreur lors de la vérification des packages: {str(e)}")
+            
+            # Vérifier le résultat final
+            if auto_fix:
+                # Refaire un diagnostic pour vérifier si les problèmes sont résolus
+                is_healthy_after, _ = self.diagnose_environment(env_name)
+                if is_healthy_after:
+                    actions.append("Environnement réparé avec succès")
+                    return True, actions
+                else:
+                    actions.append("Réparation partielle - certains problèmes persistent")
+                    return False, actions
+            else:
+                return True, actions
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la réparation de l'environnement: {str(e)}")
+            actions.append(f"Erreur lors de la réparation: {str(e)}")
+            return False, actions
+    
+    def get_system_info(self) -> Dict[str, Any]:
+        """
+        Récupère des informations détaillées sur le système.
+        
+        Returns:
+            Dictionnaire d'informations système.
+        """
+        try:
+            # Informations de base du système
+            system_info = self.sys_service.get_system_info()
+            
+            # Versions Python disponibles
+            python_versions = self.sys_service.get_available_python_versions()
+            
+            # Configuration GestVenv
+            gestvenv_config = {
+                "default_python": self.config_manager.get_default_python(),
+                "active_environment": self.get_active_environment(),
+                "total_environments": len(self.config_manager.get_all_environments()),
+                "offline_mode": self.config_manager.get_setting("offline_mode", False),
+                "cache_enabled": self.config_manager.get_setting("use_package_cache", True)
+            }
+            
+            # Informations sur les environnements
+            environments_info = []
+            for env_name, env_info in self.config_manager.get_all_environments().items():
+                exists = self.env_service.check_environment_exists(env_info.path)
+                health = self.env_service.check_environment_health(env_name, env_info.path) if exists else None
+                
+                environments_info.append({
+                    "name": env_name,
+                    "exists": exists,
+                    "healthy": health.python_available and health.pip_available if health else False,
+                    "python_version": env_info.python_version,
+                    "packages_count": len(env_info.packages)
+                })
+            
+            return {
+                "system": system_info,
+                "python_versions": python_versions,
+                "gestvenv_config": gestvenv_config,
+                "environments": environments_info,
+                "timestamp": datetime.now().isoformat()
+            }
+            
+        except Exception as e:
+            logger.error(f"Erreur lors de la récupération des informations système: {str(e)}")
+            return {
+                "error": f"Erreur lors de la récupération des informations système: {str(e)}",
+                "timestamp": datetime.now().isoformat()
+            }
+    
+    def _update_environment_packages(self, env_name: str) -> None:
+        """
+        Met à jour la liste des packages dans la configuration d'un environnement.
+        
+        Args:
+            env_name: Nom de l'environnement à mettre à jour.
+        """
+        try:
+            # Récupérer la liste mise à jour des packages installés
+            installed_packages = self.pkg_service.list_installed_packages(env_name)
+            
+            # Obtenir l'environnement
+            env_info = self.config_manager.get_environment(env_name)
+            if not env_info:
+                return
+            
+            # Mettre à jour les packages installés
+            env_info.packages_installed = [
+                PackageInfo(name=pkg["name"], version=pkg["version"])
+                for pkg in installed_packages
+            ]
+            
+            # Mettre à jour la liste des packages configurés
+            env_info.packages = [
+                f"{pkg['name']}=={pkg['version']}"
+                for pkg in installed_packages
+            ]
+            
+            # Sauvegarder les modifications
+            self.config_manager.update_environment(env_info)
+            
+        except Exception as e:
+            logger.warning(f"Erreur lors de la mise à jour des packages de l'environnement {env_name}: {str(e)}")
