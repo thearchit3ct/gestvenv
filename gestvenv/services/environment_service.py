@@ -10,6 +10,7 @@ import re
 import json
 import platform
 import shutil
+import subprocess
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -614,3 +615,907 @@ class EnvironmentService:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{env_name}_requirements_{timestamp}.txt"
         return export_dir / filename
+    
+    def create_temporary_environment(self, name: str, python_cmd: str, 
+                                   lifetime: Optional[int] = None,
+                                   auto_cleanup: bool = True) -> Tuple[bool, str, Path]:
+        """
+        Crée un environnement virtuel temporaire.
+        
+        Args:
+            name: Nom de l'environnement temporaire
+            python_cmd: Commande Python à utiliser
+            lifetime: Durée de vie en minutes (None = jusqu'à la fermeture de session)
+            auto_cleanup: Si True, programme un nettoyage automatique
+            
+        Returns:
+            Tuple contenant (succès, message, chemin)
+        """
+        try:
+            # Créer un nom unique pour l'environnement temporaire
+            temp_name = f"temp_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            temp_dir = Path(tempfile.gettempdir()) / "gestvenv_temp" / temp_name
+            
+            # Créer l'environnement
+            success, message = self.create_environment(temp_name, python_cmd, temp_dir)
+            if not success:
+                return False, message, temp_dir
+            
+            # Marquer comme temporaire dans les métadonnées
+            temp_metadata = {
+                "temporary": True,
+                "lifetime_minutes": lifetime,
+                "auto_cleanup": auto_cleanup,
+                "expires_at": (datetime.now() + timedelta(minutes=lifetime)).isoformat() if lifetime else None,
+                "session_id": os.getpid()  # ID de session pour le nettoyage
+            }
+            
+            self.update_environment_metadata(temp_dir, temp_metadata)
+            
+            # Programmer le nettoyage automatique si demandé
+            if auto_cleanup and lifetime:
+                self._schedule_cleanup(temp_dir, lifetime)
+            
+            logger.info(f"Environnement temporaire '{temp_name}' créé")
+            return True, f"Environnement temporaire créé: {temp_name}", temp_dir
+            
+        except Exception as e:
+            logger.error(f"Erreur création environnement temporaire: {e}")
+            return False, f"Erreur: {e}", Path()
+    
+    def _schedule_cleanup(self, env_path: Path, lifetime_minutes: int) -> None:
+        """
+        Programme le nettoyage automatique d'un environnement temporaire.
+        
+        Args:
+            env_path: Chemin de l'environnement
+            lifetime_minutes: Durée de vie en minutes
+        """
+        try:
+            import threading
+            
+            def cleanup_after_delay():
+                time.sleep(lifetime_minutes * 60)
+                try:
+                    if env_path.exists():
+                        shutil.rmtree(env_path)
+                        logger.info(f"Environnement temporaire nettoyé: {env_path}")
+                except Exception as e:
+                    logger.error(f"Erreur nettoyage automatique {env_path}: {e}")
+            
+            cleanup_thread = threading.Thread(target=cleanup_after_delay, daemon=True)
+            cleanup_thread.start()
+            
+        except Exception as e:
+            logger.warning(f"Impossible de programmer le nettoyage: {e}")
+    
+    def cleanup_temporary_environments(self) -> Tuple[int, List[str]]:
+        """
+        Nettoie tous les environnements temporaires expirés.
+        
+        Returns:
+            Tuple: (nombre d'environnements nettoyés, liste des messages)
+        """
+        cleaned_count = 0
+        messages = []
+        
+        try:
+            temp_base_dir = Path(tempfile.gettempdir()) / "gestvenv_temp"
+            
+            if not temp_base_dir.exists():
+                return 0, ["Aucun répertoire temporaire trouvé"]
+            
+            current_time = datetime.now()
+            
+            for env_dir in temp_base_dir.iterdir():
+                if not env_dir.is_dir():
+                    continue
+                
+                try:
+                    metadata = self.get_environment_metadata(env_dir)
+                    
+                    # Vérifier si l'environnement est temporaire
+                    if not metadata.get("temporary", False):
+                        continue
+                    
+                    # Vérifier l'expiration
+                    expires_at_str = metadata.get("expires_at")
+                    if expires_at_str:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+                        if current_time > expires_at:
+                            shutil.rmtree(env_dir)
+                            cleaned_count += 1
+                            messages.append(f"Environnement temporaire expiré nettoyé: {env_dir.name}")
+                    
+                    # Vérifier si la session est toujours active
+                    session_id = metadata.get("session_id")
+                    if session_id and not self._is_process_alive(session_id):
+                        shutil.rmtree(env_dir)
+                        cleaned_count += 1
+                        messages.append(f"Environnement temporaire orphelin nettoyé: {env_dir.name}")
+                        
+                except Exception as e:
+                    messages.append(f"Erreur nettoyage {env_dir.name}: {e}")
+                    continue
+            
+        except Exception as e:
+            messages.append(f"Erreur générale nettoyage temporaires: {e}")
+        
+        return cleaned_count, messages
+    
+    def _is_process_alive(self, pid: int) -> bool:
+        """Vérifie si un processus est encore actif."""
+        try:
+            import psutil
+            return psutil.pid_exists(pid)
+        except Exception:
+            # Fallback sans psutil
+            try:
+                os.kill(pid, 0)
+                return True
+            except (OSError, ProcessLookupError):
+                return False
+    
+    def export_environment_to_yaml(self, name: str, env_path: Path, 
+                                  output_path: Optional[Path] = None) -> Tuple[bool, str]:
+        """
+        Exporte un environnement au format YAML.
+        
+        Args:
+            name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            output_path: Chemin de sortie (optionnel)
+            
+        Returns:
+            Tuple: (succès, chemin du fichier ou message d'erreur)
+        """
+        try:
+            # Collecter les informations
+            info = self.export_environment_info(name, env_path, include_packages=True)
+            
+            # Structure YAML
+            yaml_data = {
+                'environment': {
+                    'name': info['name'],
+                    'description': info['metadata'].get('description', ''),
+                    'python_version': info['performance'].get('python_version', ''),
+                    'created_at': info['metadata'].get('created_at', ''),
+                    'exported_at': info['exported_at']
+                },
+                'packages': [
+                    {
+                        'name': pkg.get('name', ''),
+                        'version': pkg.get('version', '')
+                    }
+                    for pkg in info.get('packages', [])
+                ],
+                'metadata': info['metadata'],
+                'health': info['health'],
+                'size': info['size']
+            }
+            
+            # Générer le contenu YAML
+            yaml_content = self._dict_to_yaml(yaml_data)
+            
+            # Déterminer le chemin de sortie
+            if not output_path:
+                output_path = self.get_export_directory() / f"{name}_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml"
+            
+            # Écrire le fichier
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            output_path.write_text(yaml_content, encoding='utf-8')
+            
+            return True, str(output_path)
+            
+        except Exception as e:
+            logger.error(f"Erreur export YAML {name}: {e}")
+            return False, f"Erreur export YAML: {e}"
+    
+    def _dict_to_yaml(self, data: Dict[str, Any], indent: int = 0) -> str:
+        """
+        Convertit un dictionnaire en format YAML simple.
+        
+        Args:
+            data: Dictionnaire à convertir
+            indent: Niveau d'indentation
+            
+        Returns:
+            str: Contenu YAML
+        """
+        yaml_lines = []
+        indent_str = "  " * indent
+        
+        for key, value in data.items():
+            if isinstance(value, dict):
+                yaml_lines.append(f"{indent_str}{key}:")
+                yaml_lines.append(self._dict_to_yaml(value, indent + 1))
+            elif isinstance(value, list):
+                yaml_lines.append(f"{indent_str}{key}:")
+                for item in value:
+                    if isinstance(item, dict):
+                        yaml_lines.append(f"{indent_str}- ")
+                        for subkey, subvalue in item.items():
+                            yaml_lines.append(f"{indent_str}  {subkey}: {self._yaml_escape(subvalue)}")
+                    else:
+                        yaml_lines.append(f"{indent_str}- {self._yaml_escape(item)}")
+            else:
+                yaml_lines.append(f"{indent_str}{key}: {self._yaml_escape(value)}")
+        
+        return "\n".join(yaml_lines)
+    
+    def _yaml_escape(self, value: Any) -> str:
+        """Échappe une valeur pour YAML."""
+        if value is None:
+            return "null"
+        elif isinstance(value, bool):
+            return "true" if value else "false"
+        elif isinstance(value, str) and (" " in value or ":" in value):
+            return f'"{value}"'
+        else:
+            return str(value)
+    
+    def create_environment_snapshot(self, name: str, env_path: Path, 
+                                   snapshot_name: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Crée un snapshot (instantané) d'un environnement.
+        
+        Args:
+            name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            snapshot_name: Nom du snapshot (optionnel)
+            
+        Returns:
+            Tuple: (succès, message)
+        """
+        try:
+            if not snapshot_name:
+                snapshot_name = f"{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            snapshots_dir = self.get_app_data_dir() / "snapshots"
+            snapshots_dir.mkdir(parents=True, exist_ok=True)
+            
+            snapshot_file = snapshots_dir / f"{snapshot_name}.tar.gz"
+            
+            # Créer l'archive
+            import tarfile
+            
+            with tarfile.open(snapshot_file, "w:gz") as tar:
+                tar.add(env_path, arcname=name)
+            
+            # Créer les métadonnées du snapshot
+            snapshot_metadata = {
+                "name": snapshot_name,
+                "environment_name": name,
+                "created_at": datetime.now().isoformat(),
+                "original_path": str(env_path),
+                "size": snapshot_file.stat().st_size,
+                "environment_metadata": self.get_environment_metadata(env_path)
+            }
+            
+            metadata_file = snapshots_dir / f"{snapshot_name}_metadata.json"
+            metadata_file.write_text(json.dumps(snapshot_metadata, indent=2), encoding='utf-8')
+            
+            logger.info(f"Snapshot créé: {snapshot_name}")
+            return True, f"Snapshot créé: {snapshot_file}"
+            
+        except Exception as e:
+            logger.error(f"Erreur création snapshot {name}: {e}")
+            return False, f"Erreur création snapshot: {e}"
+    
+    def restore_environment_from_snapshot(self, snapshot_name: str, 
+                                        target_name: Optional[str] = None,
+                                        target_path: Optional[Path] = None) -> Tuple[bool, str]:
+        """
+        Restaure un environnement depuis un snapshot.
+        
+        Args:
+            snapshot_name: Nom du snapshot
+            target_name: Nom pour l'environnement restauré
+            target_path: Chemin pour l'environnement restauré
+            
+        Returns:
+            Tuple: (succès, message)
+        """
+        try:
+            snapshots_dir = self.get_app_data_dir() / "snapshots"
+            snapshot_file = snapshots_dir / f"{snapshot_name}.tar.gz"
+            metadata_file = snapshots_dir / f"{snapshot_name}_metadata.json"
+            
+            if not snapshot_file.exists():
+                return False, f"Snapshot '{snapshot_name}' non trouvé"
+            
+            # Charger les métadonnées
+            if metadata_file.exists():
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    snapshot_metadata = json.load(f)
+                original_env_name = snapshot_metadata.get("environment_name", snapshot_name)
+            else:
+                original_env_name = snapshot_name
+            
+            # Déterminer le nom et le chemin cible
+            if not target_name:
+                target_name = f"{original_env_name}_restored_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            
+            if not target_path:
+                target_path = self.get_default_venv_dir() / target_name
+            
+            # Vérifier que la cible n'existe pas
+            if target_path.exists():
+                return False, f"L'environnement cible existe déjà: {target_path}"
+            
+            # Extraire l'archive
+            import tarfile
+            
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            with tarfile.open(snapshot_file, "r:gz") as tar:
+                tar.extractall(target_path.parent)
+                # Renommer si nécessaire
+                extracted_path = target_path.parent / original_env_name
+                if extracted_path != target_path:
+                    extracted_path.rename(target_path)
+            
+            # Mettre à jour les métadonnées
+            restore_metadata = {
+                "restored_from_snapshot": snapshot_name,
+                "restored_at": datetime.now().isoformat(),
+                "original_name": original_env_name
+            }
+            self.update_environment_metadata(target_path, restore_metadata)
+            
+            logger.info(f"Environnement restauré: {target_name}")
+            return True, f"Environnement restauré: {target_name} à {target_path}"
+            
+        except Exception as e:
+            logger.error(f"Erreur restauration snapshot {snapshot_name}: {e}")
+            return False, f"Erreur restauration: {e}"
+    
+    def list_environment_snapshots(self) -> List[Dict[str, Any]]:
+        """
+        Liste tous les snapshots d'environnements disponibles.
+        
+        Returns:
+            List: Liste des snapshots avec leurs métadonnées
+        """
+        snapshots = []
+        
+        try:
+            snapshots_dir = self.get_app_data_dir() / "snapshots"
+            
+            if not snapshots_dir.exists():
+                return snapshots
+            
+            for snapshot_file in snapshots_dir.glob("*.tar.gz"):
+                metadata_file = snapshots_dir / f"{snapshot_file.stem}_metadata.json"
+                
+                try:
+                    if metadata_file.exists():
+                        with open(metadata_file, 'r', encoding='utf-8') as f:
+                            metadata = json.load(f)
+                    else:
+                        # Métadonnées par défaut si pas de fichier
+                        stat = snapshot_file.stat()
+                        metadata = {
+                            "name": snapshot_file.stem,
+                            "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                            "size": stat.st_size
+                        }
+                    
+                    snapshots.append({
+                        "file": str(snapshot_file),
+                        "name": metadata.get("name", snapshot_file.stem),
+                        "environment_name": metadata.get("environment_name", "unknown"),
+                        "created_at": metadata.get("created_at", "unknown"),
+                        "size": metadata.get("size", snapshot_file.stat().st_size),
+                        "size_mb": metadata.get("size", snapshot_file.stat().st_size) / (1024 * 1024)
+                    })
+                    
+                except Exception as e:
+                    logger.warning(f"Erreur lecture snapshot {snapshot_file}: {e}")
+                    continue
+            
+            # Trier par date de création (plus récent en premier)
+            snapshots.sort(key=lambda x: x["created_at"], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Erreur listage snapshots: {e}")
+        
+        return snapshots
+    
+    def compare_environments(self, name1: str, env_path1: Path, 
+                           name2: str, env_path2: Path) -> Dict[str, Any]:
+        """
+        Compare deux environnements virtuels.
+        
+        Args:
+            name1: Nom du premier environnement
+            env_path1: Chemin du premier environnement
+            name2: Nom du second environnement
+            env_path2: Chemin du second environnement
+            
+        Returns:
+            Dict: Rapport de comparaison
+        """
+        comparison = {
+            "compared_at": datetime.now().isoformat(),
+            "environments": {
+                "env1": {"name": name1, "path": str(env_path1)},
+                "env2": {"name": name2, "path": str(env_path2)}
+            },
+            "differences": {
+                "packages": {"only_in_env1": [], "only_in_env2": [], "version_differences": []},
+                "python_version": {},
+                "size": {},
+                "health": {}
+            },
+            "similarities": []
+        }
+        
+        try:
+            # Obtenir les informations des deux environnements
+            info1 = self.export_environment_info(name1, env_path1, include_packages=True)
+            info2 = self.export_environment_info(name2, env_path2, include_packages=True)
+            
+            # Comparer les packages
+            packages1 = {pkg["name"]: pkg["version"] for pkg in info1.get("packages", [])}
+            packages2 = {pkg["name"]: pkg["version"] for pkg in info2.get("packages", [])}
+            
+            # Packages uniquement dans env1
+            for pkg_name, version in packages1.items():
+                if pkg_name not in packages2:
+                    comparison["differences"]["packages"]["only_in_env1"].append({
+                        "name": pkg_name, "version": version
+                    })
+            
+            # Packages uniquement dans env2
+            for pkg_name, version in packages2.items():
+                if pkg_name not in packages1:
+                    comparison["differences"]["packages"]["only_in_env2"].append({
+                        "name": pkg_name, "version": version
+                    })
+            
+            # Différences de versions
+            for pkg_name in set(packages1.keys()) & set(packages2.keys()):
+                if packages1[pkg_name] != packages2[pkg_name]:
+                    comparison["differences"]["packages"]["version_differences"].append({
+                        "name": pkg_name,
+                        "env1_version": packages1[pkg_name],
+                        "env2_version": packages2[pkg_name]
+                    })
+            
+            # Comparer les versions Python
+            py_version1 = info1["performance"].get("python_version", "")
+            py_version2 = info2["performance"].get("python_version", "")
+            
+            if py_version1 != py_version2:
+                comparison["differences"]["python_version"] = {
+                    "env1": py_version1,
+                    "env2": py_version2
+                }
+            else:
+                comparison["similarities"].append(f"Python version: {py_version1}")
+            
+            # Comparer les tailles
+            size1 = info1["size"]["total"]
+            size2 = info2["size"]["total"]
+            comparison["differences"]["size"] = {
+                "env1_bytes": size1,
+                "env2_bytes": size2,
+                "difference_bytes": abs(size1 - size2),
+                "difference_mb": abs(size1 - size2) / (1024 * 1024)
+            }
+            
+            # Comparer la santé
+            health1 = info1["health"]
+            health2 = info2["health"]
+            
+            for key in health1.keys():
+                if health1.get(key) != health2.get(key):
+                    comparison["differences"]["health"][key] = {
+                        "env1": health1.get(key),
+                        "env2": health2.get(key)
+                    }
+            
+            # Statistiques de similitude
+            total_packages = len(set(packages1.keys()) | set(packages2.keys()))
+            common_packages = len(set(packages1.keys()) & set(packages2.keys()))
+            
+            if total_packages > 0:
+                similarity_percentage = (common_packages / total_packages) * 100
+                comparison["similarity_percentage"] = similarity_percentage
+                comparison["similarities"].append(f"Packages communs: {common_packages}/{total_packages} ({similarity_percentage:.1f}%)")
+            
+        except Exception as e:
+            logger.error(f"Erreur comparaison environnements: {e}")
+            comparison["error"] = str(e)
+        
+        return comparison
+    
+    def migrate_environment(self, name: str, old_path: Path, new_path: Path,
+                          preserve_old: bool = False) -> Tuple[bool, str]:
+        """
+        Migre un environnement vers un nouveau chemin.
+        
+        Args:
+            name: Nom de l'environnement
+            old_path: Ancien chemin
+            new_path: Nouveau chemin
+            preserve_old: Si True, conserve l'ancien environnement
+            
+        Returns:
+            Tuple: (succès, message)
+        """
+        try:
+            if not old_path.exists():
+                return False, f"L'environnement source n'existe pas: {old_path}"
+            
+            if new_path.exists():
+                return False, f"La destination existe déjà: {new_path}"
+            
+            # Créer le répertoire parent
+            new_path.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Copier ou déplacer l'environnement
+            if preserve_old:
+                shutil.copytree(old_path, new_path)
+                action = "copié"
+            else:
+                shutil.move(str(old_path), str(new_path))
+                action = "déplacé"
+            
+            # Mettre à jour les métadonnées
+            migration_metadata = {
+                "migrated_from": str(old_path),
+                "migrated_to": str(new_path),
+                "migrated_at": datetime.now().isoformat(),
+                "preserve_old": preserve_old
+            }
+            self.update_environment_metadata(new_path, migration_metadata)
+            
+            # Réparer les liens internes si nécessaire
+            self._fix_environment_paths(new_path)
+            
+            logger.info(f"Environnement {name} {action} vers {new_path}")
+            return True, f"Environnement {action} avec succès vers {new_path}"
+            
+        except Exception as e:
+            logger.error(f"Erreur migration {name}: {e}")
+            return False, f"Erreur migration: {e}"
+    
+    def _fix_environment_paths(self, env_path: Path) -> None:
+        """
+        Corrige les chemins internes d'un environnement après migration.
+        
+        Args:
+            env_path: Chemin de l'environnement
+        """
+        try:
+            # Corriger pyvenv.cfg
+            pyvenv_cfg = env_path / "pyvenv.cfg"
+            if pyvenv_cfg.exists():
+                content = pyvenv_cfg.read_text(encoding='utf-8')
+                # Mettre à jour les chemins si nécessaire
+                updated_content = content.replace(
+                    f"home = {env_path}",
+                    f"home = {Path(sys.executable).parent}"
+                )
+                pyvenv_cfg.write_text(updated_content, encoding='utf-8')
+            
+            # Corriger les scripts d'activation si nécessaire
+            if self.system != "windows":
+                activate_script = env_path / "bin" / "activate"
+                if activate_script.exists():
+                    content = activate_script.read_text(encoding='utf-8')
+                    # Mettre à jour VIRTUAL_ENV dans le script
+                    import re
+                    updated_content = re.sub(
+                        r'VIRTUAL_ENV="[^"]*"',
+                        f'VIRTUAL_ENV="{env_path}"',
+                        content
+                    )
+                    activate_script.write_text(updated_content, encoding='utf-8')
+            
+        except Exception as e:
+            logger.warning(f"Impossible de corriger les chemins internes: {e}")
+    
+    def get_environment_statistics(self) -> Dict[str, Any]:
+        """
+        Récupère des statistiques globales sur tous les environnements.
+        
+        Returns:
+            Dict: Statistiques des environnements
+        """
+        stats = {
+            "generated_at": datetime.now().isoformat(),
+            "total_environments": 0,
+            "healthy_environments": 0,
+            "broken_environments": 0,
+            "total_size_bytes": 0,
+            "total_packages": 0,
+            "python_versions": {},
+            "most_used_packages": {},
+            "average_size_mb": 0,
+            "oldest_environment": None,
+            "newest_environment": None,
+            "temporary_environments": 0
+        }
+        
+        try:
+            environments_dir = self.get_default_venv_dir()
+            if not environments_dir.exists():
+                return stats
+            
+            env_sizes = []
+            env_dates = []
+            all_packages = []
+            
+            for env_dir in environments_dir.iterdir():
+                if not env_dir.is_dir():
+                    continue
+                
+                stats["total_environments"] += 1
+                
+                try:
+                    # Vérifier la santé
+                    health = self.check_environment_health(env_dir.name, env_dir)
+                    if health.exists and health.python_available and health.pip_available:
+                        stats["healthy_environments"] += 1
+                    else:
+                        stats["broken_environments"] += 1
+                    
+                    # Calculer la taille
+                    size_info = self.get_environment_size(env_dir)
+                    env_size = size_info["total"]
+                    stats["total_size_bytes"] += env_size
+                    env_sizes.append(env_size)
+                    
+                    # Obtenir les métadonnées
+                    metadata = self.get_environment_metadata(env_dir)
+                    
+                    # Vérifier si temporaire
+                    if metadata.get("temporary", False):
+                        stats["temporary_environments"] += 1
+                    
+                    # Date de création
+                    created_at = metadata.get("created_at")
+                    if created_at:
+                        try:
+                            env_date = datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                            env_dates.append({
+                                "name": env_dir.name,
+                                "date": env_date,
+                                "date_str": created_at
+                            })
+                        except Exception:
+                            pass
+                    
+                    # Version Python
+                    python_version = metadata.get("python_version", "unknown")
+                    if python_version in stats["python_versions"]:
+                        stats["python_versions"][python_version] += 1
+                    else:
+                        stats["python_versions"][python_version] = 1
+                    
+                    # Packages (si disponibles)
+                    if health.exists and health.pip_available:
+                        try:
+                            pip_exe = self.get_pip_executable(env_dir.name, env_dir)
+                            if pip_exe:
+                                result = subprocess.run([str(pip_exe), "list", "--format=json"], 
+                                                      capture_output=True, text=True, timeout=10)
+                                if result.returncode == 0:
+                                    packages = json.loads(result.stdout)
+                                    stats["total_packages"] += len(packages)
+                                    all_packages.extend([pkg["name"] for pkg in packages])
+                        except Exception:
+                            pass
+                    
+                except Exception as e:
+                    logger.warning(f"Erreur analyse environnement {env_dir.name}: {e}")
+                    continue
+            
+            # Calculer les moyennes
+            if env_sizes:
+                stats["average_size_mb"] = sum(env_sizes) / len(env_sizes) / (1024 * 1024)
+            
+            # Environnements les plus anciens/récents
+            if env_dates:
+                env_dates.sort(key=lambda x: x["date"])
+                stats["oldest_environment"] = {
+                    "name": env_dates[0]["name"],
+                    "created_at": env_dates[0]["date_str"]
+                }
+                stats["newest_environment"] = {
+                    "name": env_dates[-1]["name"],
+                    "created_at": env_dates[-1]["date_str"]
+                }
+            
+            # Packages les plus utilisés
+            if all_packages:
+                from collections import Counter
+                package_counts = Counter(all_packages)
+                stats["most_used_packages"] = dict(package_counts.most_common(10))
+            
+        except Exception as e:
+            logger.error(f"Erreur calcul statistiques: {e}")
+            stats["error"] = str(e)
+        
+        return stats
+    
+    def search_environments(self, query: str, search_in: List[str] = None) -> List[Dict[str, Any]]:
+        """
+        Recherche des environnements selon différents critères.
+        
+        Args:
+            query: Terme de recherche
+            search_in: Liste des champs à rechercher (name, description, packages, tags)
+            
+        Returns:
+            List: Environnements correspondants
+        """
+        if not search_in:
+            search_in = ["name", "description", "packages", "tags"]
+        
+        results = []
+        query_lower = query.lower()
+        
+        try:
+            environments_dir = self.get_default_venv_dir()
+            if not environments_dir.exists():
+                return results
+            
+            for env_dir in environments_dir.iterdir():
+                if not env_dir.is_dir():
+                    continue
+                
+                try:
+                    match_score = 0
+                    match_reasons = []
+                    
+                    # Recherche dans le nom
+                    if "name" in search_in and query_lower in env_dir.name.lower():
+                        match_score += 10
+                        match_reasons.append("nom")
+                    
+                    # Obtenir les métadonnées
+                    metadata = self.get_environment_metadata(env_dir)
+                    
+                    # Recherche dans la description
+                    if "description" in search_in:
+                        description = metadata.get("description", "").lower()
+                        if query_lower in description:
+                            match_score += 5
+                            match_reasons.append("description")
+                    
+                    # Recherche dans les tags
+                    if "tags" in search_in:
+                        tags = metadata.get("tags", [])
+                        for tag in tags:
+                            if query_lower in str(tag).lower():
+                                match_score += 3
+                                match_reasons.append("tags")
+                                break
+                    
+                    # Recherche dans les packages
+                    if "packages" in search_in:
+                        health = self.check_environment_health(env_dir.name, env_dir)
+                        if health.exists and health.pip_available:
+                            try:
+                                pip_exe = self.get_pip_executable(env_dir.name, env_dir)
+                                if pip_exe:
+                                    result = subprocess.run([str(pip_exe), "list", "--format=json"], 
+                                                          capture_output=True, text=True, timeout=5)
+                                    if result.returncode == 0:
+                                        packages = json.loads(result.stdout)
+                                        for pkg in packages:
+                                            if query_lower in pkg["name"].lower():
+                                                match_score += 2
+                                                match_reasons.append(f"package:{pkg['name']}")
+                                                break
+                            except Exception:
+                                pass
+                    
+                    # Ajouter aux résultats si correspondance
+                    if match_score > 0:
+                        results.append({
+                            "name": env_dir.name,
+                            "path": str(env_dir),
+                            "match_score": match_score,
+                            "match_reasons": match_reasons,
+                            "metadata": metadata,
+                            "health": self.check_environment_health(env_dir.name, env_dir).to_dict()
+                        })
+                    
+                except Exception as e:
+                    logger.warning(f"Erreur recherche environnement {env_dir.name}: {e}")
+                    continue
+            
+            # Trier par score de correspondance
+            results.sort(key=lambda x: x["match_score"], reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Erreur recherche environnements: {e}")
+        
+        return results
+    
+    def get_environment_dependencies(self, name: str, env_path: Path) -> Dict[str, Any]:
+        """
+        Analyse les dépendances d'un environnement.
+        
+        Args:
+            name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            
+        Returns:
+            Dict: Analyse des dépendances
+        """
+        analysis = {
+            "analyzed_at": datetime.now().isoformat(),
+            "environment": name,
+            "total_packages": 0,
+            "top_level_packages": [],
+            "dependency_tree": {},
+            "conflicts": [],
+            "outdated": [],
+            "security_issues": []
+        }
+        
+        try:
+            pip_exe = self.get_pip_executable(name, env_path)
+            if not pip_exe:
+                return analysis
+            
+            # Obtenir la liste des packages avec dépendances
+            result = subprocess.run([str(pip_exe), "show", "--verbose"], 
+                                  capture_output=True, text=True, timeout=30)
+            
+            if result.returncode == 0:
+                # Analyser la sortie pip show
+                current_package = None
+                packages_info = {}
+                
+                for line in result.stdout.split('\n'):
+                    line = line.strip()
+                    if line.startswith('Name:'):
+                        current_package = line.split(':', 1)[1].strip()
+                        packages_info[current_package] = {}
+                    elif current_package and line.startswith('Requires:'):
+                        requires = line.split(':', 1)[1].strip()
+                        if requires and requires != 'none':
+                            packages_info[current_package]['requires'] = [
+                                dep.strip() for dep in requires.split(',')
+                            ]
+                        else:
+                            packages_info[current_package]['requires'] = []
+                    elif current_package and line.startswith('Required-by:'):
+                        required_by = line.split(':', 1)[1].strip()
+                        if required_by and required_by != 'none':
+                            packages_info[current_package]['required_by'] = [
+                                dep.strip() for dep in required_by.split(',')
+                            ]
+                        else:
+                            packages_info[current_package]['required_by'] = []
+                
+                analysis["total_packages"] = len(packages_info)
+                analysis["dependency_tree"] = packages_info
+                
+                # Identifier les packages de niveau supérieur
+                for pkg_name, pkg_info in packages_info.items():
+                    if not pkg_info.get('required_by', []):
+                        analysis["top_level_packages"].append(pkg_name)
+            
+            # Vérifier les packages obsolètes
+            try:
+                result = subprocess.run([str(pip_exe), "list", "--outdated", "--format=json"], 
+                                      capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    outdated_packages = json.loads(result.stdout)
+                    analysis["outdated"] = outdated_packages
+            except Exception:
+                pass
+            
+        except Exception as e:
+            logger.error(f"Erreur analyse dépendances {name}: {e}")
+            analysis["error"] = str(e)
+        
+        return analysis
