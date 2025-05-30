@@ -121,7 +121,7 @@ class DiagnosticService:
             # Générer des recommandations
             self._generate_recommendations(report)
             
-            self._log_diagnostic_end(env_name, report["status"])
+            self._log_diagnostic_end(env_name, str(report["status"]))
             return report
             
         except Exception as e:
