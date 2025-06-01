@@ -441,20 +441,20 @@ class SystemService:
     
     def check_python_version(self, python_cmd: str) -> Optional[str]:
         try:
-            # Utiliser directement subprocess si dans un test
-            if hasattr(self, '_test_mode') and self._test_mode:
-                import subprocess
-                result = subprocess.run([python_cmd, "--version"], 
-                                      capture_output=True, text=True, timeout=10)
-                # Traiter le résultat directement
-                version_output = result.stdout.strip() or result.stderr.strip()
-            else:
-                # Comportement normal
-                result: CommandResult = self.run_command([python_cmd, "--version"], timeout=10)
-                version_output = result.stdout.strip()
-                if not version_output and result.stderr:
-                    version_output = result.stderr.strip()
-
+            import subprocess
+            result = subprocess.run(
+                [python_cmd, "--version"], 
+                capture_output=True, 
+                text=True, 
+                timeout=10,
+                shell=False,
+                check=False
+            )
+            
+            version_output = result.stdout.strip()
+            if not version_output and result.stderr:
+                version_output = result.stderr.strip()
+    
             # Extraire la version
             import re
             match = re.search(r'Python (\d+\.\d+\.\d+)', version_output)
@@ -462,9 +462,9 @@ class SystemService:
                 version = match.group(1)
                 logger.debug(f"Version de Python pour '{python_cmd}': {version}")
                 return version
-
+    
             return None
-
+    
         except Exception as e:
             logger.error(f"Erreur lors de la vérification de la version Python: {str(e)}")
             return None

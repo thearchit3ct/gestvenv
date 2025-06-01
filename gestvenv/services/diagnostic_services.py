@@ -313,7 +313,7 @@ class DiagnosticService:
                 "message": f"Impossible de vérifier les permissions: {str(e)}"
             })
     
-    def _check_packages_integrity(self, env_name: str, env_info: Any, report: Dict[str, Any]) -> None:
+    def _check_packages_integrity(self, env_name: str, env_info: Any, env_path: Path, report: Dict[str, Any]) -> None:
         """Vérifie l'intégrité des packages installés."""
         try:
             # Obtenir la liste des packages installés
@@ -397,7 +397,7 @@ class DiagnosticService:
         }
         return package_name.lower() not in non_importable
     
-    def _check_package_updates(self, env_name: str, report: Dict[str, Any]) -> None:
+    def _check_package_updates(self, env_name: str, env_path: Path, report: Dict[str, Any]) -> None:
         """Vérifie les mises à jour disponibles."""
         try:
             updates = self.pkg_service.check_for_updates(env_name)
@@ -527,7 +527,7 @@ class DiagnosticService:
                 "message": f"Test des variables d'environnement échoué: {str(e)}"
             })
     
-    def _check_configuration_consistency(self, env_name: str, env_info: Any, report: Dict[str, Any]) -> None:
+    def _check_configuration_consistency(self, env_name: str, env_info: Any, env_path: Path, report: Dict[str, Any]) -> None:
         """Vérifie la cohérence de la configuration."""
         try:
             # Vérifier que le chemin dans la config correspond au chemin réel
@@ -576,7 +576,7 @@ class DiagnosticService:
                 "message": f"Impossible de vérifier la cohérence de la configuration: {str(e)}"
             })
     
-    def _check_cache_coherence(self, env_name: str, report: Dict[str, Any]) -> None:
+    def _check_cache_coherence(self, env_name: str, env_path: Path, report: Dict[str, Any]) -> None:
         """Vérifie la cohérence avec le cache."""
         try:
             # Vérifier si les packages de l'environnement sont disponibles dans le cache

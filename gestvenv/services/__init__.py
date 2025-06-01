@@ -98,8 +98,18 @@ class ServiceContainer:
     
     def __post_init__(self) -> None:
         """Initialise les services avec gestion des dépendances."""
-        # Créer les instances des services si les classes sont disponibles
-        pass
+        # Si les services ne sont pas fournis, essayer de les créer
+        if self.environment is None and _ENVIRONMENT_SERVICE_AVAILABLE:
+            try:
+                self.environment = EnvironmentService()
+            except Exception:
+                pass
+            
+        if self.package is None and _PACKAGE_SERVICE_AVAILABLE:
+            try:
+                self.package = PackageService()
+            except Exception:
+                pass
     
     def get_available_services(self) -> Dict[str, bool]:
         """
@@ -119,7 +129,7 @@ class ServiceContainer:
     def check_service_health(self) -> Dict[str, Any]:
         """
         Vérifie l'état de santé de tous les services disponibles.
-        
+
         Returns:
             Dict: Rapport de santé de chaque service
         """
@@ -129,13 +139,13 @@ class ServiceContainer:
             'missing_services': [],
             'service_errors': []
         }
-        
+
         # Vérifier chaque service
         service_names = ['environment', 'package', 'system', 'cache', 'diagnostic']
-        
+
         for service_name in service_names:
             service = getattr(self, service_name)
-            
+
             if service is None:
                 health_report['missing_services'].append(service_name)
                 health_report['overall_status'] = 'degraded'
@@ -153,7 +163,11 @@ class ServiceContainer:
                         'error': str(e)
                     })
                     health_report['overall_status'] = 'unhealthy'
-        
+
+            if health_report["service_errors"]:
+                health_report["overall_status"] = "unhealthy"
+            elif health_report["missing_services"]:
+                health_report["overall_status"] = "degraded"
         return health_report
 
 

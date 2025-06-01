@@ -370,13 +370,7 @@ class CacheService:
             package_dir.mkdir(exist_ok=True)
             
             # Destination dans le cache - conserver l'extension originale complète
-            if package_path.suffix == '.gz' and package_path.stem.endswith('.tar'):
-                # Cas spécial pour .tar.gz
-                original_ext = '.tar.gz'
-            else:
-                # Pour les autres cas (.whl, .zip)
-                original_ext = ''.join(package_path.suffixes)
-            dest_path = package_dir / f"{package_name}-{version}{original_ext}"
+            dest_path = package_dir / package_path.name
             
             # Copier le fichier dans le cache
             shutil.copy2(package_path, dest_path)
@@ -426,12 +420,11 @@ class CacheService:
             return None
 
         if version is None:
-            # Trouver la dernière version avec tri sémantique sécurisé
+            # Trier les versions correctement
             try:
-                # Trier les versions correctement
                 sorted_versions = sorted(
                     versions.keys(), 
-                    key=lambda v: tuple(int(x) if x.isdigit() else 0 for x in v.split('.')),
+                    key=lambda v: tuple(int(x) if x.isdigit() else 0 for x in re.split(r'[.-]', v)),
                     reverse=True
                 )
                 version = sorted_versions[0]

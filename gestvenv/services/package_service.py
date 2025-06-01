@@ -364,7 +364,10 @@ class PackageService:
             
         except Exception as e:
             logger.warning(f"Erreur lors de l'extraction des informations du package {filename}: {e}")
-            return None
+            return {
+                'name': filename.split('.')[0],
+                'version': 'unknown'
+            }
     
     def _get_package_dependencies(self, package_name: str) -> List[str]:
         """Récupère les dépendances d'un package."""
@@ -649,10 +652,13 @@ class PackageService:
             # Convertir les listes
             for key in ['requires', 'required_by']:
                 if key in package_info:
-                    if package_info[key]:
+                    if package_info[key] and package_info[key].lower() != 'none':
                         package_info[key] = [item.strip() for item in package_info[key].split(',')]
                     else:
                         package_info[key] = []
+                else:
+                    # Ajouter la clé si elle n'existe pas
+                    package_info[key] = []
             
             return package_info
             
@@ -916,17 +922,20 @@ class PackageService:
         Returns:
             Path ou None si introuvable.
         """
-        from ..core.config_manager import ConfigManager
-        
-        # Obtenir le chemin depuis la configuration
-        config_manager = ConfigManager()
-        env_info = config_manager.get_environment(env_name)
-        
-        if env_info:
-            return Path(env_info.path)
+        try:
+            from ..core.config_manager import ConfigManager
+            
+            # Obtenir le chemin depuis la configuration
+            config_manager = ConfigManager()
+            env_info = config_manager.get_environment(env_name)
+            
+            if env_info and hasattr(env_info, 'path'):
+                return Path(env_info.path)
+        except Exception:
+            pass
         
         # Essayer avec le chemin par défaut
-        default_path: Path = self.env_service.get_default_venv_dir() / env_name
+        default_path = self.env_service.get_default_venv_dir() / env_name
         if default_path.exists():
             return default_path
         
