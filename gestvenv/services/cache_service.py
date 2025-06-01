@@ -222,61 +222,69 @@ class CacheService:
     def _extract_package_info_safe(self, filename: str) -> Optional[Dict[str, str]]:
         """
         Extraction sécurisée des informations de package.
-        
-        Args:
-            filename: Nom du fichier package
-            
-        Returns:
-            Dict avec name, version, filename ou None si échec
         """
         try:
-            # Supprimer l'extension
+            # Supprimer TOUTES les extensions possibles
             name_without_ext = filename
-            for ext in ['.whl', '.tar.gz', '.zip']:
-                if filename.endswith(ext):
-                    name_without_ext = filename[:-len(ext)]
-                    break
-            
-            # Cas spécial pour .tar.gz
+
+            # Gérer .tar.gz en premier
             if filename.endswith('.tar.gz'):
                 name_without_ext = filename[:-7]
-            
+            else:
+                # Supprimer les autres extensions
+                for ext in ['.whl', '.zip', '.gz', '.tar', '.txt']:
+                    if filename.endswith(ext):
+                        name_without_ext = filename[:-len(ext)]
+                        break
+                    
+            # Si aucune extension connue, prendre jusqu'au premier point
+            if name_without_ext == filename and '.' in filename:
+                name_without_ext = filename.split('.')[0]
+
             # Parser le nom avec méthode robuste
             parts = name_without_ext.split('-')
-            
+
             if len(parts) >= 2:
                 package_name = parts[0]
                 version = "unknown"
-                
+
                 # Chercher le premier élément qui ressemble à une version
                 for i, part in enumerate(parts[1:], 1):
                     if self._looks_like_version(part):
                         package_name = '-'.join(parts[:i])
                         version = part
                         break
-                
+                    
                 # Si pas de version trouvée, prendre le deuxième élément
                 if version == "unknown" and len(parts) >= 2:
                     package_name = parts[0]
                     version = parts[1]
-                
+
                 return {
                     'name': package_name,
                     'version': version,
                     'filename': filename
                 }
-            
+
             # Fallback si moins de 2 parties
-            base_name = parts[0] if parts else filename.split('.')[0]
+            base_name = name_without_ext
             return {
                 'name': base_name,
                 'version': 'unknown',
                 'filename': filename
             }
-            
+
         except Exception as e:
             logger.warning(f"Erreur extraction info {filename}: {e}")
-            base_name = filename.split('.')[0] if '.' in filename else filename
+            # Extraire le nom de base plus intelligemment
+            base_name = filename
+            for ext in ['.tar.gz', '.whl', '.zip', '.gz', '.tar', '.txt']:
+                if filename.endswith(ext):
+                    base_name = filename[:-len(ext)]
+                    break
+            if base_name == filename and '.' in filename:
+                base_name = filename.split('.')[0]
+
             return {
                 'name': base_name,
                 'version': 'unknown',
@@ -361,8 +369,13 @@ class CacheService:
             package_dir = self.packages_dir / package_name
             package_dir.mkdir(exist_ok=True)
             
-            # Destination dans le cache - conserver l'extension originale
-            original_ext = ''.join(package_path.suffixes)
+            # Destination dans le cache - conserver l'extension originale complète
+            if package_path.suffix == '.gz' and package_path.stem.endswith('.tar'):
+                # Cas spécial pour .tar.gz
+                original_ext = '.tar.gz'
+            else:
+                # Pour les autres cas (.whl, .zip)
+                original_ext = ''.join(package_path.suffixes)
             dest_path = package_dir / f"{package_name}-{version}{original_ext}"
             
             # Copier le fichier dans le cache
@@ -408,23 +421,26 @@ class CacheService:
         if package_name not in self.index:
             return None
         
+        versions = self.index[package_name].get("versions", {})
+        if not versions:
+            return None
+
         if version is None:
-            versions = self.index[package_name]["versions"]
-            if not versions:
-                return None
-            
             # Trouver la dernière version avec tri sémantique sécurisé
             try:
-                version = sorted(
+                # Trier les versions correctement
+                sorted_versions = sorted(
                     versions.keys(), 
-                    key=lambda v: [int(x) for x in v.split('.') if x.isdigit()],
+                    key=lambda v: tuple(int(x) if x.isdigit() else 0 for x in v.split('.')),
                     reverse=True
-                )[0]
+                )
+                version = sorted_versions[0]
             except (ValueError, IndexError):
+                # Fallback : prendre la première version disponible
                 version = list(versions.keys())[0]
-        
-        if version not in self.index[package_name]["versions"]:
-            return None
+
+            if version not in self.index[package_name]["versions"]:
+                return None
         
         package_info = self.index[package_name]["versions"][version]
         package_path = self.cache_dir / package_info["path"]
@@ -436,7 +452,7 @@ class CacheService:
         # Vérifier l'intégrité du fichier
         try:
             file_hash = self._calculate_file_hash(package_path)
-            if file_hash != package_info["hash"]:
+            if file_hash != package_info.get("hash", file_hash):  # Si pas de hash stocké, accepter
                 logger.warning(f"Intégrité du package compromise: {package_name}-{version}")
                 return None
         except Exception as e:
@@ -474,14 +490,16 @@ class CacheService:
     def get_available_packages(self) -> Dict[str, List[str]]:
         """
         Retourne la liste des packages disponibles dans le cache.
-        
+
         Returns:
             Dict: Dictionnaire des packages avec leurs versions disponibles
         """
         available = {}
         for package_name, package_data in self.index.items():
+            # Ignorer les métadonnées et autres clés spéciales
+            if package_name.startswith('_'):
+                continue
             available[package_name] = list(package_data["versions"].keys())
-        
         return available
     
     def clean_cache(self, max_age_days: int = 90, 
@@ -732,9 +750,9 @@ class CacheService:
             if self._save_index():
                 freed_mb = freed_space / (1024 * 1024)
                 if version:
-                    return True, f"Version {version} du package {package_name} supprimée ({freed_mb:.1f} MB libérés)"
+                    return True, f"Version {version} du package {package_name} supprimée avec succès ({freed_mb:.1f} MB libérés)"
                 else:
-                    return True, f"Package {package_name} supprimé ({removed_count} version(s), {freed_mb:.1f} MB libérés)"
+                    return True, f"Package {package_name} supprimé avec succès ({removed_count} version(s), {freed_mb:.1f} MB libérés)"
             else:
                 return False, "Erreur lors de la sauvegarde de l'index"
                 

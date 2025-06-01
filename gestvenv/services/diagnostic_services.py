@@ -16,6 +16,11 @@ import shutil
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Set
+from gestvenv.services.environment_service import EnvironmentService
+from gestvenv.services.package_service import PackageService
+from gestvenv.services.system_service import SystemService
+from gestvenv.services.cache_service import CacheService
+from gestvenv.core.config_manager import ConfigManager
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -25,11 +30,6 @@ class DiagnosticService:
     
     def __init__(self) -> None:
         """Initialise le service de diagnostic."""
-        from .environment_service import EnvironmentService
-        from .package_service import PackageService
-        from .system_service import SystemService
-        from .cache_service import CacheService
-        from ..core.config_manager import ConfigManager
         
         self.env_service = EnvironmentService()
         self.pkg_service = PackageService()
@@ -1040,6 +1040,7 @@ class DiagnosticService:
                     try:
                         # Vérifier si le package existe dans l'index
                         if (package_name in self.cache_service.index and 
+                            "versions" in self.cache_service.index[package_name] and
                             version in self.cache_service.index[package_name]["versions"]):
                             
                             package_info = self.cache_service.index[package_name]["versions"][version]

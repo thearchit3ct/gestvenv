@@ -96,23 +96,10 @@ class ServiceContainer:
     cache: Optional[CacheService] = None
     diagnostic: Optional[DiagnosticService] = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         """Initialise les services avec gestion des dépendances."""
         # Créer les instances des services si les classes sont disponibles
-        if self.system is None and _SYSTEM_SERVICE_AVAILABLE:
-            self.system = SystemService()
-        
-        if self.environment is None and _ENVIRONMENT_SERVICE_AVAILABLE:
-            self.environment = EnvironmentService()
-        
-        if self.cache is None and _CACHE_SERVICE_AVAILABLE:
-            self.cache = CacheService()
-        
-        if self.package is None and _PACKAGE_SERVICE_AVAILABLE:
-            self.package = PackageService()
-        
-        if self.diagnostic is None and _DIAGNOSTIC_SERVICE_AVAILABLE:
-            self.diagnostic = DiagnosticService()
+        pass
     
     def get_available_services(self) -> Dict[str, bool]:
         """
@@ -144,13 +131,16 @@ class ServiceContainer:
         }
         
         # Vérifier chaque service
-        for service_name, is_available in self.get_available_services().items():
-            if not is_available:
+        service_names = ['environment', 'package', 'system', 'cache', 'diagnostic']
+        
+        for service_name in service_names:
+            service = getattr(self, service_name)
+            
+            if service is None:
                 health_report['missing_services'].append(service_name)
                 health_report['overall_status'] = 'degraded'
             else:
                 try:
-                    service = getattr(self, service_name)
                     # Test basique de fonctionnement du service
                     if hasattr(service, 'health_check'):
                         service_health = service.health_check()

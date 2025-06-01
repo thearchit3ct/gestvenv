@@ -2065,22 +2065,60 @@ class CLI:
         try:
             self.print_header("Informations système")
             
-            # Récupérer les informations système
-            sys_info = self.env_manager.get_system_info()
+            # Get system info from SystemService directly
+            from gestvenv.services.system_service import SystemService
+            system_service = SystemService()
+            sys_info = system_service.get_system_info()
             
             if args.json:
-                # Afficher au format JSON
                 import json
-                print(json.dumps(sys_info, indent=2))
+                # Convert SystemInfo dataclass to dict for JSON serialization
+                sys_info_dict = {
+                    "system": {
+                        "system": sys_info.os_name,
+                        "release": sys_info.os_release, 
+                        "version": sys_info.os_version,
+                        "machine": sys_info.architecture,
+                        "processor": sys_info.processor
+                    },
+                    "python_versions": system_service.get_available_python_versions(),
+                    "gestvenv_config": {
+                        "default_python": self.config_manager.get_default_python(),
+                        "total_environments": len(self.config_manager.get_all_environments()),
+                        "active_environment": self.config_manager.get_active_environment(),
+                        "offline_mode": self.config_manager.get_setting("offline_mode", False),
+                        "cache_enabled": self.config_manager.get_setting("use_package_cache", True)
+                    }
+                }
+                print(json.dumps(sys_info_dict, indent=2))
                 return 0
             
             # Afficher les informations système
-            system = sys_info.get("system", {})
             print(f"\n{COLORS['bold']}Système d'exploitation{COLORS['reset']}")
-            print(f"  OS: {system.get('system', 'Unknown')} {system.get('release', '')}")
-            print(f"  Version: {system.get('version', 'Unknown')}")
-            print(f"  Architecture: {system.get('machine', 'Unknown')}")
-            print(f"  Processeur: {system.get('processor', 'Unknown')}")
+            print(f"  OS: {sys_info.os_name} {sys_info.os_release}")
+            print(f"  Version: {sys_info.os_version}")
+            print(f"  Architecture: {sys_info.architecture}")
+            print(f"  Processeur: {sys_info.processor}")
+        ####
+        # try:
+        #     self.print_header("Informations système")
+            
+        #     # Récupérer les informations système
+        #     sys_info = self.env_manager.get_system_info()
+            
+        #     if args.json:
+        #         # Afficher au format JSON
+        #         import json
+        #         print(json.dumps(sys_info, indent=2))
+        #         return 0
+            
+        #     # Afficher les informations système
+        #     system = sys_info.get("system", {})
+        #     print(f"\n{COLORS['bold']}Système d'exploitation{COLORS['reset']}")
+        #     print(f"  OS: {system.get('system', 'Unknown')} {system.get('release', '')}")
+        #     print(f"  Version: {system.get('version', 'Unknown')}")
+        #     print(f"  Architecture: {system.get('machine', 'Unknown')}")
+        #     print(f"  Processeur: {system.get('processor', 'Unknown')}")
             
             # Afficher les informations Python
             python_info = sys_info.get("python_versions", [])

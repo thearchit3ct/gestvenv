@@ -14,6 +14,8 @@ import subprocess
 import logging
 from datetime import datetime
 from pathlib import Path
+import tempfile
+import time
 from typing import Dict, List, Optional, Tuple, Any, Union, Set
 
 from ..core.models import EnvironmentHealth
@@ -47,7 +49,7 @@ class EnvironmentService:
         # Vérifier que le nom contient uniquement des caractères alphanumériques, tirets et soulignés
         pattern = re.compile(r'^[a-zA-Z0-9_-]+$')
         if not pattern.match(name):
-            return False, "Le nom d'environnement ne peut contenir que des lettres, chiffres, tirets et soulignés"
+            return False, "Le nom d'environnement ne peut contenir que des caractères alphanumériques, tirets et underscores"
         
         # Noms réservés à éviter
         reserved_names = ["system", "admin", "config", "test", "venv", "env", "environment"]
@@ -401,7 +403,7 @@ class EnvironmentService:
                     
                     if install_result.returncode != 0:
                         logger.error("Impossible d'installer virtualenv")
-                        return False, "Impossible de créer l'environnement virtuel ou d'installer virtualenv"
+                        return False, "Échec: Impossible de créer l'environnement virtuel ou d'installer virtualenv"
                 
                 # Créer l'environnement avec virtualenv
                 venv_cmd = [python_cmd, "-m", "virtualenv", str(env_path)]
@@ -546,30 +548,175 @@ class EnvironmentService:
                 abs_env_path = env_path.resolve()
                 
                 # Vérifier si le chemin est identique ou est un sous-répertoire
-                if abs_env_path == abs_sys_dir or str(abs_env_path).startswith(str(abs_sys_dir) + os.sep):
-                    # Vérifier si c'est bien un sous-répertoire spécifique à GestVenv
-                    if "gestvenv" in str(abs_env_path).lower() or "venv" in str(abs_env_path).lower():
+                if abs_env_path == abs_sys_dir:
+                    # Vérifier si c'est un sous-répertoire GestVenv
+                    if "gestvenv" in str(abs_env_path).lower() or "environments" in str(abs_env_path).lower():
                         continue  # C'est probablement sécuritaire
-                    
-                    return False, f"Suppression refusée: '{env_path}' semble être un dossier système ou contenu dans un dossier système"
+                    return False, f"Suppression refusée: '{env_path}' est un dossier système"
+
+                # Pour les sous-répertoires
+                if str(abs_env_path).startswith(str(abs_sys_dir) + os.sep):
+                    # Vérifier le chemin relatif depuis le répertoire système
+                    relative_path = abs_env_path.relative_to(abs_sys_dir)
+                    # Si c'est dans un sous-dossier gestvenv/environments, c'est OK
+                    path_parts = relative_path.parts
+                    if any("gestvenv" in part.lower() or "environments" in part.lower() for part in path_parts):
+                        continue
+                    return False, f"Suppression refusée: '{env_path}' est dans un dossier système"
             except Exception:
                 # En cas d'erreur dans la résolution des chemins, continuer
                 continue
         
         # Vérifier si le chemin ressemble à un environnement virtuel
-        venv_indicators = ["bin/python", "bin/activate", "Scripts/python.exe", "Scripts/activate.bat", "pyvenv.cfg"]
-        
+        venv_indicators: List[str] = ["bin/python", "bin/activate", "Scripts/python.exe", "Scripts/activate.bat", "pyvenv.cfg"]
+
         any_indicator_found = False
         for indicator in venv_indicators:
             indicator_path = env_path / indicator.replace("/", os.sep)
             if indicator_path.exists():
                 any_indicator_found = True
                 break
-        
+            
         if not any_indicator_found:
             return False, f"Suppression refusée: '{env_path}' ne semble pas être un environnement virtuel"
-        
+
         return True, ""
+    
+    def get_environment_metadata(self, env_path: Path) -> Dict[str, Any]:
+        """
+        Récupère les métadonnées d'un environnement.
+        
+        Args:
+            env_path: Chemin de l'environnement
+            
+        Returns:
+            Dict: Métadonnées de l'environnement
+        """
+        metadata_file = env_path / ".gestvenv_metadata.json"
+        
+        if metadata_file.exists():
+            try:
+                with open(metadata_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            except Exception as e:
+                logger.warning(f"Erreur lecture métadonnées {env_path}: {e}")
+        
+        # Métadonnées par défaut
+        return {
+            "created_at": datetime.now().isoformat(),
+            "python_version": "unknown",
+            "temporary": False
+        }
+    
+    def update_environment_metadata(self, env_path: Path, metadata: Dict[str, Any]) -> None:
+        """
+        Met à jour les métadonnées d'un environnement.
+        
+        Args:
+            env_path: Chemin de l'environnement
+            metadata: Métadonnées à ajouter/mettre à jour
+        """
+        metadata_file = env_path / ".gestvenv_metadata.json"
+        
+        # Charger les métadonnées existantes
+        existing_metadata = self.get_environment_metadata(env_path)
+        
+        # Fusionner avec les nouvelles
+        existing_metadata.update(metadata)
+        existing_metadata["updated_at"] = datetime.now().isoformat()
+        
+        # Sauvegarder
+        try:
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(existing_metadata, f, indent=2, ensure_ascii=False)
+        except Exception as e:
+            logger.error(f"Erreur sauvegarde métadonnées {env_path}: {e}")
+    
+    def get_environment_size(self, env_path: Path) -> Dict[str, int]:
+        """
+        Calcule la taille d'un environnement.
+        
+        Args:
+            env_path: Chemin de l'environnement
+            
+        Returns:
+            Dict: Taille en octets (total, lib, bin, etc.)
+        """
+        size_info = {"total": 0, "lib": 0, "bin": 0, "include": 0, "other": 0}
+        
+        try:
+            for root, dirs, files in os.walk(env_path):
+                for file in files:
+                    file_path = Path(root) / file
+                    try:
+                        file_size = file_path.stat().st_size
+                        size_info["total"] += file_size
+                        
+                        # Catégoriser par dossier
+                        rel_path = file_path.relative_to(env_path)
+                        if rel_path.parts[0] in ["lib", "Lib"]:
+                            size_info["lib"] += file_size
+                        elif rel_path.parts[0] in ["bin", "Scripts"]:
+                            size_info["bin"] += file_size
+                        elif rel_path.parts[0] in ["include", "Include"]:
+                            size_info["include"] += file_size
+                        else:
+                            size_info["other"] += file_size
+                    except Exception:
+                        pass
+        except Exception as e:
+            logger.error(f"Erreur calcul taille {env_path}: {e}")
+        
+        return size_info
+    
+    def export_environment_info(self, name: str, env_path: Path, 
+                               include_packages: bool = True) -> Dict[str, Any]:
+        """
+        Exporte les informations complètes d'un environnement.
+        
+        Args:
+            name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            include_packages: Si True, inclut la liste des packages
+            
+        Returns:
+            Dict: Informations complètes de l'environnement
+        """
+        info = {
+            "name": name,
+            "path": str(env_path),
+            "exported_at": datetime.now().isoformat(),
+            "exists": env_path.exists(),
+            "metadata": self.get_environment_metadata(env_path),
+            "health": self.check_environment_health(name, env_path).to_dict(),
+            "size": self.get_environment_size(env_path),
+            "performance": {"python_version": "unknown"}
+        }
+        
+        # Ajouter la version Python si possible
+        python_exe = self.get_python_executable(name, env_path)
+        if python_exe and python_exe.exists():
+            try:
+                result = subprocess.run([str(python_exe), "--version"], 
+                                      capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    info["performance"]["python_version"] = result.stdout.strip()
+            except Exception:
+                pass
+            
+        # Ajouter les packages si demandé
+        if include_packages and info["health"]["pip_available"]:
+            try:
+                pip_exe = self.get_pip_executable(name, env_path)
+                if pip_exe:
+                    result = subprocess.run([str(pip_exe), "list", "--format=json"], 
+                                          capture_output=True, text=True, timeout=30)
+                    if result.returncode == 0:
+                        info["packages"] = json.loads(result.stdout)
+            except Exception:
+                info["packages"] = []
+        
+        return info
     
     def get_export_directory(self) -> Path:
         """
@@ -674,7 +821,7 @@ class EnvironmentService:
         try:
             import threading
             
-            def cleanup_after_delay():
+            def cleanup_after_delay() -> None:
                 time.sleep(lifetime_minutes * 60)
                 try:
                     if env_path.exists():
@@ -696,6 +843,9 @@ class EnvironmentService:
         Returns:
             Tuple: (nombre d'environnements nettoyés, liste des messages)
         """
+        import time
+        import tempfile
+        from datetime import datetime, timedelta
         cleaned_count = 0
         messages = []
         
@@ -1356,7 +1506,7 @@ class EnvironmentService:
         if not search_in:
             search_in = ["name", "description", "packages", "tags"]
         
-        results = []
+        results: list[Any] = []
         query_lower = query.lower()
         
         try:
@@ -1472,7 +1622,7 @@ class EnvironmentService:
             if result.returncode == 0:
                 # Analyser la sortie pip show
                 current_package = None
-                packages_info = {}
+                packages_info: dict[Any, Any] = {}
                 
                 for line in result.stdout.split('\n'):
                     line = line.strip()

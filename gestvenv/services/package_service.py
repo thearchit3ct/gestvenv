@@ -16,7 +16,10 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Set
 
 from ..core.models import PackageInfo
-from .cache_service import CacheService
+from gestvenv.services.environment_service import EnvironmentService
+from gestvenv.services.system_service import SystemService
+from gestvenv.services.cache_service import CacheService
+from gestvenv.core.config_manager import ConfigManager
 
 # Configuration du logger
 logger = logging.getLogger(__name__)
@@ -26,16 +29,11 @@ class PackageService:
     
     def __init__(self) -> None:
         """Initialise le service de gestion des packages."""
-        from .environment_service import EnvironmentService
-        from .system_service import SystemService
-        from .cache_service import CacheService
-        
         self.env_service = EnvironmentService()
         self.sys_service = SystemService()
         self.cache_service = CacheService()
-        
+
         # Récupérer le mode hors ligne des paramètres
-        from ..core.config_manager import ConfigManager
         config = ConfigManager()
         self.offline_mode = config.get_setting("offline_mode", False)
         self.use_cache = config.get_setting("use_package_cache", True)

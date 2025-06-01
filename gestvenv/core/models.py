@@ -46,14 +46,14 @@ class PackageInfo:
 
 @dataclass
 class EnvironmentHealth:
-    """Classe représentant l'état de santé d'un environnement virtuel."""
+    """État de santé d'un environnement virtuel."""
     exists: bool = False
     python_available: bool = False
     pip_available: bool = False
     activation_script_exists: bool = False
     
     def to_dict(self) -> Dict[str, bool]:
-        """Convertit l'objet en dictionnaire pour la sérialisation."""
+        """Convertit l'objet en dictionnaire."""
         return {
             "exists": self.exists,
             "python_available": self.python_available,
