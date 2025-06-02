@@ -28,7 +28,8 @@ classifiers = [
 ]
 keywords = ["virtual environment", "python", "venv", "environment manager"]
 dependencies = [
-    "pathlib",
+    "pathlib",,
+    "psutil>=5.9.0",
 ]
 
 [project.urls]
