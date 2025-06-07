@@ -25,6 +25,39 @@ def temp_dir():
     shutil.rmtree(tmp_dir, ignore_errors=True)
 
 @pytest.fixture
+def temp_config_file(tmp_path):
+    """Crée un fichier de configuration temporaire pour les tests."""
+    config_file = tmp_path / "test_config.json"
+    config_data = {
+        "environments": {
+            "test_env": {
+                "name": "test_env",
+                "path": str(tmp_path / "environments" / "test_env"),
+                "python_version": "3.9.0",
+                "created_at": datetime.now().isoformat(),
+                "packages": []
+            }
+        },
+        "active_env": None,
+        "default_python": "python3",
+        "settings": {
+            "auto_activate": True,
+            "package_cache_enabled": True,
+            "check_updates_on_activate": True,
+            "default_export_format": "json",
+            "show_virtual_env_in_prompt": True,
+            "version": "1.2.0",
+            "created_at": datetime.now().isoformat(),
+            "last_modified": datetime.now().isoformat()
+        }
+    }
+    
+    with open(config_file, 'w') as f:
+        json.dump(config_data, f)
+    
+    return config_file
+
+@pytest.fixture
 def mock_subprocess():
     """Simule les appels subprocess pour les tests."""
     with patch('subprocess.run') as mock_run:

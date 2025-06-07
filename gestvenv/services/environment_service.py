@@ -795,8 +795,8 @@ class EnvironmentService:
         """
         try:
             # Créer un nom unique pour l'environnement temporaire
-            temp_name = f"temp_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-            temp_dir = Path(tempfile.gettempdir()) / "gestvenv_temp" / temp_name
+            temp_name: str = f"temp_{name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            temp_dir: Path = Path(tempfile.gettempdir()) / "gestvenv_temp" / temp_name
             
             # Créer l'environnement
             success, message = self.create_environment(temp_name, python_cmd, temp_dir)

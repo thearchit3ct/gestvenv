@@ -71,8 +71,16 @@ class TestConfigManager:
                 }
             },
             "active_env": "test_env",
-            "default_python": "python3"
+            "default_python": "python3",
+        "settings": {
+            "auto_activate": True,
+            "package_cache_enabled": True,
+            "check_updates_on_activate": True,
+            "default_export_format": "json",
+            "show_virtual_env_in_prompt": True,
+            "version": "1.2.0"
         }
+    }
         
         with open(config_file, 'w') as f:
             json.dump(config_data, f)
@@ -94,8 +102,16 @@ class TestConfigManager:
             mock_create.return_value = {
                 "environments": {},
                 "active_env": None,
-                "default_python": "python3"
-            }
+                "default_python": "python3",
+        "settings": {
+            "auto_activate": True,
+            "package_cache_enabled": True,
+            "check_updates_on_activate": True,
+            "default_export_format": "json",
+            "show_virtual_env_in_prompt": True,
+            "version": "1.2.0"
+        }
+    }
             
             manager = ConfigManager(config_path=invalid_file)
             
@@ -109,8 +125,16 @@ class TestConfigManager:
             mock_create.return_value = {
                 "environments": {},
                 "active_env": None,
-                "default_python": "python3"
-            }
+                "default_python": "python3",
+        "settings": {
+            "auto_activate": True,
+            "package_cache_enabled": True,
+            "check_updates_on_activate": True,
+            "default_export_format": "json",
+            "show_virtual_env_in_prompt": True,
+            "version": "1.2.0"
+        }
+    }
             
             manager = ConfigManager(config_path=nonexistent_file)
             
