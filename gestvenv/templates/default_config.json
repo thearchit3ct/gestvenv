@@ -1,55 +1,346 @@
 {
   "_metadata": {
-    "version": "1.0",
-    "description": "Fichier de configuration pour GestVenv",
-    "created_at": "2025-05-18T10:00:00",
-    "notes": "Ce fichier est généré automatiquement par GestVenv. Vous pouvez le modifier manuellement, mais il est recommandé d'utiliser les commandes GestVenv pour éviter des erreurs."
+    "version": "1.1.1",
+    "config_version": "1.2.0",
+    "description": "Configuration par défaut pour GestVenv - Gestionnaire d'Environnements Virtuels Python",
+    "created_at": "2025-01-01T00:00:00Z",
+    "last_updated": "2025-01-01T00:00:00Z",
+    "schema_url": "https://github.com/thearchit3ct/gestvenv/schema/config.json",
+    "notes": [
+      "Ce fichier définit la configuration par défaut de GestVenv",
+      "Les chemins avec PLACEHOLDER_PATH seront remplacés automatiquement",
+      "Modifiez ce fichier avec précaution ou utilisez les commandes GestVenv"
+    ]
   },
+  
   "environments": {
-    "web_dev": {
-      "path": "PLACEHOLDER_PATH/web_dev",
+    "example_web": {
+      "name": "example_web",
+      "path": "PLACEHOLDER_PATH/example_web",
       "python_version": "3.9.0",
-      "created_at": "2025-05-18T10:00:00",
+      "created_at": "2025-01-01T10:00:00Z",
+      "active": false,
       "packages": [
-        "flask==2.0.1",
-        "pytest==6.2.5",
-        "gunicorn==20.1.0",
-        "python-dotenv==0.19.0"
-      ]
+        "flask>=2.3.0",
+        "requests>=2.31.0",
+        "gunicorn>=21.2.0",
+        "python-dotenv>=1.0.0",
+        "pytest>=7.4.0"
+      ],
+      "packages_installed": [],
+      "health": {
+        "exists": true,
+        "python_available": true,
+        "pip_available": true,
+        "activation_script_exists": true
+      },
+      "metadata": {
+        "description": "Environnement exemple pour développement web avec Flask",
+        "tags": ["web", "flask", "api", "example"],
+        "project_type": "web_application",
+        "created_by": "gestvenv",
+        "template": "web_development"
+      }
     },
-    "data_science": {
-      "path": "PLACEHOLDER_PATH/data_science",
+    
+    "example_data_science": {
+      "name": "example_data_science", 
+      "path": "PLACEHOLDER_PATH/example_data_science",
       "python_version": "3.10.0",
-      "created_at": "2025-05-18T10:05:00",
+      "created_at": "2025-01-01T10:05:00Z",
+      "active": false,
       "packages": [
-        "pandas==1.3.3",
-        "numpy==1.21.2",
-        "matplotlib==3.4.3",
-        "scikit-learn==1.0",
-        "jupyter==1.0.0"
-      ]
+        "pandas>=2.0.0",
+        "numpy>=1.24.0",
+        "matplotlib>=3.7.0",
+        "scikit-learn>=1.3.0",
+        "jupyter>=1.0.0",
+        "seaborn>=0.12.0"
+      ],
+      "packages_installed": [],
+      "health": {
+        "exists": true,
+        "python_available": true,
+        "pip_available": true,
+        "activation_script_exists": true
+      },
+      "metadata": {
+        "description": "Environnement exemple pour data science et machine learning",
+        "tags": ["data-science", "ml", "jupyter", "pandas", "example"],
+        "project_type": "data_science",
+        "created_by": "gestvenv",
+        "template": "data_science"
+      }
     }
   },
-  "active_env": "web_dev",
+  
+  "active_env": null,
   "default_python": "python3",
+  
   "settings": {
-    "auto_activate": true,
-    "package_cache_enabled": true,
-    "check_updates_on_activate": true,
-    "default_export_format": "json",
-    "show_virtual_env_in_prompt": true,
-    "use_package_cache": true,
-    "offline_mode": false,
-    "cache_max_size_mb": 5000,
-    "cache_max_age_days": 90
+    "_comment": "Configuration générale de GestVenv",
+    
+    "core": {
+      "auto_activate": true,
+      "show_virtual_env_in_prompt": true,
+      "check_updates_on_activate": true,
+      "default_export_format": "json",
+      "parallel_operations": true,
+      "operation_timeout": 300,
+      "debug_mode": false
+    },
+    
+    "package_management": {
+      "package_cache_enabled": true,
+      "use_package_cache": true,
+      "offline_mode": false,
+      "auto_install_pip": true,
+      "pip_timeout": 120,
+      "install_timeout": 600,
+      "upgrade_strategy": "only-if-needed",
+      "trusted_hosts": [],
+      "extra_index_urls": []
+    },
+    
+    "cache": {
+      "cache_max_size_mb": 5000,
+      "cache_max_age_days": 90,
+      "auto_cleanup_cache": false,
+      "cleanup_on_startup": false,
+      "cache_integrity_check": true,
+      "compression_enabled": true,
+      "deduplicate_packages": true
+    },
+    
+    "paths": {
+      "environments_dir": "PLACEHOLDER_PATH/environments",
+      "cache_dir": "PLACEHOLDER_PATH/cache", 
+      "logs_dir": "PLACEHOLDER_PATH/logs",
+      "backups_dir": "PLACEHOLDER_PATH/backups",
+      "exports_dir": "PLACEHOLDER_PATH/exports",
+      "temp_dir": "PLACEHOLDER_PATH/temp"
+    },
+    
+    "logging": {
+      "enabled": true,
+      "level": "INFO",
+      "file_logging": true,
+      "console_logging": true,
+      "structured_format": false,
+      "max_log_file_size_mb": 10,
+      "log_retention_days": 30,
+      "log_rotation": true,
+      "categories": {
+        "general": "INFO",
+        "environment": "INFO", 
+        "package": "INFO",
+        "cache": "WARNING",
+        "diagnostic": "INFO",
+        "system": "WARNING",
+        "cli": "INFO"
+      }
+    },
+    
+    "diagnostic": {
+      "auto_diagnostic": false,
+      "diagnostic_on_activate": false,
+      "health_check_interval_days": 7,
+      "auto_repair": false,
+      "detailed_reports": true,
+      "track_performance": true,
+      "alert_on_issues": true
+    },
+    
+    "backup": {
+      "auto_backup": true,
+      "backup_on_change": true,
+      "backup_retention_days": 30,
+      "max_backups": 10,
+      "compress_backups": true,
+      "backup_schedule": "daily"
+    },
+    
+    "security": {
+      "verify_package_integrity": true,
+      "check_known_vulnerabilities": false,
+      "safe_mode": false,
+      "restricted_operations": [],
+      "allowed_hosts": [],
+      "ssl_verify": true
+    },
+    
+    "performance": {
+      "max_concurrent_operations": 3,
+      "memory_limit_mb": 1000,
+      "disk_space_warning_mb": 500,
+      "cleanup_temp_files": true,
+      "optimize_downloads": true,
+      "use_fast_deps_resolver": true
+    },
+    
+    "ui": {
+      "use_colors": true,
+      "progress_bars": true,
+      "verbose_output": false,
+      "quiet_mode": false,
+      "confirm_destructive_actions": true,
+      "display_tips": true,
+      "show_package_sizes": true,
+      "table_format": "grid"
+    },
+    
+    "templates": {
+      "web_development": {
+        "packages": ["flask", "requests", "gunicorn", "python-dotenv", "pytest"],
+        "python_version": "3.9",
+        "description": "Template pour développement web avec Flask"
+      },
+      "data_science": {
+        "packages": ["pandas", "numpy", "matplotlib", "scikit-learn", "jupyter"],
+        "python_version": "3.10", 
+        "description": "Template pour data science et machine learning"
+      },
+      "api_development": {
+        "packages": ["fastapi", "uvicorn", "pydantic", "pytest", "httpx"],
+        "python_version": "3.11",
+        "description": "Template pour développement d'API avec FastAPI"
+      },
+      "cli_tools": {
+        "packages": ["click", "rich", "typer", "pytest"],
+        "python_version": "3.9",
+        "description": "Template pour outils en ligne de commande"
+      }
+    },
+    
+    "integrations": {
+      "git": {
+        "auto_gitignore": true,
+        "track_requirements": true,
+        "commit_on_changes": false
+      },
+      "docker": {
+        "generate_dockerfile": false,
+        "base_image": "python:3.9-slim",
+        "expose_ports": []
+      },
+      "ide": {
+        "generate_vscode_settings": false,
+        "generate_pycharm_config": false,
+        "python_path_config": true
+      }
+    },
+    
+    "experimental": {
+      "smart_dependency_resolution": false,
+      "predictive_caching": false,
+      "environment_analytics": false,
+      "ai_suggestions": false,
+      "cloud_sync": false
+    }
   },
-  "_example": {
-    "environment_structure": {
-      "name": "Nom de l'environnement",
-      "path": "Chemin vers l'environnement virtuel",
-      "python_version": "Version de Python utilisée",
-      "created_at": "Date de création (ISO format)",
-      "packages": "Liste des packages installés avec leurs versions"
+  
+  "python_versions": {
+    "supported": ["3.6", "3.7", "3.8", "3.9", "3.10", "3.11", "3.12"],
+    "recommended": "3.11",
+    "minimum": "3.6",
+    "detection_commands": {
+      "unix": ["python3", "python"],
+      "windows": ["py", "python", "python3"]
+    }
+  },
+  
+  "system": {
+    "platform_specific": {
+      "windows": {
+        "shell": "cmd",
+        "activation_script": "Scripts/activate.bat",
+        "python_executable": "Scripts/python.exe",
+        "pip_executable": "Scripts/pip.exe"
+      },
+      "unix": {
+        "shell": "bash",
+        "activation_script": "bin/activate", 
+        "python_executable": "bin/python",
+        "pip_executable": "bin/pip"
+      }
+    },
+    "environment_variables": {
+      "VIRTUAL_ENV": "",
+      "PATH_BACKUP": "",
+      "PYTHONPATH": ""
+    }
+  },
+  
+  "migration": {
+    "from_virtualenv": true,
+    "from_conda": false,
+    "from_pipenv": true,
+    "auto_detect_existing": true,
+    "preserve_original": true,
+    "migration_log": true
+  },
+  
+  "_examples": {
+    "_comment": "Exemples de configuration pour référence",
+    
+    "environment_minimal": {
+      "name": "minimal_env",
+      "python_version": "3.9",
+      "packages": []
+    },
+    
+    "environment_complete": {
+      "name": "complete_env",
+      "path": "/custom/path/to/env",
+      "python_version": "3.11.0",
+      "packages": ["package1>=1.0.0", "package2"],
+      "metadata": {
+        "description": "Description complète",
+        "tags": ["tag1", "tag2"],
+        "project_type": "application",
+        "maintainer": "user@example.com"
+      }
+    },
+    
+    "settings_custom": {
+      "package_cache_enabled": false,
+      "offline_mode": true,
+      "debug_mode": true,
+      "auto_cleanup_cache": true
+    }
+  },
+  
+  "_schema": {
+    "type": "object",
+    "required": ["environments", "settings", "default_python"],
+    "properties": {
+      "environments": {
+        "type": "object",
+        "patternProperties": {
+          "^[a-zA-Z0-9_-]+$": {
+            "type": "object",
+            "required": ["name", "path", "python_version"],
+            "properties": {
+              "name": {"type": "string"},
+              "path": {"type": "string"},
+              "python_version": {"type": "string"},
+              "packages": {
+                "type": "array",
+                "items": {"type": "string"}
+              }
+            }
+          }
+        }
+      },
+      "active_env": {
+        "type": ["string", "null"]
+      },
+      "default_python": {
+        "type": "string"
+      },
+      "settings": {
+        "type": "object"
+      }
     }
   }
 }
