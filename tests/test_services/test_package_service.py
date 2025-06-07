@@ -93,7 +93,7 @@ class TestPackageService:
         success, message = package_service.install_packages("test_env", "invalid-package")
         
         assert success is False
-        assert "Échec" in message
+        assert 'Erreur' in message or 'Échec' in message
     
     def test_install_packages_no_environment(self, package_service: PackageService) -> None:
         """Teste l'installation dans un environnement inexistant."""

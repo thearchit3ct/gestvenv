@@ -10,12 +10,14 @@
 ## ✨ Fonctionnalités Principales
 
 ### 🚀 Gestion d'Environnements
+
 - ✅ Création rapide d'environnements avec différentes versions Python
 - ✅ Activation/désactivation simplifiée
 - ✅ Clonage d'environnements existants
 - ✅ Gestion centralisée de tous vos environnements
 
 ### 📦 Gestion Intelligente des Packages
+
 - ✅ Installation, mise à jour et suppression de packages
 - ✅ **Cache local intelligent** pour les packages Python
 - ✅ **Mode hors ligne** complet
@@ -23,6 +25,7 @@
 - ✅ Export/import de configurations
 
 ### 🔧 Outils de Développement
+
 - ✅ Exécution de commandes dans des environnements spécifiques
 - ✅ Vérification des dépendances et mises à jour
 - ✅ Documentation intégrée
@@ -31,6 +34,7 @@
 ## 🆕 Nouveautés v1.1.0 - Cache Intelligent & Mode Hors Ligne
 
 ### Cache Local Automatique
+
 ```bash
 # Le cache se remplit automatiquement lors des installations
 gestvenv install myenv requests flask
@@ -43,6 +47,7 @@ gestvenv cache add requests  # Pré-télécharger un package
 ```
 
 ### Mode Hors Ligne
+
 ```bash
 # Activer le mode hors ligne
 gestvenv --offline install myenv requests
@@ -58,11 +63,13 @@ gestvenv --offline install project_env -r requirements.txt
 ## 🚀 Installation
 
 ### Installation via pip (recommandée)
+
 ```bash
 pip install gestvenv
 ```
 
 ### Installation depuis les sources
+
 ```bash
 git clone https://github.com/thearchit3ct/gestvenv.git
 cd gestvenv
@@ -72,6 +79,7 @@ pip install -e .
 ## 📖 Guide de Démarrage Rapide
 
 ### 1. Créer votre premier environnement
+
 ```bash
 # Créer un environnement avec la version Python par défaut
 gestvenv create monprojet
@@ -84,6 +92,7 @@ gestvenv create monprojet --python 3.11 --enable-cache
 ```
 
 ### 2. Activer et gérer l'environnement
+
 ```bash
 # Activer l'environnement
 gestvenv activate monprojet
@@ -96,6 +105,7 @@ gestvenv info monprojet
 ```
 
 ### 3. Gérer les packages intelligemment
+
 ```bash
 # Installation classique (avec mise en cache automatique)
 gestvenv install monprojet requests flask pandas
@@ -171,6 +181,7 @@ gestvenv cache add numpy scipy matplotlib
 ## 📋 Cas d'Usage en Développement
 
 ### Projet Web avec Django/Flask
+
 ```bash
 # Configuration initiale
 gestvenv create webapp --python 3.11
@@ -183,6 +194,7 @@ gestvenv --offline install webapp pytest black flake8
 ```
 
 ### Projet Data Science
+
 ```bash
 # Pré-télécharger les packages lourds
 gestvenv cache add numpy pandas matplotlib seaborn scikit-learn jupyter
@@ -197,6 +209,7 @@ gestvenv cache export datascience_cache.tar.gz
 ```
 
 ### Déploiement et CI/CD
+
 ```bash
 # Préparer le cache pour le déploiement
 gestvenv cache add -r production_requirements.txt
@@ -209,6 +222,7 @@ gestvenv --offline install production -r production_requirements.txt
 ## ⚙️ Configuration
 
 ### Fichier de Configuration
+
 GestVenv utilise un fichier de configuration situé à `~/.gestvenv/config.json` :
 
 ```json
@@ -226,6 +240,7 @@ GestVenv utilise un fichier de configuration situé à `~/.gestvenv/config.json`
 ```
 
 ### Configuration via CLI
+
 ```bash
 # Configurer le mode hors ligne par défaut
 gestvenv config set offline_mode true
@@ -250,6 +265,7 @@ gestvenv config set cache.auto_cleanup false
 Les contributions sont les bienvenues ! Consultez notre [guide de contribution](CONTRIBUTING.md).
 
 ### Développement Local
+
 ```bash
 git clone https://github.com/thearchit3ct/gestvenv.git
 cd gestvenv
@@ -268,7 +284,7 @@ Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de 
 - 📖 [Documentation complète](https://github.com/thearchit3ct/gestvenv/wiki)
 - 🐛 [Signaler un bug](https://github.com/thearchit3ct/gestvenv/issues)
 - 💬 [Discussions](https://github.com/thearchit3ct/gestvenv/discussions)
-- 📧 Contact : thearchit3ct@outlook.fr
+- 📧 Contact : <thearchit3ct@outlook.fr>
 
 ---
 

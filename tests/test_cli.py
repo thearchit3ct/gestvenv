@@ -150,7 +150,7 @@ class TestCLI(unittest.TestCase):
         with patch('sys.argv', ['gestvenv'] + test_args):
             cli.main()
             
-        mock_clone.assert_called_once_with('test_env', 'test_env_clone')
+        mock_clone.assert_called_once_with('test_env', 'test_env_clone', include_packages=True, description=None)
 
     @patch('gestvenv.core.EnvironmentManager.get_environment_info')
     def test_info_command(self, mock_info) -> None:
