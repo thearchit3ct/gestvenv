@@ -58,6 +58,15 @@ def temp_config_file(tmp_path):
     return config_file
 
 @pytest.fixture
+def mock_package_list() -> list[dict[str, str]]:
+    """Retourne une liste simulée de packages installés."""
+    return [
+        {"name": "flask", "version": "2.0.1"},
+        {"name": "pytest", "version": "6.2.5"},
+        {"name": "requests", "version": "2.26.0"}
+    ]
+
+@pytest.fixture
 def mock_subprocess():
     """Simule les appels subprocess pour les tests."""
     with patch('subprocess.run') as mock_run:

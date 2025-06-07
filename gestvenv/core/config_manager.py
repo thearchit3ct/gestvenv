@@ -103,9 +103,15 @@ class ConfigManager:
                 logger.debug(f"Configuration chargée depuis {self.config_path}")
                 return ConfigInfo.from_dict(config_dict)
                 
-            except json.JSONDecodeError as e:
-                logger.error(f"Erreur lors du chargement de la configuration: {str(e)}")
-                return self._handle_corrupted_config()
+            except (json.JSONDecodeError, FileNotFoundError) as e:
+                logging.error(f"Erreur lors du chargement de la configuration: {e}")
+                # Créer une sauvegarde du fichier corrompu
+                if config_path and Path(config_path).exists():
+                    self._create_backup(config_path, corrupted=True)
+                
+                # Appeler explicitement _create_default_config
+                self.config = self._create_default_config()
+                return False
             except ConfigValidationError as e:
                 logger.error(f"Configuration invalide: {str(e)}")
                 return self._handle_corrupted_config()
