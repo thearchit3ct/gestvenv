@@ -106,9 +106,9 @@ class ConfigManager:
             except (json.JSONDecodeError, FileNotFoundError) as e:
                 logging.error(f"Erreur lors du chargement de la configuration: {e}")
                 # Créer une sauvegarde du fichier corrompu
-                if config_path and Path(config_path).exists():
+                if self.config_path and Path(self.config_path).exists():
                     self._create_backup(config_path, corrupted=True)
-                
+
                 # Appeler explicitement _create_default_config
                 self.config = self._create_default_config()
                 return False

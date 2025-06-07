@@ -16,9 +16,33 @@ class TestConfigManager:
     """Tests pour la classe ConfigManager."""
     
     @pytest.fixture
-    def config_manager(self, temp_config_file: Any) -> ConfigManager:
-        """Fixture pour créer une instance du gestionnaire de configuration."""
-        return ConfigManager(config_path=temp_config_file)
+    def config_manager(self, temp_dir: Path) -> ConfigManager:
+        """Crée un gestionnaire de configuration pour les tests."""
+        config_file = temp_dir / "test_config.json"
+        config_data = {
+            "environments": {
+                "test_env": {
+                    "path": str(temp_dir / "environments" / "test_env"),
+                    "python_version": "3.9.0",
+                    "created_at": datetime.now().isoformat()
+                }
+            },
+            "active_env": "test_env",  # Définir explicitement l'environnement actif
+            "default_python": "python3",
+            "settings": {
+                "auto_activate": True,
+                "package_cache_enabled": True,
+                "check_updates_on_activate": True,
+                "default_export_format": "json",
+                "show_virtual_env_in_prompt": True,
+                "version": "1.2.0"
+            }
+        }
+    
+        with open(config_file, 'w') as f:
+            json.dump(config_data, f)
+        
+        return ConfigManager(config_path=config_file)
     
     def test_init(self, temp_dir: Path) -> None:
         """Teste l'initialisation de la classe."""

@@ -141,33 +141,52 @@ class ServiceContainer:
         }
 
         # Vérifier chaque service
-        service_names = ['environment', 'package', 'system', 'cache', 'diagnostic']
-
-        for service_name in service_names:
-            service = getattr(self, service_name)
-
+        services = {
+            "environment": self.environment,
+            "package": self.package,
+            "system": self.system,
+            "cache": self.cache,
+            "diagnostic": self.diagnostic
+        }
+        
+        healthy_count = 0
+        total_count = 0
+        
+        for service_name, service in services.items():
+            total_count += 1
+            
             if service is None:
-                health_report['missing_services'].append(service_name)
-                health_report['overall_status'] = 'degraded'
-            else:
-                try:
-                    # Test basique de fonctionnement du service
-                    if hasattr(service, 'health_check'):
-                        service_health = service.health_check()
-                        health_report['services'][service_name] = service_health
-                    else:
-                        health_report['services'][service_name] = {'status': 'available'}
-                except Exception as e:
-                    health_report['service_errors'].append({
-                        'service': service_name,
-                        'error': str(e)
-                    })
-                    health_report['overall_status'] = 'unhealthy'
-
-            if health_report["service_errors"]:
-                health_report["overall_status"] = "unhealthy"
-            elif health_report["missing_services"]:
-                health_report["overall_status"] = "degraded"
+                health_report["missing_services"].append(service_name)
+                health_report["services"][service_name] = {"status": "missing"}
+                continue
+                
+            try:
+                # Vérifier si le service a une méthode health_check
+                if hasattr(service, 'health_check') and callable(getattr(service, 'health_check')):
+                    health = service.health_check()
+                    health_report["services"][service_name] = health
+                    if health.get("status") == "healthy":
+                        healthy_count += 1
+                else:
+                    # Service disponible mais sans health_check
+                    health_report["services"][service_name] = {"status": "available"}
+                    healthy_count += 1
+                    
+            except Exception as e:
+                health_report["service_errors"].append({
+                    "service": service_name,
+                    "error": str(e)
+                })
+                health_report["services"][service_name] = {"status": "error", "error": str(e)}
+        
+        # Déterminer le statut global
+        if len(health_report["missing_services"]) == total_count:
+            health_report["overall_status"] = "unhealthy"
+        elif healthy_count == total_count - len(health_report["missing_services"]):
+            health_report["overall_status"] = "healthy"
+        else:
+            health_report["overall_status"] = "degraded"
+            
         return health_report
 
 
