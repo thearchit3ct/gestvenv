@@ -1,9 +1,24 @@
 """
-Module de gestion de la configuration pour GestVenv.
+GestVenv v1.1 - ConfigManager avec Stratégies Intégrées
+======================================================
 
-Ce module fournit les fonctionnalités pour stocker et récupérer
-les configurations des environnements virtuels, ainsi que pour
-gérer l'import/export des configurations et la sauvegarde/restauration.
+Module de gestion avancée de la configuration pour GestVenv v1.1.
+Étend le ConfigManager existant avec :
+- Stratégies intelligentes (migration, backend, cache, templates)
+- Migration automatique v1.0 → v1.1
+- Support pyproject.toml et backends multiples
+- Cache intelligent et templates
+- Validation et réparation avancées
+
+Classes principales:
+    - ConfigManager: Gestionnaire principal étendu v1.1
+    - MigrationHandler: Gestionnaire de migration spécialisé
+    - StrategyManager: Gestionnaire des stratégies
+    - ConfigValidator: Validateur de configuration
+
+Version: 1.1.0
+Auteur: thearchit3ct
+Date: 2025-01-27
 """
 
 import os
@@ -11,1180 +26,1066 @@ import json
 import logging
 import shutil
 import hashlib
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any, Union, Set
+from dataclasses import asdict
 
-from .models import ConfigInfo, EnvironmentInfo
+# Imports des modèles v1.1
+from .models import (
+    ConfigInfo, EnvironmentInfo, PyProjectInfo, PackageInfo,
+    EnvironmentHealth, HealthStatus, BackendType, SourceFileType,
+    SCHEMA_VERSION, COMPATIBLE_VERSIONS
+)
+
+# Import des stratégies
+from .strategies import (
+    GestVenvStrategies, MigrationStrategy, BackendStrategy, CacheStrategy,
+    MigrationMode, BackendSelectionStrategy, ESSENTIAL_TEMPLATES,
+    get_default_strategies, detect_optimal_strategies
+)
+
+# Import des exceptions
+from .exceptions import (
+    GestVenvError, ConfigValidationError, MigrationError, 
+    ValidationError, EnvironmentError
+)
 
 # Configuration du logging
 logger = logging.getLogger(__name__)
 
-class ConfigValidationError(Exception):
-    """Exception levée lors d'erritions de validation de configuration."""
+
+# ===== EXCEPTIONS SPÉCIALISÉES =====
+
+class ConfigCorruptedError(GestVenvError):
+    """Configuration corrompue nécessitant une restauration."""
     pass
 
-class ConfigBackupError(Exception):
-    """Exception levée lors d'erreurs de sauvegarde/restauration de configuration."""
+
+class ConfigBackupError(GestVenvError):
+    """Erreur lors des opérations de sauvegarde."""
     pass
+
+
+class StrategyError(GestVenvError):
+    """Erreur liée aux stratégies de configuration."""
+    pass
+
+
+# ===== GESTIONNAIRE DE MIGRATION =====
+
+class MigrationHandler:
+    """Gestionnaire spécialisé pour les migrations de configuration."""
+    
+    MIGRATION_PATHS = {
+        "1.0.0": ["1.0.1", "1.1.0"],
+        "1.0.1": ["1.1.0"],
+        "1.1.0": []  # Version courante
+    }
+    
+    def __init__(self, config_manager: 'ConfigManager'):
+        self.config_manager = config_manager
+        self.logger = logging.getLogger(__name__ + '.MigrationHandler')
+    
+    def needs_migration(self, config_dict: Dict[str, Any]) -> bool:
+        """Vérifie si une migration est nécessaire."""
+        current_version = config_dict.get("config_version", "1.0.0")
+        return current_version != SCHEMA_VERSION
+    
+    def can_migrate(self, from_version: str, to_version: str = None) -> bool:
+        """Vérifie si la migration est possible."""
+        if to_version is None:
+            to_version = SCHEMA_VERSION
+        
+        # Vérification directe
+        if from_version == to_version:
+            return True
+        
+        # Vérification des chemins de migration
+        return from_version in self.MIGRATION_PATHS
+    
+    def migrate_config(self, config_dict: Dict[str, Any], strategy: MigrationStrategy) -> Dict[str, Any]:
+        """
+        Effectue la migration complète d'une configuration.
+        
+        Args:
+            config_dict: Configuration à migrer
+            strategy: Stratégie de migration
+            
+        Returns:
+            Configuration migrée
+        """
+        current_version = config_dict.get("config_version", "1.0.0")
+        
+        if current_version == SCHEMA_VERSION:
+            return config_dict
+        
+        self.logger.info(f"Début migration {current_version} → {SCHEMA_VERSION}")
+        
+        # Créer une sauvegarde si demandé
+        if strategy.create_backup:
+            self._create_migration_backup(config_dict, current_version)
+        
+        # Appliquer les migrations étape par étape
+        migrated_config = config_dict.copy()
+        
+        if current_version.startswith("1.0"):
+            migrated_config = self._migrate_from_v1_0(migrated_config)
+        
+        # Finaliser la migration
+        migrated_config = self._finalize_migration(migrated_config, current_version)
+        
+        self.logger.info(f"Migration {current_version} → {SCHEMA_VERSION} terminée")
+        return migrated_config
+    
+    def _migrate_from_v1_0(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Migre depuis la version 1.0.x vers 1.1.0."""
+        self.logger.info("Migration v1.0 → v1.1")
+        
+        # 1. Migrer les environnements
+        environments = config_dict.get("environments", {})
+        migrated_environments = {}
+        
+        for env_name, env_data in environments.items():
+            migrated_env = self._migrate_environment_v1_0_to_v1_1(env_data)
+            migrated_environments[env_name] = migrated_env
+        
+        config_dict["environments"] = migrated_environments
+        
+        # 2. Ajouter les nouveaux paramètres v1.1
+        config_dict = self._add_v1_1_settings(config_dict)
+        
+        # 3. Migrer les paramètres existants
+        config_dict = self._migrate_settings_v1_0_to_v1_1(config_dict)
+        
+        return config_dict
+    
+    def _migrate_environment_v1_0_to_v1_1(self, env_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Migre un environnement v1.0 vers v1.1."""
+        # Ajouter les nouveaux champs avec valeurs par défaut
+        env_data.setdefault("backend_type", "pip")
+        env_data.setdefault("source_file_type", "requirements")
+        env_data.setdefault("lock_file_path", None)
+        env_data.setdefault("dependency_groups", {})
+        env_data.setdefault("pyproject_info", None)
+        
+        # Nouveaux champs métadonnées
+        env_data.setdefault("updated_at", datetime.now().isoformat())
+        env_data.setdefault("last_used", None)
+        env_data.setdefault("usage_count", 0)
+        env_data.setdefault("aliases", [])
+        env_data.setdefault("tags", [])
+        
+        # Métadonnées de migration
+        env_data["migrated_from_version"] = "1.0.0"
+        env_data["_schema_version"] = SCHEMA_VERSION
+        
+        # Migrer packages vers packages_installed si nécessaire
+        if "packages" in env_data and "packages_installed" not in env_data:
+            packages_installed = []
+            for pkg_name in env_data.get("packages", []):
+                packages_installed.append({
+                    "name": pkg_name,
+                    "version": "unknown",
+                    "source": "migration",
+                    "backend_used": "pip",
+                    "installed_at": datetime.now().isoformat()
+                })
+            env_data["packages_installed"] = packages_installed
+        
+        return env_data
+    
+    def _add_v1_1_settings(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Ajoute les nouveaux paramètres v1.1."""
+        # Paramètres backends
+        config_dict.setdefault("preferred_backend", "pip")
+        config_dict.setdefault("backend_configs", {
+            "pip": {
+                "index_url": None,
+                "extra_index_urls": [],
+                "timeout": 60,
+                "retries": 3
+            },
+            "uv": {
+                "resolution": "highest",
+                "compile_bytecode": True,
+                "parallel": True
+            }
+        })
+        
+        # Paramètres cache
+        config_dict.setdefault("cache_settings", {
+            "enabled": True,
+            "ttl_seconds": 3600,
+            "max_entries": 100,
+            "location": None  # Sera défini automatiquement
+        })
+        
+        # Aliases et templates
+        config_dict.setdefault("global_aliases", {})
+        config_dict.setdefault("templates", {})
+        
+        # Stratégies
+        config_dict.setdefault("migration_settings", {
+            "mode": "prompt",
+            "create_backup": True,
+            "rollback_available": True
+        })
+        
+        return config_dict
+    
+    def _migrate_settings_v1_0_to_v1_1(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Migre les paramètres existants de v1.0 vers v1.1."""
+        settings = config_dict.get("settings", {})
+        
+        # Mappage des anciens paramètres vers les nouveaux
+        migrations_mapping = {
+            "auto_activate": "auto_activate",
+            "package_cache_enabled": "use_package_cache"
+        }
+        
+        for old_key, new_key in migrations_mapping.items():
+            if old_key in settings:
+                settings[new_key] = settings.pop(old_key)
+        
+        # Nouveaux paramètres par défaut
+        settings.setdefault("auto_activate", False)
+        settings.setdefault("use_package_cache", True)
+        settings.setdefault("offline_mode", False)
+        settings.setdefault("suggest_optimizations", True)
+        settings.setdefault("verbose_operations", False)
+        
+        config_dict["settings"] = settings
+        return config_dict
+    
+    def _finalize_migration(self, config_dict: Dict[str, Any], from_version: str) -> Dict[str, Any]:
+        """Finalise la migration avec les métadonnées."""
+        config_dict["config_version"] = SCHEMA_VERSION
+        config_dict["migrated_from_version"] = from_version
+        config_dict["migration_date"] = datetime.now().isoformat()
+        config_dict.setdefault("created_at", datetime.now().isoformat())
+        config_dict["updated_at"] = datetime.now().isoformat()
+        
+        return config_dict
+    
+    def _create_migration_backup(self, config_dict: Dict[str, Any], version: str) -> None:
+        """Crée une sauvegarde avant migration."""
+        backup_name = f"pre_migration_{version}_to_{SCHEMA_VERSION}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        backup_path = self.config_manager.backup_dir / f"{backup_name}.json"
+        
+        try:
+            with open(backup_path, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2, ensure_ascii=False)
+            self.logger.info(f"Sauvegarde de migration créée: {backup_path}")
+        except Exception as e:
+            self.logger.warning(f"Impossible de créer la sauvegarde de migration: {e}")
+
+
+# ===== GESTIONNAIRE DES STRATÉGIES =====
+
+class StrategyManager:
+    """Gestionnaire des stratégies de configuration."""
+    
+    def __init__(self, config_manager: 'ConfigManager'):
+        self.config_manager = config_manager
+        self.logger = logging.getLogger(__name__ + '.StrategyManager')
+        self._strategies: Optional[GestVenvStrategies] = None
+    
+    def get_strategies(self) -> GestVenvStrategies:
+        """Récupère les stratégies courantes."""
+        if self._strategies is None:
+            self._strategies = self._load_strategies()
+        return self._strategies
+    
+    def set_strategies(self, strategies: GestVenvStrategies) -> None:
+        """Définit les nouvelles stratégies."""
+        self._strategies = strategies
+        self._save_strategies()
+    
+    def _load_strategies(self) -> GestVenvStrategies:
+        """Charge les stratégies depuis la configuration."""
+        config = self.config_manager.config
+        
+        # Configuration migration
+        migration_settings = getattr(config, 'migration_settings', {})
+        migration_strategy = MigrationStrategy(
+            mode=MigrationMode(migration_settings.get('mode', 'prompt')),
+            create_backup=migration_settings.get('create_backup', True),
+            rollback_available=migration_settings.get('rollback_available', True)
+        )
+        
+        # Configuration backend
+        backend_strategy = BackendStrategy(
+            selection_mode=BackendSelectionStrategy(
+                getattr(config, 'preferred_backend', 'conservative')
+                if getattr(config, 'preferred_backend', 'conservative') != 'pip'
+                else 'conservative'
+            ),
+            fallback_chain=["pip"]
+        )
+        
+        # Configuration cache
+        cache_settings = getattr(config, 'cache_settings', {})
+        cache_strategy = CacheStrategy(
+            enabled=cache_settings.get('enabled', True),
+            ttl_seconds=cache_settings.get('ttl_seconds', 3600),
+            max_entries=cache_settings.get('max_entries', 100)
+        )
+        
+        return GestVenvStrategies(
+            migration=migration_strategy,
+            backend=backend_strategy,
+            cache=cache_strategy,
+            templates=getattr(config, 'templates', ESSENTIAL_TEMPLATES)
+        )
+    
+    def _save_strategies(self) -> None:
+        """Sauvegarde les stratégies dans la configuration."""
+        if not self._strategies:
+            return
+        
+        config = self.config_manager.config
+        
+        # Sauvegarder les paramètres de migration
+        config.migration_settings = {
+            'mode': self._strategies.migration.mode.value,
+            'create_backup': self._strategies.migration.create_backup,
+            'rollback_available': self._strategies.migration.rollback_available
+        }
+        
+        # Sauvegarder les paramètres de backend
+        backend_mode = self._strategies.backend.selection_mode.value
+        if backend_mode == 'conservative':
+            config.preferred_backend = 'pip'
+        elif backend_mode == 'performance':
+            config.preferred_backend = 'auto'
+        else:
+            config.preferred_backend = backend_mode
+        
+        # Sauvegarder les paramètres de cache
+        config.cache_settings = {
+            'enabled': self._strategies.cache.enabled,
+            'ttl_seconds': self._strategies.cache.ttl_seconds,
+            'max_entries': self._strategies.cache.max_entries
+        }
+        
+        # Sauvegarder les templates
+        config.templates = self._strategies.templates
+        
+        # Marquer pour sauvegarde
+        config.updated_at = datetime.now()
+
+
+# ===== VALIDATEUR DE CONFIGURATION =====
+
+class ConfigValidator:
+    """Validateur de configuration avec réparation automatique."""
+    
+    def __init__(self):
+        self.logger = logging.getLogger(__name__ + '.ConfigValidator')
+    
+    def validate_config(self, config_dict: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:
+        """
+        Valide une configuration complète.
+        
+        Returns:
+            Tuple[bool, List[str], List[str]]: (is_valid, errors, warnings)
+        """
+        errors = []
+        warnings = []
+        
+        # Validation de base
+        base_errors, base_warnings = self._validate_basic_structure(config_dict)
+        errors.extend(base_errors)
+        warnings.extend(base_warnings)
+        
+        # Validation des environnements
+        env_errors, env_warnings = self._validate_environments(config_dict)
+        errors.extend(env_errors)
+        warnings.extend(env_warnings)
+        
+        # Validation des paramètres
+        settings_errors, settings_warnings = self._validate_settings(config_dict)
+        errors.extend(settings_errors)
+        warnings.extend(settings_warnings)
+        
+        return len(errors) == 0, errors, warnings
+    
+    def _validate_basic_structure(self, config_dict: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+        """Valide la structure de base."""
+        errors = []
+        warnings = []
+        
+        # Champs requis
+        required_fields = ["environments", "config_version"]
+        for field in required_fields:
+            if field not in config_dict:
+                errors.append(f"Champ requis manquant: {field}")
+        
+        # Version
+        version = config_dict.get("config_version", "unknown")
+        if version not in COMPATIBLE_VERSIONS:
+            if version == "unknown":
+                warnings.append("Version de configuration non spécifiée")
+            else:
+                warnings.append(f"Version non reconnue: {version}")
+        
+        return errors, warnings
+    
+    def _validate_environments(self, config_dict: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+        """Valide les environnements."""
+        errors = []
+        warnings = []
+        
+        environments = config_dict.get("environments", {})
+        
+        for env_name, env_data in environments.items():
+            if not isinstance(env_data, dict):
+                errors.append(f"Environnement {env_name}: données invalides")
+                continue
+            
+            # Valider les champs requis
+            required_env_fields = ["name", "path", "python_version"]
+            for field in required_env_fields:
+                if field not in env_data:
+                    errors.append(f"Environnement {env_name}: champ requis manquant: {field}")
+            
+            # Valider le chemin
+            path = env_data.get("path")
+            if path and not Path(path).exists():
+                warnings.append(f"Environnement {env_name}: chemin introuvable: {path}")
+        
+        return errors, warnings
+    
+    def _validate_settings(self, config_dict: Dict[str, Any]) -> Tuple[List[str], List[str]]:
+        """Valide les paramètres."""
+        errors = []
+        warnings = []
+        
+        # Valider backend
+        backend = config_dict.get("preferred_backend", "pip")
+        valid_backends = ["pip", "uv", "poetry", "pdm", "auto"]
+        if backend not in valid_backends:
+            errors.append(f"Backend invalide: {backend}")
+        
+        # Valider cache
+        cache_settings = config_dict.get("cache_settings", {})
+        if cache_settings:
+            ttl = cache_settings.get("ttl_seconds", 3600)
+            if not isinstance(ttl, int) or ttl < 0:
+                errors.append("cache_settings.ttl_seconds doit être un entier positif")
+        
+        return errors, warnings
+    
+    def repair_config(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Répare automatiquement une configuration."""
+        self.logger.info("Début de la réparation de configuration")
+        
+        repaired = config_dict.copy()
+        
+        # Réparer la structure de base
+        repaired.setdefault("environments", {})
+        repaired.setdefault("config_version", SCHEMA_VERSION)
+        repaired.setdefault("active_env", None)
+        repaired.setdefault("default_python", "python3")
+        
+        # Réparer les paramètres
+        repaired.setdefault("preferred_backend", "pip")
+        repaired.setdefault("cache_settings", {
+            "enabled": True,
+            "ttl_seconds": 3600,
+            "max_entries": 100
+        })
+        
+        # Réparer les environnements
+        for env_name, env_data in repaired.get("environments", {}).items():
+            if isinstance(env_data, dict):
+                env_data.setdefault("name", env_name)
+                env_data.setdefault("python_version", "python3")
+                env_data.setdefault("created_at", datetime.now().isoformat())
+        
+        self.logger.info("Réparation de configuration terminée")
+        return repaired
+
+
+# ===== GESTIONNAIRE DE CONFIGURATION PRINCIPAL =====
 
 class ConfigManager:
-    """Gestionnaire de configuration pour GestVenv."""
+    """
+    Gestionnaire de configuration GestVenv v1.1 avec stratégies intégrées.
     
-    # Version de la configuration pour la migration
-    CONFIG_VERSION = "1.2.0"
+    Fonctionnalités principales:
+    - Chargement/sauvegarde configuration avec validation
+    - Migration automatique v1.0 → v1.1
+    - Gestion des stratégies (migration, backend, cache, templates)
+    - Sauvegarde automatique et restauration
+    - Import/export avec métadonnées
+    """
     
-    # Schéma de validation de base
-    REQUIRED_KEYS = {"environments", "active_env", "default_python", "settings"}
+    CONFIG_VERSION = SCHEMA_VERSION
+    CONFIG_FILENAME = "config.json"
     
     def __init__(self, config_path: Optional[Union[str, Path]] = None):
         """
         Initialise le gestionnaire de configuration.
         
         Args:
-            config_path: Chemin vers le fichier de configuration.
-                Si None, utilise le chemin par défaut.
+            config_path: Chemin vers le fichier de configuration
         """
-        if config_path:
-            self.config_path = Path(config_path)
-        else:
-            # Utiliser le répertoire par défaut
-            self.config_path = self._get_default_config_path()
-        
-        # Créer le répertoire de configuration s'il n'existe pas
-        os.makedirs(os.path.dirname(self.config_path), exist_ok=True)
-        
-        # Chemins pour les sauvegardes
+        self.config_path = self._resolve_config_path(config_path)
         self.backup_dir = self.config_path.parent / "backups"
-        self.backup_dir.mkdir(exist_ok=True)
+        self.cache_dir = self.config_path.parent / "cache"
         
-        # Charger ou créer la configuration
+        # Créer les répertoires nécessaires
+        self._ensure_directories()
+        
+        # Gestionnaires spécialisés
+        self.migration_handler = MigrationHandler(self)
+        self.strategy_manager = StrategyManager(self)
+        self.validator = ConfigValidator()
+        
+        # Charger la configuration
         self.config = self._load_config()
         
-        # Sauvegarder automatiquement lors de la première initialisation
-        self._auto_backup()
+        # Créer une sauvegarde initiale
+        self._create_auto_backup()
+        
+        self.logger = logging.getLogger(__name__)
+        self.logger.info(f"ConfigManager v{SCHEMA_VERSION} initialisé")
     
-    def _get_default_config_path(self) -> Path:
-        """
-        Obtient le chemin par défaut du fichier de configuration.
+    def _resolve_config_path(self, config_path: Optional[Union[str, Path]]) -> Path:
+        """Résout le chemin de configuration."""
+        if config_path:
+            return Path(config_path)
         
-        Returns:
-            Path: Chemin vers le fichier de configuration par défaut.
-        """
+        # Chemin par défaut selon l'OS
         if os.name == 'nt':  # Windows
-            config_dir = os.path.join(os.environ.get('APPDATA', ''), 'GestVenv')
-        else:  # macOS, Linux et autres
-            config_dir = os.path.join(os.path.expanduser('~'), '.config', 'gestvenv')
+            base_dir = Path(os.environ.get('APPDATA', '')) / 'GestVenv'
+        else:  # macOS, Linux
+            base_dir = Path.home() / '.config' / 'gestvenv'
         
-        # Assurer que le répertoire existe
-        os.makedirs(config_dir, exist_ok=True)
+        return base_dir / self.CONFIG_FILENAME
+    
+    def _ensure_directories(self) -> None:
+        """Crée les répertoires nécessaires."""
+        directories = [
+            self.config_path.parent,
+            self.backup_dir,
+            self.cache_dir,
+            self.cache_dir / "metadata",
+            self.cache_dir / "packages"
+        ]
         
-        return Path(config_dir) / 'config.json'
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=True)
     
     def _load_config(self) -> ConfigInfo:
-        """
-        Charge la configuration depuis le fichier.
-        Si le fichier n'existe pas, crée une configuration par défaut.
-        
-        Returns:
-            ConfigInfo: Configuration chargée ou par défaut.
-        """
-        if os.path.exists(self.config_path):
-            try:
-                with open(self.config_path, 'r', encoding='utf-8') as f:
-                    config_dict = json.load(f)
-                
-                # Valider la configuration
-                self._validate_config_structure(config_dict)
-                
-                # Migrer si nécessaire
-                config_dict = self._migrate_config_if_needed(config_dict)
-                
-                logger.debug(f"Configuration chargée depuis {self.config_path}")
-                return ConfigInfo.from_dict(config_dict)
-                
-            except (json.JSONDecodeError, FileNotFoundError) as e:
-                logging.error(f"Erreur lors du chargement de la configuration: {e}")
-                # Créer une sauvegarde du fichier corrompu
-                if self.config_path and Path(self.config_path).exists():
-                    self._create_backup(config_path, corrupted=True)
-
-                # Appeler explicitement _create_default_config
-                self.config = self._create_default_config()
-                return False
-            except ConfigValidationError as e:
-                logger.error(f"Configuration invalide: {str(e)}")
-                return self._handle_corrupted_config()
-            except Exception as e:
-                logger.error(f"Erreur inattendue lors du chargement de la configuration: {str(e)}")
-                return self._handle_corrupted_config()
-        else:
-            logger.info(f"Aucun fichier de configuration trouvé. Création d'une configuration par défaut.")
+        """Charge la configuration depuis le fichier."""
+        if not self.config_path.exists():
+            self.logger.info("Création d'une nouvelle configuration")
             return self._create_default_config()
-    
-    def _validate_config_structure(self, config_dict: Dict[str, Any]) -> None:
-        """
-        Valide la structure de base d'une configuration.
         
-        Args:
-            config_dict: Dictionnaire de configuration à valider.
+        try:
+            with open(self.config_path, 'r', encoding='utf-8') as f:
+                config_dict = json.load(f)
             
-        Raises:
-            ConfigValidationError: Si la configuration est invalide.
-        """
-        # Vérifier les clés requises
-        missing_keys = self.REQUIRED_KEYS - set(config_dict.keys())
-        if missing_keys:
-            raise ConfigValidationError(f"Clés manquantes dans la configuration: {missing_keys}")
-        
-        # Vérifier les types
-        if not isinstance(config_dict["environments"], dict):
-            raise ConfigValidationError("Le champ 'environments' doit être un dictionnaire")
-        
-        if config_dict["active_env"] is not None and not isinstance(config_dict["active_env"], str):
-            raise ConfigValidationError("Le champ 'active_env' doit être une chaîne ou null")
-        
-        if not isinstance(config_dict["default_python"], str):
-            raise ConfigValidationError("Le champ 'default_python' doit être une chaîne")
-        
-        if not isinstance(config_dict["settings"], dict):
-            raise ConfigValidationError("Le champ 'settings' doit être un dictionnaire")
-        
-        # Vérifier la cohérence de l'environnement actif
-        if config_dict["active_env"] and config_dict["active_env"] not in config_dict["environments"]:
-            logger.warning(f"Environnement actif '{config_dict['active_env']}' n'existe pas. Réinitialisation.")
-            config_dict["active_env"] = None
-    
-    def _migrate_config_if_needed(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Migre une configuration vers la version actuelle si nécessaire.
-        
-        Args:
-            config_dict: Configuration à migrer.
+            # Valider la configuration
+            is_valid, errors, warnings = self.validator.validate_config(config_dict)
             
-        Returns:
-            Configuration migrée.
-        """
-        current_version = config_dict.get("version", "1.0.0")
+            if errors:
+                self.logger.warning(f"Configuration invalide: {errors}")
+                config_dict = self.validator.repair_config(config_dict)
+            
+            if warnings:
+                for warning in warnings:
+                    self.logger.warning(f"Configuration: {warning}")
+            
+            # Migrer si nécessaire
+            if self.migration_handler.needs_migration(config_dict):
+                config_dict = self._handle_migration(config_dict)
+            
+            # Créer l'objet ConfigInfo
+            return self._config_dict_to_object(config_dict)
+            
+        except Exception as e:
+            self.logger.error(f"Erreur chargement configuration: {e}")
+            return self._handle_corrupted_config()
+    
+    def _handle_migration(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
+        """Gère la migration de configuration."""
+        current_version = config_dict.get("config_version", "1.0.0")
         
-        if current_version == self.CONFIG_VERSION:
+        # Obtenir la stratégie de migration
+        migration_strategy = self._get_migration_strategy(config_dict)
+        
+        # Vérifier si la migration doit être effectuée
+        if not self._should_migrate(current_version, migration_strategy):
             return config_dict
         
-        logger.info(f"Migration de la configuration de {current_version} vers {self.CONFIG_VERSION}")
-        
-        # Sauvegarder avant migration
-        self._create_backup("pre_migration")
-        
-        # Migration étape par étape
-        if self._version_compare(current_version, "1.1.0") < 0:
-            config_dict = self._migrate_to_v1_1_0(config_dict)
-        
-        if self._version_compare(current_version, "1.2.0") < 0:
-            config_dict = self._migrate_to_v1_2_0(config_dict)
-        
-        # Mettre à jour la version
-        config_dict["version"] = self.CONFIG_VERSION
-        config_dict["migrated_at"] = datetime.now().isoformat()
-        
-        return config_dict
+        # Effectuer la migration
+        try:
+            migrated_config = self.migration_handler.migrate_config(config_dict, migration_strategy)
+            self.logger.info(f"Migration {current_version} → {SCHEMA_VERSION} réussie")
+            return migrated_config
+        except Exception as e:
+            self.logger.error(f"Échec migration: {e}")
+            raise MigrationError(f"Impossible de migrer depuis {current_version}: {e}")
     
-    def _migrate_to_v1_1_0(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Migre vers la version 1.1.0."""
-        # Ajouter les nouveaux paramètres de cache
-        settings = config_dict.get("settings", {})
+    def _get_migration_strategy(self, config_dict: Dict[str, Any]) -> MigrationStrategy:
+        """Obtient la stratégie de migration à utiliser."""
+        migration_settings = config_dict.get("migration_settings", {})
         
-        cache_settings = {
-            "use_package_cache": settings.get("package_cache_enabled", True),
-            "cache_max_size_mb": 5000,
-            "cache_max_age_days": 90,
-            "offline_mode": False
-        }
+        return MigrationStrategy(
+            mode=MigrationMode(migration_settings.get("mode", "prompt")),
+            create_backup=migration_settings.get("create_backup", True),
+            rollback_available=migration_settings.get("rollback_available", True)
+        )
+    
+    def _should_migrate(self, from_version: str, strategy: MigrationStrategy) -> bool:
+        """Détermine si la migration doit être effectuée."""
+        if strategy.mode == MigrationMode.NEVER:
+            return False
+        elif strategy.mode == MigrationMode.AUTO:
+            return True
+        elif strategy.mode == MigrationMode.PROMPT:
+            # Dans un vrai scénario, ceci afficherait une invite utilisateur
+            # Pour l'implémentation, on assume "oui"
+            self.logger.info(f"Migration {from_version} → {SCHEMA_VERSION} recommandée")
+            return True
+        elif strategy.mode == MigrationMode.SMART:
+            # Migration intelligente : vérifie s'il y a des bénéfices clairs
+            return self._has_migration_benefits(from_version)
         
-        settings.update(cache_settings)
-        config_dict["settings"] = settings
-        
-        # Migrer les informations d'environnements
+        return False
+    
+    def _has_migration_benefits(self, from_version: str) -> bool:
+        """Vérifie si la migration apporte des bénéfices clairs."""
+        # Migration v1.0 → v1.1 apporte toujours des bénéfices
+        return from_version.startswith("1.0")
+    
+    def _config_dict_to_object(self, config_dict: Dict[str, Any]) -> ConfigInfo:
+        """Convertit un dictionnaire en objet ConfigInfo."""
+        # Convertir les environnements
+        environments = {}
         for env_name, env_data in config_dict.get("environments", {}).items():
-            if isinstance(env_data, dict):
-                # Ajouter les champs manquants
-                if "health" not in env_data:
-                    env_data["health"] = {
-                        "exists": True,
-                        "python_available": True,
-                        "pip_available": True,
-                        "activation_script_exists": True
-                    }
-                
-                if "metadata" not in env_data:
-                    env_data["metadata"] = {}
+            environments[env_name] = EnvironmentInfo.from_dict(env_data)
         
-        return config_dict
+        # Créer la configuration
+        config = ConfigInfo(
+            environments=environments,
+            active_env=config_dict.get("active_env"),
+            default_python=config_dict.get("default_python", "python3"),
+            preferred_backend=config_dict.get("preferred_backend", "pip"),
+            auto_activate=config_dict.get("settings", {}).get("auto_activate", False),
+            use_package_cache=config_dict.get("settings", {}).get("use_package_cache", True),
+            offline_mode=config_dict.get("settings", {}).get("offline_mode", False),
+            backend_configs=config_dict.get("backend_configs", {}),
+            global_aliases=config_dict.get("global_aliases", {}),
+            templates=config_dict.get("templates", {}),
+            config_version=config_dict.get("config_version", SCHEMA_VERSION)
+        )
+        
+        # Métadonnées
+        if "created_at" in config_dict:
+            config.created_at = datetime.fromisoformat(config_dict["created_at"])
+        if "updated_at" in config_dict:
+            config.updated_at = datetime.fromisoformat(config_dict["updated_at"])
+        if "migrated_from_version" in config_dict:
+            config.migrated_from_version = config_dict["migrated_from_version"]
+        
+        return config
     
-    def _migrate_to_v1_2_0(self, config_dict: Dict[str, Any]) -> Dict[str, Any]:
-        """Migre vers la version 1.2.0."""
-        # Ajouter les nouveaux paramètres avancés
-        settings = config_dict.get("settings", {})
-        
-        advanced_settings = {
-            "check_updates_on_activate": settings.get("check_updates_on_activate", True),
-            "auto_cleanup_cache": False,
-            "parallel_operations": True,
-            "operation_timeout": 300,
-            "backup_retention_days": 30
-        }
-        
-        settings.update(advanced_settings)
-        config_dict["settings"] = settings
-        
-        # Ajouter les métadonnées de configuration
-        config_dict["created_at"] = config_dict.get("created_at", datetime.now().isoformat())
-        config_dict["last_modified"] = datetime.now().isoformat()
-        
-        return config_dict
-    
-    def _version_compare(self, version1: str, version2: str) -> int:
-        """
-        Compare deux versions sémantiques.
-        
-        Returns:
-            -1 si version1 < version2, 0 si égales, 1 si version1 > version2
-        """
-        def version_to_tuple(v: str) -> Tuple[int, ...]:
-            return tuple(map(int, v.split('.')))
-        
-        v1 = version_to_tuple(version1)
-        v2 = version_to_tuple(version2)
-        
-        if v1 < v2:
-            return -1
-        elif v1 > v2:
-            return 1
-        else:
-            return 0
+    def _create_default_config(self) -> ConfigInfo:
+        """Crée une configuration par défaut."""
+        return ConfigInfo(
+            environments={},
+            config_version=SCHEMA_VERSION,
+            created_at=datetime.now(),
+            updated_at=datetime.now()
+        )
     
     def _handle_corrupted_config(self) -> ConfigInfo:
         """Gère une configuration corrompue."""
-        # Créer une sauvegarde du fichier corrompu
+        # Sauvegarder le fichier corrompu
         if self.config_path.exists():
             corrupted_backup = self.backup_dir / f"corrupted_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             try:
                 shutil.copy2(self.config_path, corrupted_backup)
-                logger.warning(f"Sauvegarde du fichier corrompu créée: {corrupted_backup}")
+                self.logger.warning(f"Configuration corrompue sauvegardée: {corrupted_backup}")
             except Exception as e:
-                logger.error(f"Impossible de sauvegarder le fichier corrompu: {str(e)}")
+                self.logger.error(f"Impossible de sauvegarder la configuration corrompue: {e}")
         
-        # Essayer de restaurer depuis la sauvegarde la plus récente
+        # Essayer de restaurer depuis la dernière sauvegarde
         latest_backup = self._get_latest_backup()
         if latest_backup:
             try:
-                logger.info(f"Tentative de restauration depuis {latest_backup}")
-                return self._restore_from_backup_file(latest_backup)
+                return self._restore_from_backup(latest_backup)
             except Exception as e:
-                logger.error(f"Échec de la restauration depuis la sauvegarde: {str(e)}")
+                self.logger.error(f"Échec restauration depuis sauvegarde: {e}")
         
-        # Créer une nouvelle configuration par défaut
-        logger.warning("Création d'une nouvelle configuration par défaut")
+        # Créer une nouvelle configuration
+        self.logger.info("Création d'une nouvelle configuration par défaut")
         return self._create_default_config()
-    
-    def _create_default_config(self) -> ConfigInfo:
-        """
-        Crée une configuration par défaut.
-        
-        Returns:
-            ConfigInfo: Configuration par défaut.
-        """
-        default_config = ConfigInfo(
-            environments={},
-            active_env=None,
-            default_python=self._detect_default_python()
-        )
-        
-        # Ajouter les métadonnées
-        default_config.settings.update({
-            "version": self.CONFIG_VERSION,
-            "created_at": datetime.now().isoformat(),
-            "last_modified": datetime.now().isoformat()
-        })
-        
-        # Sauvegarder la configuration par défaut
-        self._save_config(default_config)
-        
-        return default_config
-    
-    def _detect_default_python(self) -> str:
-        """
-        Détecte la commande Python par défaut sur le système.
-        
-        Returns:
-            str: Commande Python par défaut.
-        """
-        python_commands = ["python3", "python", "py"]
-        
-        for cmd in python_commands:
-            try:
-                import subprocess
-                result = subprocess.run([cmd, "--version"], 
-                                       capture_output=True, shell=False, text=True, check=False)
-                if result.returncode == 0:
-                    logger.debug(f"Python par défaut détecté: {cmd}")
-                    return cmd
-            except Exception:
-                continue
-        
-        # Retour par défaut si aucune commande n'est trouvée
-        logger.warning("Aucune commande Python détectée, utilisation de 'python' par défaut")
-        return "python"
-    
-    def _save_config(self, config: Optional[ConfigInfo] = None) -> bool:
-        """
-        Sauvegarde la configuration dans le fichier.
-        
-        Args:
-            config: Configuration à sauvegarder.
-                Si None, utilise la configuration actuelle.
-        
-        Returns:
-            bool: True si la sauvegarde réussit, False sinon.
-        """
-        if config is None:
-            config = self.config
-        
-        try:
-            # Créer une sauvegarde de la configuration existante si elle existe
-            if os.path.exists(self.config_path):
-                backup_path = f"{self.config_path}.bak"
-                shutil.copy2(self.config_path, backup_path)
-            
-            # Mettre à jour les métadonnées
-            config.settings["last_modified"] = datetime.now().isoformat()
-            
-            # Convertir la configuration en dictionnaire
-            config_dict = config.to_dict()
-            
-            # Ajouter les métadonnées de version
-            config_dict["version"] = self.CONFIG_VERSION
-            
-            # Sauvegarder avec validation
-            temp_path = self.config_path.with_suffix('.tmp')
-            with open(temp_path, 'w', encoding='utf-8') as f:
-                json.dump(config_dict, f, indent=2, ensure_ascii=False)
-            
-            # Valider le fichier temporaire
-            with open(temp_path, 'r', encoding='utf-8') as f:
-                test_config = json.load(f)
-                self._validate_config_structure(test_config)
-            
-            # Remplacer le fichier original
-            temp_path.replace(self.config_path)
-            
-            logger.debug(f"Configuration sauvegardée dans {self.config_path}")
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde de la configuration: {str(e)}")
-            
-            # Nettoyer le fichier temporaire si il existe
-            temp_path = self.config_path.with_suffix('.tmp')
-            if temp_path.exists():
-                try:
-                    temp_path.unlink()
-                except Exception:
-                    pass
-            
-            return False
     
     def save_config(self) -> bool:
         """
-        Sauvegarde la configuration actuelle.
+        Sauvegarde la configuration courante.
         
         Returns:
-            bool: True si la sauvegarde réussit, False sinon.
+            bool: Succès de la sauvegarde
         """
-        return self._save_config()
+        try:
+            # Mettre à jour la date de modification
+            self.config.updated_at = datetime.now()
+            
+            # Convertir en dictionnaire
+            config_dict = self.config.to_dict()
+            
+            # Sauvegarder dans un fichier temporaire puis renommer (atomique)
+            temp_path = self.config_path.with_suffix('.tmp')
+            
+            with open(temp_path, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2, ensure_ascii=False, default=str)
+            
+            # Renommer le fichier temporaire (opération atomique)
+            temp_path.replace(self.config_path)
+            
+            self.logger.debug("Configuration sauvegardée")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erreur sauvegarde configuration: {e}")
+            return False
     
-    def get_environment(self, env_name: str) -> Optional[EnvironmentInfo]:
-        """
-        Récupère les informations d'un environnement spécifique.
-        
-        Args:
-            env_name: Nom de l'environnement.
-        
-        Returns:
-            Optional[EnvironmentInfo]: Informations de l'environnement ou None si non trouvé.
-        """
-        return self.config.environments.get(env_name)
+    def _create_auto_backup(self) -> None:
+        """Crée une sauvegarde automatique."""
+        try:
+            # Créer seulement si le fichier de config existe
+            if not self.config_path.exists():
+                return
+            
+            # Vérifier s'il faut créer une sauvegarde
+            if not self._should_create_backup():
+                return
+            
+            backup_name = f"auto_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            backup_path = self.backup_dir / f"{backup_name}.json"
+            
+            shutil.copy2(self.config_path, backup_path)
+            self.logger.debug(f"Sauvegarde automatique créée: {backup_path}")
+            
+            # Nettoyer les anciennes sauvegardes
+            self._cleanup_old_backups()
+            
+        except Exception as e:
+            self.logger.warning(f"Échec création sauvegarde automatique: {e}")
     
-    def get_all_environments(self) -> Dict[str, EnvironmentInfo]:
-        """
-        Récupère tous les environnements.
+    def _should_create_backup(self) -> bool:
+        """Vérifie si une sauvegarde automatique est nécessaire."""
+        # Vérifier la dernière sauvegarde
+        latest_backup = self._get_latest_backup()
+        if not latest_backup:
+            return True
         
-        Returns:
-            Dict[str, EnvironmentInfo]: Dictionnaire de tous les environnements.
-        """
-        return self.config.environments
+        # Créer une sauvegarde si la dernière date de plus d'une heure
+        backup_time = datetime.fromtimestamp(latest_backup.stat().st_mtime)
+        return datetime.now() - backup_time > timedelta(hours=1)
+    
+    def _get_latest_backup(self) -> Optional[Path]:
+        """Trouve la sauvegarde la plus récente."""
+        if not self.backup_dir.exists():
+            return None
+        
+        backups = list(self.backup_dir.glob("*.json"))
+        if not backups:
+            return None
+        
+        return max(backups, key=lambda p: p.stat().st_mtime)
+    
+    def _cleanup_old_backups(self, keep_count: int = 10) -> None:
+        """Nettoie les anciennes sauvegardes."""
+        try:
+            backups = sorted(
+                self.backup_dir.glob("auto_*.json"),
+                key=lambda p: p.stat().st_mtime,
+                reverse=True
+            )
+            
+            for backup in backups[keep_count:]:
+                backup.unlink()
+                self.logger.debug(f"Ancienne sauvegarde supprimée: {backup}")
+                
+        except Exception as e:
+            self.logger.warning(f"Erreur nettoyage sauvegardes: {e}")
+    
+    def _restore_from_backup(self, backup_path: Path) -> ConfigInfo:
+        """Restaure depuis une sauvegarde."""
+        with open(backup_path, 'r', encoding='utf-8') as f:
+            config_dict = json.load(f)
+        
+        return self._config_dict_to_object(config_dict)
+    
+    # ===== API PUBLIQUE =====
+    
+    def get_environment(self, name: str) -> Optional[EnvironmentInfo]:
+        """Récupère un environnement par nom ou alias."""
+        return self.config.get_environment(name)
     
     def add_environment(self, env_info: EnvironmentInfo) -> bool:
-        """
-        Ajoute un nouvel environnement à la configuration.
-        
-        Args:
-            env_info: Informations de l'environnement.
-        
-        Returns:
-            bool: True si l'ajout réussit, False sinon.
-        """
-        # Vérifier si l'environnement existe déjà
-        if env_info.name in self.config.environments:
-            logger.warning(f"L'environnement {env_info.name} existe déjà.")
-            return False
-        
-        # Ajouter l'environnement
-        self.config.environments[env_info.name] = env_info
-        
-        # Sauvegarder la configuration
-        success = self._save_config()
-        
+        """Ajoute un nouvel environnement."""
+        success = self.config.add_environment(env_info)
         if success:
-            logger.info(f"Environnement {env_info.name} ajouté à la configuration")
-        
+            self.save_config()
         return success
     
     def update_environment(self, env_info: EnvironmentInfo) -> bool:
-        """
-        Met à jour la configuration d'un environnement existant.
-        
-        Args:
-            env_info: Nouvelles informations de l'environnement.
-        
-        Returns:
-            bool: True si la mise à jour réussit, False sinon.
-        
-        Raises:
-            ValueError: Si l'environnement n'existe pas.
-        """
-        if env_info.name not in self.config.environments:
-            raise ValueError(f"L'environnement {env_info.name} n'existe pas.")
-        
-        # Mettre à jour l'environnement
-        self.config.environments[env_info.name] = env_info
-        
-        # Sauvegarder la configuration
-        success = self._save_config()
-        
+        """Met à jour un environnement existant."""
+        if env_info.name in self.config.environments:
+            self.config.environments[env_info.name] = env_info
+            self.save_config()
+            return True
+        return False
+    
+    def remove_environment(self, name: str) -> bool:
+        """Supprime un environnement."""
+        success = self.config.remove_environment(name)
         if success:
-            logger.debug(f"Environnement {env_info.name} mis à jour")
-        
+            self.save_config()
         return success
     
-    def remove_environment(self, env_name: str) -> bool:
-        """
-        Supprime un environnement de la configuration.
-        
-        Args:
-            env_name: Nom de l'environnement à supprimer.
-        
-        Returns:
-            bool: True si la suppression réussit, False sinon.
-        
-        Raises:
-            ValueError: Si l'environnement n'existe pas.
-        """
-        if env_name not in self.config.environments:
-            raise ValueError(f"L'environnement {env_name} n'existe pas.")
-        
-        # Supprimer l'environnement
-        del self.config.environments[env_name]
-        
-        # Mettre à jour l'environnement actif si nécessaire
-        if self.config.active_env == env_name:
-            self.config.active_env = None
-        
-        # Sauvegarder la configuration
-        success = self._save_config()
-        
+    def set_active_environment(self, name: str) -> bool:
+        """Définit l'environnement actif."""
+        success = self.config.set_active_environment(name)
         if success:
-            logger.info(f"Environnement {env_name} supprimé de la configuration")
-        
-        return success
-    
-    def environment_exists(self, env_name: str) -> bool:
-        """
-        Vérifie si un environnement existe dans la configuration.
-        
-        Args:
-            env_name: Nom de l'environnement à vérifier.
-        
-        Returns:
-            bool: True si l'environnement existe, False sinon.
-        """
-        return env_name in self.config.environments
-    
-    def get_active_environment(self) -> Optional[str]:
-        """
-        Récupère le nom de l'environnement actif.
-        
-        Returns:
-            Optional[str]: Nom de l'environnement actif ou None si aucun n'est actif.
-        """
-        return self.config.active_env
-    
-    def set_active_environment(self, env_name: str) -> bool:
-        """
-        Définit l'environnement actif.
-        
-        Args:
-            env_name: Nom de l'environnement à activer.
-        
-        Returns:
-            bool: True si l'activation réussit, False sinon.
-        
-        Raises:
-            ValueError: Si l'environnement n'existe pas.
-        """
-        if not self.environment_exists(env_name):
-            raise ValueError(f"L'environnement {env_name} n'existe pas.")
-        
-        # Définir l'environnement actif
-        self.config.active_env = env_name
-        
-        # Mettre à jour le statut actif dans les environnements
-        for name, env in self.config.environments.items():
-            env.active = (name == env_name)
-        
-        # Sauvegarder la configuration
-        success = self._save_config()
-        
-        if success:
-            logger.info(f"Environnement actif défini à: {env_name}")
-        
-        return success
-    
-    def clear_active_environment(self) -> bool:
-        """
-        Efface l'environnement actif.
-        
-        Returns:
-            bool: True si l'opération réussit, False sinon.
-        """
-        # Réinitialiser l'environnement actif
-        self.config.active_env = None
-        
-        # Réinitialiser le statut actif dans tous les environnements
-        for env in self.config.environments.values():
-            env.active = False
-        
-        # Sauvegarder la configuration
-        success = self._save_config()
-        
-        if success:
-            logger.info("Environnement actif effacé")
-        
-        return success
-    
-    def get_default_python(self) -> str:
-        """
-        Récupère la commande Python par défaut.
-        
-        Returns:
-            str: Commande Python par défaut.
-        """
-        return self.config.default_python
-    
-    def set_default_python(self, python_command: str) -> bool:
-        """
-        Définit la commande Python par défaut.
-        
-        Args:
-            python_command: Commande Python à utiliser par défaut.
-        
-        Returns:
-            bool: True si l'opération réussit, False sinon.
-        """
-        self.config.default_python = python_command
-        success = self._save_config()
-        
-        if success:
-            logger.info(f"Commande Python par défaut définie à: {python_command}")
-        
+            self.save_config()
         return success
     
     def get_setting(self, key: str, default: Any = None) -> Any:
-        """
-        Récupère une valeur de paramètre.
-        
-        Args:
-            key: Clé du paramètre.
-            default: Valeur par défaut si le paramètre n'existe pas.
-        
-        Returns:
-            Any: Valeur du paramètre ou valeur par défaut.
-        """
-        return self.config.settings.get(key, default)
+        """Récupère un paramètre de configuration."""
+        return getattr(self.config, key, default)
     
     def set_setting(self, key: str, value: Any) -> bool:
-        """
-        Définit une valeur de paramètre.
-        
-        Args:
-            key: Clé du paramètre.
-            value: Valeur du paramètre.
-        
-        Returns:
-            bool: True si l'opération réussit, False sinon.
-        """
-        self.config.settings[key] = value
-        success = self._save_config()
-        
-        if success:
-            logger.debug(f"Paramètre {key} défini à: {value}")
-        
-        return success
+        """Définit un paramètre de configuration."""
+        if hasattr(self.config, key):
+            setattr(self.config, key, value)
+            self.config.updated_at = datetime.now()
+            self.save_config()
+            return True
+        return False
     
-    def update_settings(self, settings: Dict[str, Any]) -> bool:
-        """
-        Met à jour plusieurs paramètres en une fois.
-        
-        Args:
-            settings: Dictionnaire des paramètres à mettre à jour.
-        
-        Returns:
-            bool: True si l'opération réussit, False sinon.
-        """
-        self.config.settings.update(settings)
-        success = self._save_config()
-        
-        if success:
-            logger.info(f"Paramètres mis à jour: {list(settings.keys())}")
-        
-        return success
+    def get_strategies(self) -> GestVenvStrategies:
+        """Récupère les stratégies courantes."""
+        return self.strategy_manager.get_strategies()
     
-    def remove_setting(self, key: str) -> bool:
+    def set_strategies(self, strategies: GestVenvStrategies) -> None:
+        """Définit les nouvelles stratégies."""
+        self.strategy_manager.set_strategies(strategies)
+        self.save_config()
+    
+    def export_config(self, output_path: str, include_environments: bool = True) -> bool:
         """
-        Supprime un paramètre.
+        Exporte la configuration vers un fichier.
         
         Args:
-            key: Clé du paramètre à supprimer.
-        
-        Returns:
-            bool: True si l'opération réussit, False sinon.
-        """
-        if key in self.config.settings:
-            del self.config.settings[key]
-            success = self._save_config()
+            output_path: Chemin de sortie
+            include_environments: Inclure les environnements
             
-            if success:
-                logger.debug(f"Paramètre {key} supprimé")
-            
-            return success
-        
-        return True  # Déjà supprimé
-    
-    def export_environment_config(self, env_name: str, output_file: Optional[str] = None, 
-                                  add_metadata: Optional[Dict[str, Any]] = None) -> Union[str, bool]:
-        """
-        Exporte la configuration d'un environnement dans un fichier JSON.
-        
-        Args:
-            env_name: Nom de l'environnement à exporter.
-            output_file: Chemin du fichier de sortie.
-                Si None, retourne le contenu sans l'écrire dans un fichier.
-            add_metadata: Métadonnées supplémentaires à inclure.
-        
         Returns:
-            Union[str, bool]: Contenu JSON si output_file est None,
-                sinon True si l'export réussit, False sinon.
-        
-        Raises:
-            ValueError: Si l'environnement n'existe pas.
+            bool: Succès de l'export
         """
-        if not self.environment_exists(env_name):
-            raise ValueError(f"L'environnement {env_name} n'existe pas.")
-        
-        # Récupérer la configuration de l'environnement
-        env_info = self.get_environment(env_name)
-        if not env_info:
-            raise ValueError(f"Impossible d'obtenir les informations de l'environnement {env_name}.")
-        
-        # Créer la structure d'export
-        export_config = {
-            "export_version": "1.0",
-            "exported_at": datetime.now().isoformat(),
-            "exported_by": "gestvenv",
-            "environment": {
-                "name": env_name,
-                "python_version": env_info.python_version,
-                "created_at": env_info.created_at.isoformat() if hasattr(env_info.created_at, 'isoformat') else str(env_info.created_at),
-                "packages": env_info.packages,
-                "metadata": env_info.metadata if hasattr(env_info, 'metadata') else {}
-            }
-        }
-        
-        # Ajouter les métadonnées supplémentaires
-        if add_metadata:
-            export_config["environment"]["metadata"].update(add_metadata)
-        
-        # Convertir en JSON
-        json_content = json.dumps(export_config, indent=2, ensure_ascii=False)
-        
-        # Écrire dans un fichier si spécifié
-        if output_file:
-            try:
-                output_path = Path(output_file)
-                output_path.parent.mkdir(parents=True, exist_ok=True)
-                
-                with open(output_path, 'w', encoding='utf-8') as f:
-                    f.write(json_content)
-                
-                logger.info(f"Configuration de l'environnement {env_name} exportée dans {output_file}")
-                return True
-            except Exception as e:
-                logger.error(f"Erreur lors de l'export de la configuration: {str(e)}")
-                return False
-        
-        return json_content
-    
-    def import_environment_config(self, config_file: str, env_name: Optional[str] = None, 
-                                  force: bool = False) -> Dict[str, Any]:
-        """
-        Importe une configuration d'environnement depuis un fichier JSON.
-        
-        Args:
-            config_file: Chemin vers le fichier de configuration.
-            env_name: Nom à utiliser pour le nouvel environnement.
-                Si None, utilise le nom spécifié dans le fichier.
-            force: Si True, écrase un environnement existant.
-        
-        Returns:
-            Dict[str, Any]: Résultat de l'opération d'import.
-        
-        Raises:
-            ValueError: Si le fichier n'existe pas ou n'est pas au format attendu.
-        """
-        if not os.path.exists(config_file):
-            raise ValueError(f"Le fichier de configuration {config_file} n'existe pas.")
-        
         try:
-            # Charger la configuration depuis le fichier
-            with open(config_file, 'r', encoding='utf-8') as f:
-                import_config = json.load(f)
-            
-            # Vérifier le format de la configuration
-            if "environment" not in import_config:
-                # Format ancien ou direct
-                if "name" in import_config and "packages" in import_config:
-                    env_config = import_config
-                else:
-                    raise ValueError("Format de configuration invalide.")
-            else:
-                # Format nouveau avec métadonnées
-                env_config = import_config["environment"]
-            
-            # Déterminer le nom de l'environnement
-            target_env_name = env_name or env_config.get("name")
-            if not target_env_name:
-                raise ValueError("Nom d'environnement non spécifié dans la configuration.")
-            
-            # Vérifier si l'environnement existe déjà
-            if self.environment_exists(target_env_name) and not force:
-                return {
-                    "status": "error",
-                    "message": f"L'environnement {target_env_name} existe déjà. Utilisez --force pour l'écraser."
-                }
-            
-            # Préparer les informations pour la création
-            python_version = env_config.get("python_version", self.get_default_python())
-            packages = env_config.get("packages", [])
-            metadata = env_config.get("metadata", {})
-            
-            # Ajouter les métadonnées d'import
-            metadata["imported_from"] = os.path.basename(config_file)
-            metadata["imported_at"] = datetime.now().isoformat()
-            if "export_version" in import_config:
-                metadata["source_export_version"] = import_config["export_version"]
-            
-            return {
-                "status": "success",
-                "env_name": target_env_name,
-                "config": {
-                    "python_version": python_version,
-                    "packages": packages,
-                    "metadata": metadata
-                }
+            export_data = {
+                "export_version": "1.1.0",
+                "export_date": datetime.now().isoformat(),
+                "source_version": SCHEMA_VERSION,
+                "config": self.config.to_dict()
             }
             
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Erreur de décodage JSON: {str(e)}")
+            if not include_environments:
+                export_data["config"]["environments"] = {}
+            
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(export_data, f, indent=2, ensure_ascii=False, default=str)
+            
+            self.logger.info(f"Configuration exportée vers: {output_path}")
+            return True
+            
         except Exception as e:
-            raise ValueError(f"Erreur lors de l'import de la configuration: {str(e)}")
+            self.logger.error(f"Erreur export configuration: {e}")
+            return False
     
-    def create_backup(self, backup_name: Optional[str] = None) -> Tuple[bool, str]:
+    def import_config(self, input_path: str, merge: bool = False) -> bool:
         """
-        Crée une sauvegarde de la configuration actuelle.
+        Importe une configuration depuis un fichier.
         
         Args:
-            backup_name: Nom de la sauvegarde (optionnel).
-        
+            input_path: Chemin du fichier à importer
+            merge: Fusionner avec la configuration existante
+            
         Returns:
-            Tuple[bool, str]: (succès, chemin de la sauvegarde ou message d'erreur).
+            bool: Succès de l'import
+        """
+        try:
+            with open(input_path, 'r', encoding='utf-8') as f:
+                import_data = json.load(f)
+            
+            # Valider le format d'export
+            if "config" not in import_data:
+                raise ValueError("Format d'export invalide")
+            
+            imported_config_dict = import_data["config"]
+            
+            # Migrer si nécessaire
+            if self.migration_handler.needs_migration(imported_config_dict):
+                strategy = self._get_migration_strategy(imported_config_dict)
+                imported_config_dict = self.migration_handler.migrate_config(
+                    imported_config_dict, strategy
+                )
+            
+            if merge:
+                # Fusionner avec la configuration existante
+                self._merge_config(imported_config_dict)
+            else:
+                # Remplacer la configuration
+                self.config = self._config_dict_to_object(imported_config_dict)
+            
+            self.save_config()
+            self.logger.info(f"Configuration importée depuis: {input_path}")
+            return True
+            
+        except Exception as e:
+            self.logger.error(f"Erreur import configuration: {e}")
+            return False
+    
+    def _merge_config(self, imported_config_dict: Dict[str, Any]) -> None:
+        """Fusionne une configuration importée avec l'existante."""
+        # Fusionner les environnements
+        imported_environments = imported_config_dict.get("environments", {})
+        for env_name, env_data in imported_environments.items():
+            env_info = EnvironmentInfo.from_dict(env_data)
+            self.config.environments[env_name] = env_info
+        
+        # Fusionner les templates
+        imported_templates = imported_config_dict.get("templates", {})
+        self.config.templates.update(imported_templates)
+        
+        # Fusionner les alias globaux
+        imported_aliases = imported_config_dict.get("global_aliases", {})
+        self.config.global_aliases.update(imported_aliases)
+    
+    def create_manual_backup(self, backup_name: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Crée une sauvegarde manuelle.
+        
+        Args:
+            backup_name: Nom de la sauvegarde
+            
+        Returns:
+            Tuple[bool, str]: (succès, chemin ou message d'erreur)
         """
         try:
             if not backup_name:
-                backup_name = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                backup_name = f"manual_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
             
             backup_path = self.backup_dir / f"{backup_name}.json"
             
-            # Créer la sauvegarde avec métadonnées
             backup_data = {
-                "backup_version": "1.0",
+                "backup_version": "1.1.0",
                 "created_at": datetime.now().isoformat(),
                 "original_config_path": str(self.config_path),
                 "config": self.config.to_dict()
             }
             
             with open(backup_path, 'w', encoding='utf-8') as f:
-                json.dump(backup_data, f, indent=2, ensure_ascii=False)
+                json.dump(backup_data, f, indent=2, ensure_ascii=False, default=str)
             
-            logger.info(f"Sauvegarde créée: {backup_path}")
+            self.logger.info(f"Sauvegarde manuelle créée: {backup_path}")
             return True, str(backup_path)
             
         except Exception as e:
-            error_msg = f"Erreur lors de la création de la sauvegarde: {str(e)}"
-            logger.error(error_msg)
+            error_msg = f"Erreur création sauvegarde: {e}"
+            self.logger.error(error_msg)
             return False, error_msg
-    
-    def _create_backup(self, backup_name: str) -> None:
-        """Crée une sauvegarde interne (sans gestion d'erreur)."""
-        try:
-            self.create_backup(backup_name)
-        except Exception as e:
-            logger.warning(f"Impossible de créer la sauvegarde {backup_name}: {str(e)}")
     
     def list_backups(self) -> List[Dict[str, Any]]:
-        """
-        Liste les sauvegardes disponibles.
-        
-        Returns:
-            List[Dict[str, Any]]: Liste des sauvegardes avec leurs métadonnées.
-        """
+        """Liste les sauvegardes disponibles."""
         backups = []
         
-        try:
-            for backup_file in self.backup_dir.glob("*.json"):
-                try:
-                    with open(backup_file, 'r', encoding='utf-8') as f:
-                        backup_data = json.load(f)
-                    
-                    backup_info = {
-                        "name": backup_file.stem,
-                        "path": str(backup_file),
-                        "size": backup_file.stat().st_size,
-                        "created_at": backup_data.get("created_at", "Unknown"),
-                        "version": backup_data.get("backup_version", "Unknown")
-                    }
-                    
-                    # Ajouter des informations sur le contenu
-                    if "config" in backup_data:
-                        config = backup_data["config"]
-                        backup_info["environments_count"] = len(config.get("environments", {}))
-                        backup_info["active_env"] = config.get("active_env")
-                    
-                    backups.append(backup_info)
-                    
-                except Exception as e:
-                    logger.warning(f"Impossible de lire la sauvegarde {backup_file}: {str(e)}")
-            
-            # Trier par date de création (plus récent en premier)
-            backups.sort(key=lambda x: x["created_at"], reverse=True)
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la liste des sauvegardes: {str(e)}")
+        if not self.backup_dir.exists():
+            return backups
         
-        return backups
+        for backup_file in self.backup_dir.glob("*.json"):
+            try:
+                stat = backup_file.stat()
+                backups.append({
+                    "name": backup_file.stem,
+                    "path": str(backup_file),
+                    "size": stat.st_size,
+                    "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    "type": "auto" if backup_file.name.startswith("auto_") else "manual"
+                })
+            except Exception:
+                continue
+        
+        return sorted(backups, key=lambda x: x["created_at"], reverse=True)
     
-    def restore_from_backup(self, backup_name: str) -> Tuple[bool, str]:
+    def validate_current_config(self) -> Tuple[bool, List[str], List[str]]:
         """
-        Restaure la configuration depuis une sauvegarde.
-        
-        Args:
-            backup_name: Nom de la sauvegarde à restaurer.
+        Valide la configuration courante.
         
         Returns:
-            Tuple[bool, str]: (succès, message).
+            Tuple[bool, List[str], List[str]]: (is_valid, errors, warnings)
         """
-        backup_path = self.backup_dir / f"{backup_name}.json"
-        
-        if not backup_path.exists():
-            return False, f"Sauvegarde '{backup_name}' non trouvée"
-        
-        try:
-            return self._restore_from_backup_file(backup_path)
-        except Exception as e:
-            error_msg = f"Erreur lors de la restauration: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
+        config_dict = self.config.to_dict()
+        return self.validator.validate_config(config_dict)
     
-    def _restore_from_backup_file(self, backup_path: Path) -> ConfigInfo:
-        """Restaure depuis un fichier de sauvegarde spécifique."""
-        # Créer une sauvegarde de la configuration actuelle avant restauration
-        self._create_backup("pre_restore")
-        
-        with open(backup_path, 'r', encoding='utf-8') as f:
-            backup_data = json.load(f)
-        
-        if "config" not in backup_data:
-            raise ConfigBackupError("Format de sauvegarde invalide")
-        
-        # Valider la configuration de sauvegarde
-        config_dict = backup_data["config"]
-        self._validate_config_structure(config_dict)
-        
-        # Créer l'objet ConfigInfo
-        restored_config = ConfigInfo.from_dict(config_dict)
-        
-        # Mettre à jour la configuration actuelle
-        self.config = restored_config
-        
-        # Sauvegarder la configuration restaurée
-        if not self._save_config():
-            raise ConfigBackupError("Impossible de sauvegarder la configuration restaurée")
-        
-        logger.info(f"Configuration restaurée depuis {backup_path}")
-        return restored_config
-    
-    def _get_latest_backup(self) -> Optional[Path]:
-        """Récupère le chemin de la sauvegarde la plus récente."""
-        backups = self.list_backups()
-        if backups:
-            return Path(backups[0]["path"])
-        return None
-    
-    def delete_backup(self, backup_name: str) -> Tuple[bool, str]:
+    def repair_config(self) -> bool:
         """
-        Supprime une sauvegarde.
-        
-        Args:
-            backup_name: Nom de la sauvegarde à supprimer.
+        Répare automatiquement la configuration courante.
         
         Returns:
-            Tuple[bool, str]: (succès, message).
-        """
-        backup_path = self.backup_dir / f"{backup_name}.json"
-        
-        if not backup_path.exists():
-            return False, f"Sauvegarde '{backup_name}' non trouvée"
-        
-        try:
-            backup_path.unlink()
-            logger.info(f"Sauvegarde supprimée: {backup_name}")
-            return True, f"Sauvegarde '{backup_name}' supprimée avec succès"
-        except Exception as e:
-            error_msg = f"Erreur lors de la suppression de la sauvegarde: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
-    
-    def clean_old_backups(self, days: int = 30) -> Tuple[int, int]:
-        """
-        Nettoie les anciennes sauvegardes.
-        
-        Args:
-            days: Âge maximum des sauvegardes à conserver.
-        
-        Returns:
-            Tuple[int, int]: (nombre de sauvegardes supprimées, espace libéré en octets).
-        """
-        deleted_count = 0
-        freed_space = 0
-        cutoff_date = datetime.now() - timedelta(days=days)
-        
-        try:
-            for backup_file in self.backup_dir.glob("*.json"):
-                try:
-                    stat = backup_file.stat()
-                    modified_time = datetime.fromtimestamp(stat.st_mtime)
-                    
-                    if modified_time < cutoff_date:
-                        freed_space += stat.st_size
-                        backup_file.unlink()
-                        deleted_count += 1
-                        logger.debug(f"Ancienne sauvegarde supprimée: {backup_file.name}")
-                        
-                except Exception as e:
-                    logger.warning(f"Erreur lors de la suppression de {backup_file}: {str(e)}")
-            
-            if deleted_count > 0:
-                logger.info(f"Nettoyage terminé: {deleted_count} sauvegarde(s) supprimée(s), {freed_space // 1024} KB libérés")
-            
-        except Exception as e:
-            logger.error(f"Erreur lors du nettoyage des sauvegardes: {str(e)}")
-        
-        return deleted_count, freed_space
-    
-    def reset_config(self, keep_environments: bool = False) -> Tuple[bool, str]:
-        """
-        Remet la configuration à zéro.
-        
-        Args:
-            keep_environments: Si True, conserve les environnements existants.
-        
-        Returns:
-            Tuple[bool, str]: (succès, message).
+            bool: Succès de la réparation
         """
         try:
-            # Créer une sauvegarde avant reset
-            self._create_backup("pre_reset")
-            
-            if keep_environments:
-                # Conserver les environnements existants
-                environments = self.config.environments
-                active_env = self.config.active_env
-                
-                # Créer une nouvelle configuration
-                self.config = self._create_default_config()
-                
-                # Restaurer les environnements
-                self.config.environments = environments
-                self.config.active_env = active_env
-                
-                message = "Configuration réinitialisée (environnements conservés)"
-            else:
-                # Reset complet
-                self.config = self._create_default_config()
-                message = "Configuration complètement réinitialisée"
-            
-            # Sauvegarder la nouvelle configuration
-            if self._save_config():
-                logger.info(message)
-                return True, message
-            else:
-                return False, "Erreur lors de la sauvegarde de la configuration réinitialisée"
-                
+            config_dict = self.config.to_dict()
+            repaired_dict = self.validator.repair_config(config_dict)
+            self.config = self._config_dict_to_object(repaired_dict)
+            self.save_config()
+            self.logger.info("Configuration réparée automatiquement")
+            return True
         except Exception as e:
-            error_msg = f"Erreur lors de la réinitialisation: {str(e)}"
-            logger.error(error_msg)
-            return False, error_msg
+            self.logger.error(f"Erreur réparation configuration: {e}")
+            return False
     
-    def _auto_backup(self) -> None:
-        """Crée automatiquement une sauvegarde périodique."""
-        try:
-            # Vérifier si une sauvegarde automatique est nécessaire
-            auto_backup_path = self.backup_dir / "auto_backup.json"
-            should_backup = True
-            
-            if auto_backup_path.exists():
-                # Vérifier l'âge de la dernière sauvegarde automatique
-                stat = auto_backup_path.stat()
-                last_backup = datetime.fromtimestamp(stat.st_mtime)
-                if (datetime.now() - last_backup).days < 1:
-                    should_backup = False
-            
-            if should_backup:
-                self.create_backup("auto_backup")
-                
-        except Exception as e:
-            logger.debug(f"Erreur lors de la sauvegarde automatique: {str(e)}")
-    
-    def validate_integrity(self) -> Tuple[bool, List[str]]:
-        """
-        Valide l'intégrité de la configuration.
-        
-        Returns:
-            Tuple[bool, List[str]]: (intégrité OK, liste des problèmes détectés).
-        """
-        issues = []
-        
-        try:
-            # Vérifier la structure de base
-            self._validate_config_structure(self.config.to_dict())
-            
-            # Vérifier la cohérence des environnements
-            for env_name, env_info in self.config.environments.items():
-                if env_name != env_info.name:
-                    issues.append(f"Nom incohérent pour l'environnement {env_name}")
-                
-                if not hasattr(env_info, 'path') or not env_info.path:
-                    issues.append(f"Chemin manquant pour l'environnement {env_name}")
-                
-                if not hasattr(env_info, 'python_version') or not env_info.python_version:
-                    issues.append(f"Version Python manquante pour l'environnement {env_name}")
-            
-            # Vérifier l'environnement actif
-            if self.config.active_env and self.config.active_env not in self.config.environments:
-                issues.append(f"Environnement actif '{self.config.active_env}' n'existe pas")
-            
-            # Vérifier les paramètres critiques
-            required_settings = ["auto_activate", "package_cache_enabled"]
-            for setting in required_settings:
-                if setting not in self.config.settings:
-                    issues.append(f"Paramètre manquant: {setting}")
-            
-        except ConfigValidationError as e:
-            issues.append(f"Erreur de validation: {str(e)}")
-        except Exception as e:
-            issues.append(f"Erreur inattendue lors de la validation: {str(e)}")
-        
-        return len(issues) == 0, issues
-    
-    def get_config_summary(self) -> Dict[str, Any]:
-        """
-        Retourne un résumé de la configuration.
-        
-        Returns:
-            Dict[str, Any]: Résumé de la configuration.
-        """
+    def get_config_info(self) -> Dict[str, Any]:
+        """Retourne des informations sur la configuration."""
         return {
+            "version": self.config.config_version,
             "config_path": str(self.config_path),
-            "version": self.config.settings.get("version", "Unknown"),
-            "created_at": self.config.settings.get("created_at", "Unknown"),
-            "last_modified": self.config.settings.get("last_modified", "Unknown"),
-            "total_environments": len(self.config.environments),
+            "backup_dir": str(self.backup_dir),
+            "cache_dir": str(self.cache_dir),
+            "created_at": self.config.created_at.isoformat() if self.config.created_at else None,
+            "updated_at": self.config.updated_at.isoformat() if self.config.updated_at else None,
+            "migrated_from": self.config.migrated_from_version,
+            "environments_count": len(self.config.environments),
             "active_environment": self.config.active_env,
-            "default_python": self.config.default_python,
-            "offline_mode": self.get_setting("offline_mode", False),
-            "cache_enabled": self.get_setting("use_package_cache", True),
-            "settings_count": len(self.config.settings),
-            "backup_count": len(self.list_backups())
+            "strategies": {
+                "migration_mode": self.get_strategies().migration.mode.value,
+                "preferred_backend": self.config.preferred_backend,
+                "cache_enabled": self.get_strategies().cache.enabled
+            }
         }
-    
-    # Méthodes de compatibilité pour les fonctionnalités de cache
-    def set_offline_mode(self, enabled: bool) -> bool:
-        """
-        Active ou désactive le mode hors ligne.
-        
-        Args:
-            enabled: True pour activer, False pour désactiver
-            
-        Returns:
-            bool: True si l'opération réussit, False sinon
-        """
-        return self.set_setting("offline_mode", enabled)
-    
-    def get_offline_mode(self) -> bool:
-        """
-        Vérifie si le mode hors ligne est activé.
-        
-        Returns:
-            bool: True si le mode hors ligne est activé
-        """
-        return self.get_setting("offline_mode", False)
-    
-    def set_cache_enabled(self, enabled: bool) -> bool:
-        """
-        Active ou désactive l'utilisation du cache de packages.
-        
-        Args:
-            enabled: True pour activer, False pour désactiver
-            
-        Returns:
-            bool: True si l'opération réussit, False sinon
-        """
-        return self.set_setting("use_package_cache", enabled)
-    
-    def get_cache_enabled(self) -> bool:
-        """
-        Vérifie si l'utilisation du cache de packages est activée.
-        
-        Returns:
-            bool: True si l'utilisation du cache est activée
-        """
-        return self.get_setting("use_package_cache", True)
 
+
+# ===== EXPORTS =====
+
+__all__ = [
+    'ConfigManager',
+    'MigrationHandler',
+    'StrategyManager', 
+    'ConfigValidator',
+    'ConfigCorruptedError',
+    'ConfigBackupError',
+    'StrategyError'
+]
