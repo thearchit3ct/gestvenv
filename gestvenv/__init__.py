@@ -57,9 +57,9 @@ try:
     from .services.diagnostic_services import DiagnosticService
     
     # Utilitaires les plus couramment utilisés
-    from .utils.logging_utils import setup_logging, get_logger, LogCategory
-    from .utils.path_utils import get_default_data_dir, resolve_path
-    from .utils.validation_utils import is_valid_name, is_valid_path
+    from gestvenv.utils.logging_utils import setup_logging, get_logger, LogCategory
+    from gestvenv.utils.path_utils import get_default_data_dir, resolve_path
+    from gestvenv.utils.validation_utils import is_valid_name, is_valid_path
     
     _IMPORTS_SUCCESSFUL = True
     

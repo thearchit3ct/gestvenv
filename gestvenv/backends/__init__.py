@@ -22,6 +22,7 @@ from .base_backend import (
 from .pip_backend import PipBackend
 from .uv_backend import UvBackend
 from .poetry_backend import PoetryBackend
+from .pdm_backend import PdmBackend
 
 __all__ = [
     # Interface et types
@@ -34,6 +35,7 @@ __all__ = [
     'PipBackend',
     'UvBackend',
     'PoetryBackend',
+    'PdmBackend',
     
     # Manager
     'BackendManager'
@@ -44,6 +46,7 @@ AVAILABLE_BACKENDS = {
     BackendType.PIP: PipBackend,
     BackendType.UV: UvBackend,
     BackendType.POETRY: PoetryBackend,
+    BackendType.PDM: PdmBackend,
 }
 
 class BackendManager:
@@ -58,11 +61,11 @@ class BackendManager:
     5. Fallback: pip (toujours disponible)
     """
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.backends = {}
         self._initialize_backends()
     
-    def _initialize_backends(self):
+    def _initialize_backends(self) -> None:
         """Initialise tous les backends disponibles."""
         for backend_type, backend_class in AVAILABLE_BACKENDS.items():
             try:
@@ -112,7 +115,7 @@ class BackendManager:
                 pass
         
         # 4. Ordre de préférence par défaut
-        for backend_type in [BackendType.UV, BackendType.PIP, BackendType.POETRY]:
+        for backend_type in [BackendType.UV, BackendType.PIP, BackendType.POETRY, BackendType.PDM]:
             if backend_type in self.backends:
                 return self.backends[backend_type]
         
@@ -137,6 +140,7 @@ class BackendManager:
         indicators = {
             BackendType.UV: ['uv.lock'],
             BackendType.POETRY: ['poetry.lock'],
+            BackendType.PDM: ['pdm.lock'],
             BackendType.PIP: ['requirements.txt', 'requirements.in']
         }
         
@@ -157,6 +161,8 @@ class BackendManager:
                 if 'tool' in data:
                     if 'poetry' in data['tool']:
                         return BackendType.POETRY
+                    if 'pdm' in data['tool']:
+                        return BackendType.PDM
                     if 'uv' in data['tool']:
                         return BackendType.UV
                         

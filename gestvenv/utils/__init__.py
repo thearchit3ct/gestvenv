@@ -1,102 +1,33 @@
 """
-Utilitaires pour GestVenv.
-
-Ce package contient des modules utilitaires indépendants utilisés par les services et les composants core:
-- path_utils: Fonctions de gestion des chemins
-- system_utils: Fonctions d'interaction avec le système
-- validation_utils: Fonctions de validation des entrées
-- format_utils: Fonctions de formatage et d'affichage
-- logging_utils: Fonctions de gestion des logs et de débogage
+Package utils pour GestVenv v1.1
+Utilitaires centralisés pour la gestion moderne des environnements Python.
 """
 
-# Définition des exports principaux pour simplifier les imports
-from .path_utils import (
-    get_os_name,
-    expand_user_path,
-    resolve_path,
-    ensure_dir_exists,
-    get_default_data_dir,
-    get_normalized_path,
-    get_relative_path,
-    is_subpath,
-    find_file_in_parents,
-    get_file_extension,
-    get_file_name_without_extension,
-    split_path
-)
+from .path_utils import PathUtils, normalize_path, safe_path_join
+from .system_utils import SystemUtils, get_system_info, check_command_available
+from .format_utils import FormatUtils, format_size, format_duration, format_table
+from .validation_utils import ValidationUtils, validate_package_name, validate_version
+from .toml_utils import TomlUtils, load_toml, save_toml, validate_toml_structure
+from .pyproject_parser import PyProjectParser, PyProjectConfig, ProjectMetadata
+from .migration_utils import MigrationService, MigrationAnalysis, RequirementsConverter
+from .logging_utils import LoggingUtils, setup_logging, get_logger
 
-from .system_utils import (
-    run_simple_command,
-    get_current_username,
-    is_command_available,
-    get_terminal_size,
-    get_python_version_info,
-    get_system_info,
-    check_program_version,
-    open_file,
-    get_free_disk_space
-)
-
-from .validation_utils import (
-    is_valid_name,
-    is_valid_path,
-    is_safe_directory,
-    matches_pattern,
-    parse_version_string,
-    is_valid_python_version,
-    is_valid_package_name,
-    validate_packages_list,
-    parse_key_value_string
-)
-
-from .format_utils import (
-    format_timestamp,
-    truncate_string,
-    format_list_as_table,
-    get_color_for_terminal,
-    format_size,
-    format_duration
-)
-
-from .logging_utils import (
-    setup_logging,
-    get_logger,
-    get_log_manager,
-    log_operation,
-    log_package_operation,
-    log_error,
-    LogLevel,
-    LogCategory,
-    LoggedOperation,
-    GestVenvLogManager,
-    ColoredFormatter,
-    StructuredFormatter
-)
-
+__version__ = "1.1.0"
 __all__ = [
-    # path_utils
-    'get_os_name', 'expand_user_path', 'resolve_path', 'ensure_dir_exists',
-    'get_default_data_dir', 'get_normalized_path', 'get_relative_path',
-    'is_subpath', 'find_file_in_parents', 'get_file_extension',
-    'get_file_name_without_extension', 'split_path',
-    
-    # system_utils
-    'run_simple_command', 'get_current_username', 'is_command_available', 
-    'get_terminal_size', 'get_python_version_info', 'get_system_info',
-    'check_program_version', 'open_file', 'get_free_disk_space',
-    
-    # validation_utils
-    'is_valid_name', 'is_valid_path', 'is_safe_directory', 
-    'matches_pattern', 'parse_version_string', 'is_valid_python_version',
-    'is_valid_package_name', 'validate_packages_list', 'parse_key_value_string',
-    
-    # format_utils
-    'format_timestamp', 'truncate_string', 'format_list_as_table',
-    'get_color_for_terminal', 'format_size', 'format_duration',
-    
-    # logging_utils
-    'setup_logging', 'get_logger', 'get_log_manager', 'log_operation',
-    'log_package_operation', 'log_error', 'LogLevel', 'LogCategory',
-    'LoggedOperation', 'GestVenvLogManager', 'ColoredFormatter', 
-    'StructuredFormatter'
+    # Path utilities
+    "PathUtils", "normalize_path", "safe_path_join",
+    # System utilities  
+    "SystemUtils", "get_system_info", "check_command_available",
+    # Format utilities
+    "FormatUtils", "format_size", "format_duration", "format_table",
+    # Validation utilities
+    "ValidationUtils", "validate_package_name", "validate_version",
+    # TOML utilities
+    "TomlUtils", "load_toml", "save_toml", "validate_toml_structure",
+    # PyProject utilities
+    "PyProjectParser", "PyProjectConfig", "ProjectMetadata",
+    # Migration utilities
+    "MigrationService", "MigrationAnalysis", "RequirementsConverter",
+    # Logging utilities
+    "LoggingUtils", "setup_logging", "get_logger",
 ]

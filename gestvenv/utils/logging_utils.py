@@ -1,915 +1,507 @@
 """
-Utilitaires de logging pour GestVenv.
-
-Ce module fournit des fonctions et classes pour gérer les logs de GestVenv,
-incluant la configuration des loggers, la rotation des fichiers et le formatage.
+Système de logging centralisé pour GestVenv v1.1.
+Configuration avancée avec support multi-niveaux, rotation, couleurs.
 """
 
 import os
 import sys
-import json
 import logging
 import logging.handlers
-from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, TextIO
-from enum import Enum
+from typing import Dict, Optional, Union, Any, List
+from datetime import datetime
+from dataclasses import dataclass
+import threading
+from contextlib import contextmanager
 
-class LogLevel(Enum):
-    """Niveaux de log personnalisés pour GestVenv."""
-    TRACE = 5
-    DEBUG = logging.DEBUG
-    INFO = logging.INFO
-    WARNING = logging.WARNING
-    ERROR = logging.ERROR
-    CRITICAL = logging.CRITICAL
+# Import des couleurs depuis format_utils
+from .format_utils import Colors
 
-class LogCategory(Enum):
-    """Catégories de logs pour GestVenv."""
-    GENERAL = "general"
-    ENVIRONMENT = "environment"
-    PACKAGE = "package"
-    CACHE = "cache"
-    DIAGNOSTIC = "diagnostic"
-    SYSTEM = "system"
-    CLI = "cli"
+@dataclass
+class LogConfig:
+    """Configuration du système de logging."""
+    level: str = "INFO"
+    format_console: str = "%(asctime)s | %(levelname)-8s | %(name)-20s | %(message)s"
+    format_file: str = "%(asctime)s | %(levelname)-8s | %(name)-30s | %(filename)s:%(lineno)d | %(message)s"
+    date_format: str = "%Y-%m-%d %H:%M:%S"
+    log_dir: Optional[Path] = None
+    max_file_size: int = 10 * 1024 * 1024  # 10MB
+    backup_count: int = 5
+    enable_colors: bool = True
+    enable_file_logging: bool = True
+    enable_console_logging: bool = True
+    modules_config: Dict[str, str] = None
 
 class ColoredFormatter(logging.Formatter):
-    """Formateur de logs avec couleurs pour le terminal."""
+    """Formateur avec support des couleurs pour le terminal."""
     
-    # Codes couleur ANSI
-    COLORS = {
-        'TRACE': '\033[36m',      # Cyan
-        'DEBUG': '\033[34m',      # Bleu
-        'INFO': '\033[32m',       # Vert
-        'WARNING': '\033[33m',    # Jaune
-        'ERROR': '\033[31m',      # Rouge
-        'CRITICAL': '\033[35m',   # Magenta
-        'RESET': '\033[0m'        # Reset
+    LEVEL_COLORS = {
+        logging.DEBUG: Colors.BRIGHT_BLACK,
+        logging.INFO: Colors.BRIGHT_BLUE,
+        logging.WARNING: Colors.BRIGHT_YELLOW,
+        logging.ERROR: Colors.BRIGHT_RED,
+        logging.CRITICAL: Colors.BRIGHT_MAGENTA + Colors.BOLD,
     }
     
-    def __init__(self, fmt: Optional[str] = None, datefmt: Optional[str] = None, 
-                 use_colors: bool = True):
-        """
-        Initialise le formateur coloré.
-        
-        Args:
-            fmt: Format des messages.
-            datefmt: Format des dates.
-            use_colors: Si True, utilise les couleurs dans le terminal.
-        """
+    def __init__(self, fmt: str, datefmt: str = None, enable_colors: bool = True):
         super().__init__(fmt, datefmt)
-        self.use_colors = use_colors and self._supports_color()
+        self.enable_colors = enable_colors and self._supports_color()
     
     def _supports_color(self) -> bool:
         """Vérifie si le terminal supporte les couleurs."""
-        return (
-            hasattr(sys.stderr, "isatty") and sys.stderr.isatty() and
-            os.environ.get("TERM") != "dumb" and
-            os.name != "nt"  # Désactivé sur Windows par défaut
-        )
+        if not hasattr(sys.stderr, "isatty"):
+            return False
+        if not sys.stderr.isatty():
+            return False
+        if os.environ.get("NO_COLOR"):
+            return False
+        if os.environ.get("TERM") == "dumb":
+            return False
+        return True
     
     def format(self, record: logging.LogRecord) -> str:
         """Formate un enregistrement de log avec couleurs."""
-        if self.use_colors and record.levelname in self.COLORS:
-            # Ajouter la couleur au nom du niveau
-            colored_levelname = (
-                f"{self.COLORS[record.levelname]}{record.levelname}{self.COLORS['RESET']}"
-            )
-            # Sauvegarder l'original
-            original_levelname = record.levelname
-            record.levelname = colored_levelname
-            
-            # Formater avec couleur
-            formatted = super().format(record)
-            
-            # Restaurer l'original
-            record.levelname = original_levelname
-            
-            return formatted
+        if not self.enable_colors:
+            return super().format(record)
         
-        return super().format(record)
+        # Sauvegarder le message original
+        original_msg = record.getMessage()
+        
+        # Obtenir la couleur pour le niveau
+        level_color = self.LEVEL_COLORS.get(record.levelno, "")
+        
+        # Coloriser le niveau
+        if level_color:
+            record.levelname = f"{level_color}{record.levelname}{Colors.RESET}"
+        
+        # Coloriser le nom du module
+        if record.name:
+            record.name = f"{Colors.CYAN}{record.name}{Colors.RESET}"
+        
+        # Coloriser le message selon le niveau
+        if record.levelno >= logging.ERROR:
+            record.msg = f"{Colors.BRIGHT_RED}{record.msg}{Colors.RESET}"
+        elif record.levelno >= logging.WARNING:
+            record.msg = f"{Colors.BRIGHT_YELLOW}{record.msg}{Colors.RESET}"
+        
+        # Formater
+        formatted = super().format(record)
+        
+        # Restaurer le message original
+        record.msg = original_msg
+        
+        return formatted
 
-class StructuredFormatter(logging.Formatter):
-    """Formateur de logs structuré (JSON)."""
+class ThreadSafeLogger:
+    """Logger thread-safe avec cache des instances."""
     
-    def __init__(self, include_extra: bool = True):
-        """
-        Initialise le formateur structuré.
-        
-        Args:
-            include_extra: Si True, inclut les champs supplémentaires.
-        """
-        super().__init__()
-        self.include_extra = include_extra
+    _loggers: Dict[str, logging.Logger] = {}
+    _lock = threading.Lock()
     
-    def format(self, record: logging.LogRecord) -> str:
-        """Formate un enregistrement en JSON."""
-        log_data = {
-            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-            "module": record.module,
-            "function": record.funcName,
-            "line": record.lineno
-        }
-        
-        # Ajouter les champs supplémentaires si disponibles
-        if self.include_extra:
-            extra_fields = [
-                'environment', 'category', 'operation', 'duration',
-                'package_name', 'cache_hit', 'error_type'
-            ]
-            
-            for field in extra_fields:
-                if hasattr(record, field):
-                    log_data[field] = getattr(record, field)
-        
-        # Ajouter les informations d'exception si présentes
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-        
-        return json.dumps(log_data, ensure_ascii=False)
+    @classmethod
+    def get_logger(cls, name: str) -> logging.Logger:
+        """Récupère un logger thread-safe."""
+        if name not in cls._loggers:
+            with cls._lock:
+                if name not in cls._loggers:
+                    cls._loggers[name] = logging.getLogger(name)
+        return cls._loggers[name]
 
-class GestVenvLogManager:
-    """Gestionnaire principal des logs pour GestVenv."""
+class LoggingUtils:
+    """Utilitaires de logging centralisés pour GestVenv."""
     
-    def __init__(self, logs_dir: Optional[Path] = None):
+    _initialized = False
+    _config: Optional[LogConfig] = None
+    _log_dir: Optional[Path] = None
+    
+    @staticmethod
+    def setup_logging(config: Optional[LogConfig] = None, 
+                     log_dir: Optional[Union[str, Path]] = None,
+                     verbosity: int = 0) -> None:
         """
-        Initialise le gestionnaire de logs.
+        Configure le système de logging global.
         
         Args:
-            logs_dir: Répertoire des logs. Si None, utilise le répertoire par défaut.
+            config: Configuration personnalisée
+            log_dir: Répertoire des logs
+            verbosity: Niveau de verbosité (0=INFO, 1=DEBUG, 2=TRACE)
         """
-        if logs_dir is None:
-            from .path_utils import get_default_data_dir
-            self.logs_dir = get_default_data_dir() / "logs"
-        else:
-            self.logs_dir = Path(logs_dir)
+        if LoggingUtils._initialized:
+            return
         
-        # Créer le répertoire des logs
-        self.logs_dir.mkdir(parents=True, exist_ok=True)
+        # Configuration par défaut ou personnalisée
+        if config is None:
+            config = LogConfig()
         
-        # Configuration par défaut
-        self.default_format = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-        self.date_format = "%Y-%m-%d %H:%M:%S"
+        # Déterminer le niveau selon la verbosité
+        level_map = {0: "INFO", 1: "DEBUG", 2: "DEBUG"}
+        if verbosity in level_map:
+            config.level = level_map[verbosity]
         
-        # Loggers configurés
-        self._configured_loggers: Dict[str, logging.Logger] = {}
+        # Configurer le répertoire de logs
+        if log_dir:
+            config.log_dir = Path(log_dir)
+        elif config.log_dir is None:
+            config.log_dir = LoggingUtils._get_default_log_dir()
         
-        # Ajouter le niveau TRACE personnalisé
-        logging.addLevelName(LogLevel.TRACE.value, "TRACE")
-    
-    def get_logger(self, name: str, category: LogCategory = LogCategory.GENERAL,
-                   level: LogLevel = LogLevel.INFO, 
-                   console_output: bool = True,
-                   file_output: bool = True,
-                   structured_format: bool = False) -> logging.Logger:
-        """
-        Obtient ou crée un logger configuré.
+        # Créer le répertoire de logs
+        if config.enable_file_logging and config.log_dir:
+            config.log_dir.mkdir(parents=True, exist_ok=True)
         
-        Args:
-            name: Nom du logger.
-            category: Catégorie du logger.
-            level: Niveau de log minimum.
-            console_output: Si True, active la sortie console.
-            file_output: Si True, active la sortie fichier.
-            structured_format: Si True, utilise le format JSON.
-            
-        Returns:
-            Logger configuré.
-        """
-        logger_key = f"{name}_{category.value}"
+        # Sauvegarder la configuration
+        LoggingUtils._config = config
+        LoggingUtils._log_dir = config.log_dir
         
-        if logger_key in self._configured_loggers:
-            return self._configured_loggers[logger_key]
-        
-        # Créer le logger
-        logger = logging.getLogger(logger_key)
-        logger.setLevel(level.value)
+        # Configuration du logger racine
+        root_logger = logging.getLogger()
+        root_logger.setLevel(getattr(logging, config.level.upper()))
         
         # Nettoyer les handlers existants
-        logger.handlers.clear()
+        for handler in root_logger.handlers[:]:
+            root_logger.removeHandler(handler)
         
-        # Ajouter un handler console si demandé
-        if console_output:
+        # Handler console
+        if config.enable_console_logging:
             console_handler = logging.StreamHandler(sys.stderr)
-            console_handler.setLevel(level.value)
-            
-            if structured_format:
-                console_formatter = StructuredFormatter()
-            else:
-                console_formatter = ColoredFormatter(
-                    fmt=self.default_format,
-                    datefmt=self.date_format
-                )
-            
+            console_formatter = ColoredFormatter(
+                config.format_console,
+                config.date_format,
+                config.enable_colors
+            )
             console_handler.setFormatter(console_formatter)
-            logger.addHandler(console_handler)
+            console_handler.setLevel(getattr(logging, config.level.upper()))
+            root_logger.addHandler(console_handler)
         
-        # Ajouter un handler fichier si demandé
-        if file_output:
-            log_file = self.logs_dir / f"{category.value}.log"
-            
-            # Utiliser un RotatingFileHandler pour la rotation automatique
+        # Handler fichier avec rotation
+        if config.enable_file_logging and config.log_dir:
+            log_file = config.log_dir / "gestvenv.log"
             file_handler = logging.handlers.RotatingFileHandler(
                 log_file,
-                maxBytes=10 * 1024 * 1024,  # 10 MB
-                backupCount=5,
+                maxBytes=config.max_file_size,
+                backupCount=config.backup_count,
                 encoding='utf-8'
             )
-            file_handler.setLevel(level.value)
-            
-            if structured_format:
-                file_formatter = StructuredFormatter()
-            else:
-                file_formatter = logging.Formatter(
-                    fmt=self.default_format,
-                    datefmt=self.date_format
-                )
-            
-            file_handler.setFormatter(file_formatter)
-            logger.addHandler(file_handler)
-        
-        # Éviter la propagation vers le logger racine
-        logger.propagate = False
-        
-        # Sauvegarder le logger configuré
-        self._configured_loggers[logger_key] = logger
-        
-        return logger
-    
-    def setup_default_logging(self, debug: bool = False, 
-                            structured: bool = False,
-                            quiet: bool = False) -> None:
-        """
-        Configure le logging par défaut pour GestVenv.
-        
-        Args:
-            debug: Si True, active le niveau DEBUG.
-            structured: Si True, utilise le format JSON.
-            quiet: Si True, réduit la verbosité console.
-        """
-        # Déterminer le niveau de log
-        level = LogLevel.DEBUG if debug else LogLevel.INFO
-        console_level = LogLevel.WARNING if quiet else level
-        
-        # Configurer les loggers par catégorie
-        categories = [
-            LogCategory.GENERAL,
-            LogCategory.ENVIRONMENT,
-            LogCategory.PACKAGE,
-            LogCategory.CACHE,
-            LogCategory.DIAGNOSTIC,
-            LogCategory.SYSTEM,
-            LogCategory.CLI
-        ]
-        
-        for category in categories:
-            logger = self.get_logger(
-                name="gestvenv",
-                category=category,
-                level=level,
-                console_output=not quiet,
-                file_output=True,
-                structured_format=structured
+            file_formatter = logging.Formatter(
+                config.format_file,
+                config.date_format
             )
-            
-            # Ajuster le niveau console si nécessaire
-            if not quiet and console_level != level:
-                for handler in logger.handlers:
-                    if isinstance(handler, logging.StreamHandler) and not isinstance(handler, logging.FileHandler):
-                        handler.setLevel(console_level.value)
+            file_handler.setFormatter(file_formatter)
+            file_handler.setLevel(logging.DEBUG)  # Fichier = toujours DEBUG
+            root_logger.addHandler(file_handler)
+        
+        # Configuration des modules spécifiques
+        LoggingUtils._configure_module_loggers(config)
+        
+        # Log d'initialisation
+        logger = LoggingUtils.get_logger("gestvenv.logging")
+        logger.info(f"Système de logging initialisé - Niveau: {config.level}")
+        if config.log_dir:
+            logger.debug(f"Répertoire de logs: {config.log_dir}")
+        
+        LoggingUtils._initialized = True
     
-    def log_operation(self, logger: logging.Logger, operation: str, 
-                     environment: Optional[str] = None,
-                     duration: Optional[float] = None,
-                     success: bool = True,
-                     details: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Enregistre une opération avec contexte.
-        
-        Args:
-            logger: Logger à utiliser.
-            operation: Nom de l'opération.
-            environment: Nom de l'environnement (optionnel).
-            duration: Durée de l'opération en secondes.
-            success: Si True, opération réussie.
-            details: Détails supplémentaires.
-        """
-        level = logging.INFO if success else logging.ERROR
-        
-        # Préparer le message
-        message_parts = [f"Operation: {operation}"]
-        
-        if environment:
-            message_parts.append(f"Environment: {environment}")
-        
-        if duration is not None:
-            message_parts.append(f"Duration: {duration:.3f}s")
-        
-        if details:
-            for key, value in details.items():
-                message_parts.append(f"{key}: {value}")
-        
-        message = " | ".join(message_parts)
-        
-        # Créer l'enregistrement avec des champs supplémentaires
-        extra = {
-            'operation': operation,
-            'environment': environment,
-            'duration': duration,
-            'success': success
-        }
-        
-        if details:
-            extra.update(details)
-        
-        logger.log(level, message, extra=extra)
-    
-    def log_package_operation(self, logger: logging.Logger, operation: str,
-                            package_name: str, version: Optional[str] = None,
-                            environment: Optional[str] = None,
-                            success: bool = True,
-                            cache_hit: bool = False) -> None:
-        """
-        Enregistre une opération sur un package.
-        
-        Args:
-            logger: Logger à utiliser.
-            operation: Type d'opération (install, uninstall, update).
-            package_name: Nom du package.
-            version: Version du package.
-            environment: Nom de l'environnement.
-            success: Si True, opération réussie.
-            cache_hit: Si True, package trouvé dans le cache.
-        """
-        level = logging.INFO if success else logging.ERROR
-        
-        # Préparer le message
-        message = f"Package {operation}: {package_name}"
-        if version:
-            message += f"=={version}"
-        
-        # Créer l'enregistrement avec des champs supplémentaires
-        extra = {
-            'operation': f"package_{operation}",
-            'package_name': package_name,
-            'package_version': version,
-            'environment': environment,
-            'success': success,
-            'cache_hit': cache_hit
-        }
-        
-        logger.log(level, message, extra=extra)
-    
-    def log_error(self, logger: logging.Logger, error: Exception,
-                 operation: Optional[str] = None,
-                 environment: Optional[str] = None,
-                 context: Optional[Dict[str, Any]] = None) -> None:
-        """
-        Enregistre une erreur avec contexte complet.
-        
-        Args:
-            logger: Logger à utiliser.
-            error: Exception à enregistrer.
-            operation: Opération en cours lors de l'erreur.
-            environment: Environnement concerné.
-            context: Contexte supplémentaire.
-        """
-        # Préparer le message
-        message = f"Error: {str(error)}"
-        if operation:
-            message = f"Error in {operation}: {str(error)}"
-        
-        # Créer l'enregistrement avec des champs supplémentaires
-        extra = {
-            'error_type': type(error).__name__,
-            'operation': operation,
-            'environment': environment
-        }
-        
-        if context:
-            extra.update(context)
-        
-        logger.error(message, exc_info=True, extra=extra)
-    
-    def get_log_files(self, category: Optional[LogCategory] = None,
-                     days: int = 30) -> List[Dict[str, Any]]:
-        """
-        Récupère la liste des fichiers de log.
-        
-        Args:
-            category: Catégorie de logs (optionnel).
-            days: Nombre de jours à inclure.
-            
-        Returns:
-            Liste des fichiers de log avec leurs métadonnées.
-        """
-        files = []
-        cutoff_date = datetime.now() - timedelta(days=days)
-        
-        try:
-            pattern = f"{category.value}.log*" if category else "*.log*"
-            
-            for log_file in self.logs_dir.glob(pattern):
-                if not log_file.is_file():
-                    continue
-                
-                try:
-                    stat = log_file.stat()
-                    modified_time = datetime.fromtimestamp(stat.st_mtime)
-                    
-                    if modified_time < cutoff_date:
-                        continue
-                    
-                    files.append({
-                        "path": str(log_file),
-                        "name": log_file.name,
-                        "size": stat.st_size,
-                        "modified": modified_time.isoformat(),
-                        "category": self._extract_category_from_filename(log_file.name)
-                    })
-                    
-                except (OSError, ValueError):
-                    continue
-            
-            # Trier par date de modification (plus récent en premier)
-            files.sort(key=lambda x: x["modified"], reverse=True)
-            
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la récupération des fichiers de log: {str(e)}")
-        
-        return files
-    
-    def _extract_category_from_filename(self, filename: str) -> Optional[str]:
-        """Extrait la catégorie depuis le nom de fichier."""
-        for category in LogCategory:
-            if filename.startswith(category.value):
-                return category.value
-        return None
-    
-    def read_log_entries(self, category: LogCategory, 
-                        lines: int = 100,
-                        filter_level: Optional[LogLevel] = None,
-                        filter_environment: Optional[str] = None,
-                        structured: bool = False) -> List[Dict[str, Any]]:
-        """
-        Lit les entrées de log d'un fichier.
-        
-        Args:
-            category: Catégorie de logs à lire.
-            lines: Nombre maximum de lignes à lire.
-            filter_level: Niveau de log minimum (optionnel).
-            filter_environment: Environnement à filtrer (optionnel).
-            structured: Si True, parse les logs JSON.
-            
-        Returns:
-            Liste des entrées de log.
-        """
-        log_file = self.logs_dir / f"{category.value}.log"
-        entries = []
-        
-        if not log_file.exists():
-            return entries
-        
-        try:
-            with open(log_file, 'r', encoding='utf-8') as f:
-                # Lire les dernières lignes
-                file_lines = f.readlines()
-                recent_lines = file_lines[-lines:] if len(file_lines) > lines else file_lines
-                
-                for line in recent_lines:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    try:
-                        if structured:
-                            # Parser JSON
-                            entry = json.loads(line)
-                        else:
-                            # Parser format texte
-                            entry = self._parse_text_log_line(line)
-                        
-                        # Appliquer les filtres
-                        if filter_level and self._get_level_value(entry.get("level", "INFO")) < filter_level.value:
-                            continue
-                        
-                        if filter_environment and entry.get("environment") != filter_environment:
-                            continue
-                        
-                        entries.append(entry)
-                        
-                    except Exception:
-                        # Ignorer les lignes mal formatées
-                        continue
-            
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de la lecture du fichier de log: {str(e)}")
-        
-        return entries
-    
-    def _parse_text_log_line(self, line: str) -> Dict[str, Any]:
-        """Parse une ligne de log au format texte."""
-        parts = line.split(" - ", 3)
-        
-        if len(parts) >= 4:
-            return {
-                "timestamp": parts[0],
-                "logger": parts[1],
-                "level": parts[2],
-                "message": parts[3]
-            }
-        else:
-            return {
-                "timestamp": datetime.now().isoformat(),
-                "logger": "unknown",
-                "level": "INFO",
-                "message": line
-            }
-    
-    def _get_level_value(self, level_name: str) -> int:
-        """Convertit un nom de niveau en valeur numérique."""
-        level_map = {
-            "TRACE": LogLevel.TRACE.value,
-            "DEBUG": LogLevel.DEBUG.value,
-            "INFO": LogLevel.INFO.value,
-            "WARNING": LogLevel.WARNING.value,
-            "ERROR": LogLevel.ERROR.value,
-            "CRITICAL": LogLevel.CRITICAL.value
-        }
-        return level_map.get(level_name.upper(), LogLevel.INFO.value)
-    
-    def export_logs(self, output_path: str, category: Optional[LogCategory] = None,
-                   days: int = 7, format_type: str = "json") -> bool:
-        """
-        Exporte les logs vers un fichier.
-        
-        Args:
-            output_path: Chemin du fichier de sortie.
-            category: Catégorie à exporter (optionnel, toutes si None).
-            days: Nombre de jours à inclure.
-            format_type: Format d'export ('json' ou 'text').
-            
-        Returns:
-            True si l'export réussit, False sinon.
-        """
-        try:
-            export_data = {
-                "exported_at": datetime.now().isoformat(),
-                "days_included": days,
-                "format": format_type,
-                "categories": {}
-            }
-            
-            # Déterminer les catégories à exporter
-            categories = [category] if category else list(LogCategory)
-            
-            for cat in categories:
-                entries = self.read_log_entries(cat, lines=10000, structured=False)
-                
-                # Filtrer par date
-                cutoff_date = datetime.now() - timedelta(days=days)
-                filtered_entries = []
-                
-                for entry in entries:
-                    try:
-                        entry_time = datetime.fromisoformat(entry["timestamp"])
-                        if entry_time >= cutoff_date:
-                            filtered_entries.append(entry)
-                    except Exception:
-                        # Inclure les entrées sans timestamp valide
-                        filtered_entries.append(entry)
-                
-                export_data["categories"][cat.value] = {
-                    "total_entries": len(filtered_entries),
-                    "entries": filtered_entries
-                }
-            
-            # Écrire le fichier d'export
-            with open(output_path, 'w', encoding='utf-8') as f:
-                if format_type == "json":
-                    json.dump(export_data, f, indent=2, ensure_ascii=False)
-                else:
-                    # Format texte
-                    f.write(f"GestVenv Logs Export - {export_data['exported_at']}\n")
-                    f.write("=" * 50 + "\n\n")
-                    
-                    for cat_name, cat_data in export_data["categories"].items():
-                        f.write(f"Category: {cat_name.upper()}\n")
-                        f.write("-" * 30 + "\n")
-                        
-                        for entry in cat_data["entries"]:
-                            f.write(f"{entry['timestamp']} - {entry['level']} - {entry['message']}\n")
-                        
-                        f.write("\n")
-            
-            return True
-            
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors de l'export des logs: {str(e)}")
-            return False
-    
-    def clean_old_logs(self, days: int = 30) -> Tuple[int, int]:
-        """
-        Nettoie les anciens fichiers de log.
-        
-        Args:
-            days: Âge maximum des logs à conserver.
-            
-        Returns:
-            Tuple contenant (nombre de fichiers supprimés, espace libéré en octets).
-        """
-        deleted_count = 0
-        freed_space = 0
-        cutoff_date = datetime.now() - timedelta(days=days)
-        
-        try:
-            # Nettoyer les fichiers de log rotatés (.log.1, .log.2, etc.)
-            for log_file in self.logs_dir.glob("*.log.*"):
-                if not log_file.is_file():
-                    continue
-                
-                try:
-                    stat = log_file.stat()
-                    modified_time = datetime.fromtimestamp(stat.st_mtime)
-                    
-                    if modified_time < cutoff_date:
-                        freed_space += stat.st_size
-                        log_file.unlink()
-                        deleted_count += 1
-                        
-                except (OSError, ValueError):
-                    continue
-            
-            # Nettoyer les lignes anciennes des fichiers de log actifs
-            for category in LogCategory:
-                log_file = self.logs_dir / f"{category.value}.log"
-                if log_file.exists():
-                    self._clean_log_file_content(log_file, cutoff_date)
-            
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors du nettoyage des logs: {str(e)}")
-        
-        return deleted_count, freed_space
-    
-    def _clean_log_file_content(self, log_file: Path, cutoff_date: datetime) -> None:
-        """Nettoie le contenu d'un fichier de log en supprimant les anciennes entrées."""
-        try:
-            temp_file = log_file.with_suffix('.tmp')
-            lines_kept = 0
-            
-            with open(log_file, 'r', encoding='utf-8') as infile, \
-                 open(temp_file, 'w', encoding='utf-8') as outfile:
-                
-                for line in infile:
-                    line = line.strip()
-                    if not line:
-                        continue
-                    
-                    # Essayer d'extraire la date de la ligne
-                    try:
-                        # Format standard: YYYY-MM-DD HH:MM:SS
-                        if len(line) >= 19:
-                            date_str = line[:19]
-                            log_date = datetime.strptime(date_str, "%Y-%m-%d %H:%M:%S")
-                            
-                            if log_date >= cutoff_date:
-                                outfile.write(line + '\n')
-                                lines_kept += 1
-                        else:
-                            # Conserver les lignes sans date valide
-                            outfile.write(line + '\n')
-                            lines_kept += 1
-                            
-                    except ValueError:
-                        # Conserver les lignes avec format de date non standard
-                        outfile.write(line + '\n')
-                        lines_kept += 1
-            
-            # Remplacer le fichier original si des lignes ont été conservées
-            if lines_kept > 0:
-                temp_file.replace(log_file)
+    @staticmethod
+    def _get_default_log_dir() -> Path:
+        """Détermine le répertoire de logs par défaut."""
+        if os.name == 'nt':  # Windows
+            base = Path(os.environ.get('APPDATA', '')) / 'GestVenv' / 'logs'
+        elif sys.platform == 'darwin':  # macOS
+            base = Path.home() / 'Library' / 'Logs' / 'GestVenv'
+        else:  # Linux et autres Unix
+            xdg_state = os.environ.get('XDG_STATE_HOME')
+            if xdg_state:
+                base = Path(xdg_state) / 'gestvenv' / 'logs'
             else:
-                # Supprimer le fichier temporaire et vider le fichier original
-                temp_file.unlink()
-                log_file.write_text('', encoding='utf-8')
-                
-        except Exception as e:
-            # Nettoyer le fichier temporaire en cas d'erreur
-            if temp_file.exists():
-                temp_file.unlink()
-            raise e
-    
-    def get_log_statistics(self) -> Dict[str, Any]:
-        """
-        Récupère des statistiques sur les logs.
+                base = Path.home() / '.local' / 'state' / 'gestvenv' / 'logs'
         
-        Returns:
-            Dictionnaire de statistiques.
-        """
-        stats = {
-            "total_files": 0,
-            "total_size": 0,
-            "categories": {},
-            "oldest_entry": None,
-            "newest_entry": None,
-            "error_count_today": 0,
-            "warning_count_today": 0
+        return base
+    
+    @staticmethod
+    def _configure_module_loggers(config: LogConfig) -> None:
+        """Configure les loggers spécifiques aux modules."""
+        # Configuration par défaut des modules
+        default_modules = {
+            'gestvenv.core': 'INFO',
+            'gestvenv.services': 'INFO', 
+            'gestvenv.backends': 'INFO',
+            'gestvenv.utils': 'INFO',
+            'gestvenv.cli': 'INFO',
+            'urllib3': 'WARNING',  # Réduire le bruit des requêtes HTTP
+            'requests': 'WARNING',
+            'pip': 'WARNING'
         }
         
-        try:
-            today = datetime.now().date()
-            
-            for log_file in self.logs_dir.glob("*.log*"):
-                if not log_file.is_file():
-                    continue
-                
-                stats["total_files"] += 1
-                file_size = log_file.stat().st_size
-                stats["total_size"] += file_size
-                
-                # Extraire la catégorie
-                category = self._extract_category_from_filename(log_file.name)
-                if category:
-                    if category not in stats["categories"]:
-                        stats["categories"][category] = {
-                            "files": 0,
-                            "size": 0,
-                            "entries_today": 0
-                        }
-                    
-                    stats["categories"][category]["files"] += 1
-                    stats["categories"][category]["size"] += file_size
-                    
-                    # Compter les entrées d'aujourd'hui
-                    if log_file.name.endswith(".log"):  # Fichier principal
-                        try:
-                            with open(log_file, 'r', encoding='utf-8') as f:
-                                for line in f:
-                                    if line.strip():
-                                        try:
-                                            if line[:10] == today.strftime("%Y-%m-%d"):
-                                                stats["categories"][category]["entries_today"] += 1
-                                                
-                                                # Compter les erreurs et avertissements
-                                                if "ERROR" in line:
-                                                    stats["error_count_today"] += 1
-                                                elif "WARNING" in line:
-                                                    stats["warning_count_today"] += 1
-                                        except (ValueError, IndexError):
-                                            pass
-                        except Exception:
-                            pass
-            
-            # Convertir la taille totale en format lisible
-            stats["total_size_mb"] = stats["total_size"] / (1024 * 1024)
-            
-        except Exception as e:
-            logger = logging.getLogger(__name__)
-            logger.error(f"Erreur lors du calcul des statistiques: {str(e)}")
+        # Fusionner avec la configuration personnalisée
+        modules_config = default_modules.copy()
+        if config.modules_config:
+            modules_config.update(config.modules_config)
         
-        return stats
-
-# Instance globale du gestionnaire de logs
-_log_manager: Optional[GestVenvLogManager] = None
-
-def get_log_manager() -> GestVenvLogManager:
-    """Récupère l'instance globale du gestionnaire de logs."""
-    global _log_manager
-    if _log_manager is None:
-        _log_manager = GestVenvLogManager()
-    return _log_manager
-
-def setup_logging(debug: bool = False, structured: bool = False, 
-                 quiet: bool = False, logs_dir: Optional[Path] = None) -> None:
-    """
-    Configure le logging global pour GestVenv.
+        # Appliquer la configuration
+        for module_name, level_str in modules_config.items():
+            logger = logging.getLogger(module_name)
+            logger.setLevel(getattr(logging, level_str.upper()))
     
-    Args:
-        debug: Si True, active le niveau DEBUG.
-        structured: Si True, utilise le format JSON.
-        quiet: Si True, réduit la verbosité console.
-        logs_dir: Répertoire des logs personnalisé.
-    """
-    global _log_manager
-    _log_manager = GestVenvLogManager(logs_dir)
-    _log_manager.setup_default_logging(debug, structured, quiet)
-
-def get_logger(name: str, category: LogCategory = LogCategory.GENERAL) -> logging.Logger:
-    """
-    Raccourci pour obtenir un logger configuré.
-    
-    Args:
-        name: Nom du logger.
-        category: Catégorie du logger.
-        
-    Returns:
-        Logger configuré.
-    """
-    return get_log_manager().get_logger(name, category)
-
-def log_operation(operation: str, environment: Optional[str] = None,
-                 duration: Optional[float] = None, success: bool = True,
-                 category: LogCategory = LogCategory.GENERAL,
-                 details: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Raccourci pour enregistrer une opération.
-    
-    Args:
-        operation: Nom de l'opération.
-        environment: Nom de l'environnement.
-        duration: Durée de l'opération.
-        success: Si True, opération réussie.
-        category: Catégorie de log.
-        details: Détails supplémentaires.
-    """
-    logger = get_logger("gestvenv", category)
-    get_log_manager().log_operation(logger, operation, environment, duration, success, details)
-
-def log_package_operation(operation: str, package_name: str, 
-                         version: Optional[str] = None,
-                         environment: Optional[str] = None,
-                         success: bool = True, cache_hit: bool = False) -> None:
-    """
-    Raccourci pour enregistrer une opération sur un package.
-    
-    Args:
-        operation: Type d'opération.
-        package_name: Nom du package.
-        version: Version du package.
-        environment: Nom de l'environnement.
-        success: Si True, opération réussie.
-        cache_hit: Si True, package trouvé dans le cache.
-    """
-    logger = get_logger("gestvenv", LogCategory.PACKAGE)
-    get_log_manager().log_package_operation(
-        logger, operation, package_name, version, environment, success, cache_hit
-    )
-
-def log_error(error: Exception, operation: Optional[str] = None,
-             environment: Optional[str] = None,
-             category: LogCategory = LogCategory.GENERAL,
-             context: Optional[Dict[str, Any]] = None) -> None:
-    """
-    Raccourci pour enregistrer une erreur.
-    
-    Args:
-        error: Exception à enregistrer.
-        operation: Opération en cours.
-        environment: Environnement concerné.
-        category: Catégorie de log.
-        context: Contexte supplémentaire.
-    """
-    logger = get_logger("gestvenv", category)
-    get_log_manager().log_error(logger, error, operation, environment, context)
-
-# Utilitaires de contexte pour le logging automatique
-class LoggedOperation:
-    """Gestionnaire de contexte pour le logging automatique d'opérations."""
-    
-    def __init__(self, operation: str, environment: Optional[str] = None,
-                 category: LogCategory = LogCategory.GENERAL,
-                 details: Optional[Dict[str, Any]] = None):
+    @staticmethod
+    def get_logger(name: str) -> logging.Logger:
         """
-        Initialise l'opération loggée.
+        Récupère un logger configuré pour un module.
         
         Args:
-            operation: Nom de l'opération.
-            environment: Nom de l'environnement.
-            category: Catégorie de log.
-            details: Détails supplémentaires.
+            name: Nom du module/logger
+            
+        Returns:
+            Logger configuré
         """
-        self.operation = operation
-        self.environment = environment
-        self.category = category
-        self.details = details or {}
-        self.start_time = None
-        self.success = True
-        self.logger = get_logger("gestvenv", category)
+        return ThreadSafeLogger.get_logger(name)
     
-    def __enter__(self):
-        """Démarre l'opération."""
-        self.start_time = datetime.now()
-        self.logger.info(f"Starting operation: {self.operation}")
-        return self
+    @staticmethod
+    def set_level(level: Union[str, int], module: Optional[str] = None) -> None:
+        """
+        Modifie le niveau de logging.
+        
+        Args:
+            level: Nouveau niveau (DEBUG, INFO, WARNING, ERROR, CRITICAL)
+            module: Module spécifique ou None pour le logger racine
+        """
+        if isinstance(level, str):
+            level = getattr(logging, level.upper())
+        
+        if module:
+            logger = logging.getLogger(module)
+            logger.setLevel(level)
+        else:
+            # Logger racine et tous ses handlers
+            root_logger = logging.getLogger()
+            root_logger.setLevel(level)
+            for handler in root_logger.handlers:
+                if isinstance(handler, logging.StreamHandler) and handler.stream == sys.stderr:
+                    handler.setLevel(level)
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        """Termine l'opération et enregistre le résultat."""
-        duration = (datetime.now() - self.start_time).total_seconds() if self.start_time else None
+    @staticmethod
+    def add_file_handler(log_file: Union[str, Path], 
+                        level: str = "DEBUG",
+                        format_str: Optional[str] = None) -> None:
+        """
+        Ajoute un handler de fichier supplémentaire.
         
-        if exc_type is not None:
-            self.success = False
-            get_log_manager().log_error(self.logger, exc_val, self.operation, self.environment)
+        Args:
+            log_file: Chemin du fichier de log
+            level: Niveau du handler
+            format_str: Format personnalisé
+        """
+        if not LoggingUtils._config:
+            raise RuntimeError("Le système de logging n'est pas initialisé")
         
-        get_log_manager().log_operation(
-            self.logger, self.operation, self.environment, duration, self.success, self.details
+        log_path = Path(log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Créer le handler
+        handler = logging.FileHandler(log_path, encoding='utf-8')
+        handler.setLevel(getattr(logging, level.upper()))
+        
+        # Format
+        if format_str is None:
+            format_str = LoggingUtils._config.format_file
+        
+        formatter = logging.Formatter(format_str, LoggingUtils._config.date_format)
+        handler.setFormatter(formatter)
+        
+        # Ajouter au logger racine
+        logging.getLogger().addHandler(handler)
+    
+    @staticmethod
+    def get_log_files() -> List[Path]:
+        """
+        Retourne la liste des fichiers de logs.
+        
+        Returns:
+            Liste des chemins des fichiers de logs
+        """
+        if not LoggingUtils._log_dir or not LoggingUtils._log_dir.exists():
+            return []
+        
+        log_files = []
+        for file_path in LoggingUtils._log_dir.iterdir():
+            if file_path.is_file() and file_path.suffix == '.log':
+                log_files.append(file_path)
+        
+        return sorted(log_files, key=lambda p: p.stat().st_mtime, reverse=True)
+    
+    @staticmethod
+    def cleanup_old_logs(days: int = 30) -> int:
+        """
+        Supprime les anciens fichiers de logs.
+        
+        Args:
+            days: Âge maximum des logs en jours
+            
+        Returns:
+            Nombre de fichiers supprimés
+        """
+        if not LoggingUtils._log_dir or not LoggingUtils._log_dir.exists():
+            return 0
+        
+        cutoff_time = datetime.now().timestamp() - (days * 24 * 3600)
+        deleted_count = 0
+        
+        for log_file in LoggingUtils.get_log_files():
+            try:
+                if log_file.stat().st_mtime < cutoff_time:
+                    log_file.unlink()
+                    deleted_count += 1
+            except OSError:
+                continue
+        
+        if deleted_count > 0:
+            logger = LoggingUtils.get_logger("gestvenv.logging")
+            logger.info(f"Suppression de {deleted_count} anciens fichiers de logs")
+        
+        return deleted_count
+    
+    @staticmethod
+    @contextmanager
+    def temporary_level(level: Union[str, int], module: Optional[str] = None):
+        """
+        Gestionnaire de contexte pour modifier temporairement le niveau de logging.
+        
+        Args:
+            level: Niveau temporaire
+            module: Module spécifique ou None pour le logger racine
+        """
+        if isinstance(level, str):
+            level = getattr(logging, level.upper())
+        
+        # Sauvegarder le niveau actuel
+        if module:
+            logger = logging.getLogger(module)
+            old_level = logger.level
+        else:
+            logger = logging.getLogger()
+            old_level = logger.level
+        
+        try:
+            # Appliquer le nouveau niveau
+            logger.setLevel(level)
+            yield
+        finally:
+            # Restaurer l'ancien niveau
+            logger.setLevel(old_level)
+    
+    @staticmethod
+    def log_performance(operation: str, duration: float, 
+                       threshold: float = 1.0, logger_name: str = "gestvenv.performance") -> None:
+        """
+        Log les performances d'une opération.
+        
+        Args:
+            operation: Nom de l'opération
+            duration: Durée en secondes
+            threshold: Seuil pour warning
+            logger_name: Nom du logger
+        """
+        logger = LoggingUtils.get_logger(logger_name)
+        
+        if duration > threshold:
+            logger.warning(f"Opération lente: {operation} - {duration:.2f}s")
+        else:
+            logger.debug(f"Performance: {operation} - {duration:.2f}s")
+    
+    @staticmethod
+    def log_memory_usage(operation: str, logger_name: str = "gestvenv.memory") -> None:
+        """
+        Log l'utilisation mémoire actuelle.
+        
+        Args:
+            operation: Opération en cours
+            logger_name: Nom du logger
+        """
+        try:
+            import psutil
+            process = psutil.Process()
+            memory_mb = process.memory_info().rss / 1024 / 1024
+            
+            logger = LoggingUtils.get_logger(logger_name)
+            logger.debug(f"Mémoire: {operation} - {memory_mb:.1f} MB")
+        except ImportError:
+            pass  # psutil non disponible
+    
+    @staticmethod
+    def configure_development_logging() -> None:
+        """Configure le logging pour le développement."""
+        config = LogConfig(
+            level="DEBUG",
+            enable_colors=True,
+            enable_file_logging=True,
+            modules_config={
+                'gestvenv': 'DEBUG',
+                'urllib3': 'INFO',
+                'requests': 'INFO'
+            }
         )
+        LoggingUtils.setup_logging(config, verbosity=1)
+    
+    @staticmethod
+    def configure_production_logging(log_dir: Optional[Path] = None) -> None:
+        """Configure le logging pour la production."""
+        config = LogConfig(
+            level="INFO",
+            enable_colors=False,
+            enable_file_logging=True,
+            enable_console_logging=False,
+            log_dir=log_dir
+        )
+        LoggingUtils.setup_logging(config, verbosity=0)
+    
+    @staticmethod
+    def get_config() -> Optional[LogConfig]:
+        """Retourne la configuration actuelle."""
+        return LoggingUtils._config
+
+# Fonctions utilitaires pour compatibilité
+def setup_logging(verbosity: int = 0, log_dir: Optional[Union[str, Path]] = None) -> None:
+    """Fonction utilitaire pour configurer le logging."""
+    LoggingUtils.setup_logging(verbosity=verbosity, log_dir=log_dir)
+
+def get_logger(name: str) -> logging.Logger:
+    """Fonction utilitaire pour obtenir un logger."""
+    return LoggingUtils.get_logger(name)
+
+# Décorateur pour logging automatique
+def log_calls(logger_name: Optional[str] = None, level: str = "DEBUG"):
+    """
+    Décorateur pour logger automatiquement les appels de fonction.
+    
+    Args:
+        logger_name: Nom du logger (auto-détecté si None)
+        level: Niveau de logging
+    """
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            # Déterminer le nom du logger
+            if logger_name:
+                logger = get_logger(logger_name)
+            else:
+                module_name = func.__module__
+                logger = get_logger(module_name)
+            
+            # Logger l'entrée
+            log_level = getattr(logging, level.upper())
+            logger.log(log_level, f"Entrée: {func.__name__}(args={len(args)}, kwargs={list(kwargs.keys())})")
+            
+            try:
+                # Exécuter la fonction
+                start_time = datetime.now()
+                result = func(*args, **kwargs)
+                duration = (datetime.now() - start_time).total_seconds()
+                
+                # Logger la sortie
+                logger.log(log_level, f"Sortie: {func.__name__} - {duration:.3f}s")
+                return result
+                
+            except Exception as e:
+                # Logger l'erreur
+                logger.error(f"Erreur dans {func.__name__}: {e}")
+                raise
         
-        return False  # Ne pas supprimer l'exception
+        return wrapper
+    return decorator

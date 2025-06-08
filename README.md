@@ -1,301 +1,482 @@
-# 🐍 GestVenv - Gestionnaire d'Environnements Virtuels Python
+# GestVenv v1.1 🐍
 
-[![Version](https://img.shields.io/badge/version-1.1.1-blue.svg)](https://github.com/thearchit3ct/gestvenv)
-[![Python](https://img.shields.io/badge/python-3.9+-green.svg)](https://python.org)
-[![License](https://img.shields.io/badge/license-MIT-orange.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20macOS%20%7C%20Linux-lightgrey.svg)]()
+**Gestionnaire d'environnements virtuels Python moderne avec support multi-backend**
 
-**GestVenv** est un outil en ligne de commande moderne et intelligent pour la gestion des environnements virtuels Python. Il simplifie la création, l'activation, la gestion des packages et offre désormais un **mode hors ligne avec cache intelligent** pour travailler sans connexion Internet.
+[![Version](https://img.shields.io/badge/version-1.1.0-blue)](https://github.com/gestvenv/gestvenv)
+[![Python](https://img.shields.io/badge/python-3.9+-green)](https://python.org)
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Tests](https://img.shields.io/badge/tests-passing-green)](https://github.com/gestvenv/gestvenv/actions)
 
-## ✨ Fonctionnalités Principales
+---
 
-### 🚀 Gestion d'Environnements
+## 📋 Vue d'ensemble
 
-- ✅ Création rapide d'environnements avec différentes versions Python
-- ✅ Activation/désactivation simplifiée
-- ✅ Clonage d'environnements existants
-- ✅ Gestion centralisée de tous vos environnements
+GestVenv v1.1 est un gestionnaire d'environnements virtuels Python moderne qui simplifie et centralise la gestion des environnements de développement. Cette version apporte un support natif pour les standards Python modernes (`pyproject.toml`) et une architecture multi-backend pour des performances optimisées.
 
-### 📦 Gestion Intelligente des Packages
+### ✨ Fonctionnalités principales
 
-- ✅ Installation, mise à jour et suppression de packages
-- ✅ **Cache local intelligent** pour les packages Python
-- ✅ **Mode hors ligne** complet
-- ✅ Optimisation automatique des installations
-- ✅ Export/import de configurations
+- 🚀 **Multi-backend** : Support de `pip`, `uv`, `poetry`, `pdm` avec sélection automatique
+- 📦 **pyproject.toml natif** : Support complet des standards modernes (PEP 621, PEP 631)
+- ⚡ **Performances optimisées** : Cache intelligent et mode hors ligne
+- 🔄 **Migration automatique** : Transition fluide depuis requirements.txt
+- 🎯 **Groupes de dépendances** : Gestion avancée (dev, test, docs, etc.)
+- 🔒 **Lock files** : Reproductibilité garantie
+- 🛠️ **Templates** : Configurations réutilisables
+- 📊 **Monitoring** : Santé et performance des environnements
 
-### 🔧 Outils de Développement
-
-- ✅ Exécution de commandes dans des environnements spécifiques
-- ✅ Vérification des dépendances et mises à jour
-- ✅ Documentation intégrée
-- ✅ Support multi-plateforme
-
-## 🆕 Nouveautés v1.1.0 - Cache Intelligent & Mode Hors Ligne
-
-### Cache Local Automatique
-
-```bash
-# Le cache se remplit automatiquement lors des installations
-gestvenv install myenv requests flask
-
-# Gérer le cache manuellement
-gestvenv cache info          # Informations sur le cache
-gestvenv cache list          # Lister les packages en cache
-gestvenv cache clean         # Nettoyer le cache
-gestvenv cache add requests  # Pré-télécharger un package
-```
-
-### Mode Hors Ligne
-
-```bash
-# Activer le mode hors ligne
-gestvenv --offline install myenv requests
-
-# Configurer le mode par défaut
-gestvenv config set offline_mode true
-
-# Travailler complètement hors ligne
-gestvenv --offline create project_env --python 3.11
-gestvenv --offline install project_env -r requirements.txt
-```
+---
 
 ## 🚀 Installation
 
-### Installation via pip (recommandée)
+### Installation standard
 
 ```bash
 pip install gestvenv
 ```
 
-### Installation depuis les sources
+### Installation avec backends optionnels
 
 ```bash
-git clone https://github.com/thearchit3ct/gestvenv.git
-cd gestvenv
-pip install -e .
+# Avec uv pour des performances optimales
+pip install "gestvenv[uv]"
+
+# Avec tous les backends
+pip install "gestvenv[all]"
+
+# Pour le développement
+pip install "gestvenv[dev,test]"
 ```
 
-## 📖 Guide de Démarrage Rapide
-
-### 1. Créer votre premier environnement
+### Vérification de l'installation
 
 ```bash
-# Créer un environnement avec la version Python par défaut
+gestvenv --version
+# ou
+gv --version
+```
+
+---
+
+## 🎯 Utilisation rapide
+
+### Création d'environnements
+
+```bash
+# Création simple
 gestvenv create monprojet
 
-# Créer avec une version Python spécifique
+# Avec version Python spécifique
 gestvenv create monprojet --python 3.11
 
-# Créer et pré-remplir le cache
-gestvenv create monprojet --python 3.11 --enable-cache
+# Avec packages initiaux
+gestvenv create monprojet --packages "flask,pytest,black"
+
+# Depuis pyproject.toml
+gestvenv create-from-pyproject ./pyproject.toml monprojet
+
+# Avec groupes de dépendances
+gestvenv create-from-pyproject ./pyproject.toml monprojet --groups dev,test
 ```
 
-### 2. Activer et gérer l'environnement
+### Gestion des environnements
 
 ```bash
-# Activer l'environnement
-gestvenv activate monprojet
-
-# Lister tous les environnements
+# Lister les environnements
 gestvenv list
 
-# Obtenir des infos détaillées
+# Activer un environnement
+gestvenv activate monprojet
+
+# Informations détaillées
 gestvenv info monprojet
+
+# Supprimer un environnement
+gestvenv delete monprojet
 ```
 
-### 3. Gérer les packages intelligemment
+### Gestion des packages
 
 ```bash
-# Installation classique (avec mise en cache automatique)
-gestvenv install monprojet requests flask pandas
+# Installer des packages
+gestvenv install flask --env monprojet
 
-# Installation en mode hors ligne (utilise le cache)
-gestvenv --offline install monprojet requests flask
+# Synchroniser avec pyproject.toml
+gestvenv sync monprojet --groups dev,test
 
-# Pré-télécharger des packages pour usage hors ligne
-gestvenv cache add numpy scipy matplotlib
+# Mettre à jour
+gestvenv update monprojet --all
+
+# Export vers différents formats
+gestvenv export monprojet --format requirements.txt
+gestvenv export monprojet --format pyproject.toml
 ```
 
-## 🛠️ Référence des Commandes
+---
 
-### Gestion des Environnements
+## 📚 Guide complet
 
-| Commande | Description | Exemple |
-|----------|-------------|---------|
-| `create` | Créer un nouvel environnement | `gestvenv create myapp --python 3.11` |
-| `activate` | Activer un environnement | `gestvenv activate myapp` |
-| `deactivate` | Désactiver l'environnement actuel | `gestvenv deactivate` |
-| `list` | Lister tous les environnements | `gestvenv list` |
-| `info` | Informations sur un environnement | `gestvenv info myapp` |
-| `clone` | Cloner un environnement | `gestvenv clone myapp myapp_copy` |
-| `remove` | Supprimer un environnement | `gestvenv remove myapp` |
+### Backends supportés
 
-### Gestion des Packages
+| Backend | Performances | Lock files | Groupes | Installation |
+|---------|--------------|------------|---------|--------------|
+| `pip`   | Standard     | ❌         | ✅      | Inclus       |
+| `uv`    | ⚡ Très rapide | ✅        | ✅      | `pip install uv` |
+| `poetry`| Standard     | ✅         | ✅      | `pip install poetry` |
+| `pdm`   | Rapide       | ✅         | ✅      | `pip install pdm` |
 
-| Commande | Description | Exemple |
-|----------|-------------|---------|
-| `install` | Installer des packages | `gestvenv install myapp requests flask` |
-| `update` | Mettre à jour des packages | `gestvenv update myapp requests` |
-| `remove` | Supprimer des packages | `gestvenv remove myapp requests` |
-| `check` | Vérifier les mises à jour | `gestvenv check myapp` |
+### Configuration automatique de backend
 
-### Cache Intelligent
+GestVenv sélectionne automatiquement le meilleur backend disponible :
 
-| Commande | Description | Exemple |
-|----------|-------------|---------|
-| `cache info` | Informations sur le cache | `gestvenv cache info` |
-| `cache list` | Lister les packages en cache | `gestvenv cache list` |
-| `cache clean` | Nettoyer le cache | `gestvenv cache clean` |
-| `cache add` | Ajouter un package au cache | `gestvenv cache add numpy==1.21.0` |
-| `cache remove` | Supprimer du cache | `gestvenv cache remove numpy` |
-| `cache export` | Exporter le cache | `gestvenv cache export cache_backup.tar.gz` |
-| `cache import` | Importer un cache | `gestvenv cache import cache_backup.tar.gz` |
+1. **uv** si disponible (performances optimales)
+2. **poetry** si `pyproject.toml` avec `[tool.poetry]`
+3. **pdm** si `pyproject.toml` avec `[tool.pdm]`
+4. **pip** comme fallback universel
 
-### Import/Export
+### Support pyproject.toml
 
-| Commande | Description | Exemple |
-|----------|-------------|---------|
-| `export` | Exporter la configuration | `gestvenv export myapp config.json` |
-| `import` | Importer une configuration | `gestvenv import config.json newenv` |
+#### Création depuis pyproject.toml
 
-### Utilitaires
+```toml
+# pyproject.toml
+[project]
+name = "mon-projet"
+dependencies = [
+    "flask>=2.0",
+    "requests>=2.28",
+]
 
-| Commande | Description | Exemple |
-|----------|-------------|---------|
-| `run` | Exécuter une commande | `gestvenv run myapp python script.py` |
-| `pyversions` | Versions Python disponibles | `gestvenv pyversions` |
-| `docs` | Documentation intégrée | `gestvenv docs` |
-
-## 🔧 Options Globales
-
-| Option | Description | Exemple |
-|--------|-------------|---------|
-| `--offline` | Forcer le mode hors ligne | `gestvenv --offline install myapp requests` |
-| `--online` | Forcer le mode en ligne | `gestvenv --online install myapp requests` |
-| `--enable-cache` | Activer le cache | `gestvenv --enable-cache create myapp` |
-| `--disable-cache` | Désactiver le cache | `gestvenv --disable-cache install myapp requests` |
-| `--verbose` | Affichage détaillé | `gestvenv --verbose create myapp` |
-| `--quiet` | Mode silencieux | `gestvenv --quiet install myapp requests` |
-
-## 📋 Cas d'Usage en Développement
-
-### Projet Web avec Django/Flask
+[project.optional-dependencies]
+dev = ["pytest", "black", "isort"]
+test = ["pytest-cov", "tox"]
+docs = ["sphinx", "sphinx-rtd-theme"]
+```
 
 ```bash
-# Configuration initiale
-gestvenv create webapp --python 3.11
-gestvenv cache add django djangorestframework gunicorn
-gestvenv install webapp django djangorestframework gunicorn
+# Création avec groupes spécifiques
+gestvenv create-from-pyproject ./pyproject.toml monprojet --groups dev,test
 
-# Développement hors ligne
-gestvenv --offline activate webapp
-gestvenv --offline install webapp pytest black flake8
+# Synchronisation
+gestvenv sync monprojet --groups dev
 ```
 
-### Projet Data Science
+#### Migration requirements.txt → pyproject.toml
 
 ```bash
-# Pré-télécharger les packages lourds
-gestvenv cache add numpy pandas matplotlib seaborn scikit-learn jupyter
+# Conversion automatique
+gestvenv convert-to-pyproject requirements.txt
 
-# Créer l'environnement
-gestvenv create datascience --python 3.10
-gestvenv --offline install datascience numpy pandas matplotlib seaborn
-
-# Export pour partage d'équipe
-gestvenv export datascience team_config.json
-gestvenv cache export datascience_cache.tar.gz
+# Migration complète d'un projet existant
+gestvenv migrate --from-requirements requirements.txt --to-pyproject
 ```
 
-### Déploiement et CI/CD
+### Templates et réutilisation
+
+#### Créer un template
 
 ```bash
-# Préparer le cache pour le déploiement
-gestvenv cache add -r production_requirements.txt
+# Exporter la configuration d'un environnement
+gestvenv export monprojet --format template --output web_template.json
 
-# Déploiement hors ligne
-gestvenv --offline create production --python 3.11
-gestvenv --offline install production -r production_requirements.txt
+# Créer un template global
+gestvenv template create web_app web_template.json
 ```
+
+#### Utiliser un template
+
+```bash
+# Créer depuis un template
+gestvenv create nouveau_projet --template web_app
+
+# Lister les templates disponibles
+gestvenv template list
+```
+
+### Mode hors ligne
+
+```bash
+# Activer le mode hors ligne
+gestvenv config set offline_mode true
+
+# Création hors ligne (utilise le cache)
+gestvenv create projet_offline --offline
+
+# Gérer le cache
+gestvenv cache list
+gestvenv cache clean
+```
+
+### Monitoring et santé
+
+```bash
+# Vérifier la santé d'un environnement
+gestvenv check monprojet
+
+# Informations détaillées avec scores
+gestvenv info monprojet --health
+
+# Réparation automatique
+gestvenv repair monprojet
+```
+
+---
 
 ## ⚙️ Configuration
 
-### Fichier de Configuration
+### Fichier de configuration
 
-GestVenv utilise un fichier de configuration situé à `~/.gestvenv/config.json` :
+GestVenv utilise un fichier de configuration TOML : `~/.config/gestvenv/config.toml`
 
-```json
-{
-  "offline_mode": false,
-  "use_cache": true,
-  "cache": {
-    "max_size": "5GB",
-    "max_age": 30,
-    "auto_cleanup": true
-  },
-  "environments_path": "~/.gestvenv/environments",
-  "default_python": "python3"
-}
+```toml
+[general]
+preferred_backend = "uv"
+auto_activate = true
+auto_migrate = true
+offline_mode = false
+default_python = "3.11"
+
+[backends.uv]
+resolution = "highest"
+cache_dir = "~/.cache/uv"
+
+[backends.pip]
+timeout = 120
+index_url = "https://pypi.org/simple"
+
+[paths]
+environments_dir = "~/.local/share/gestvenv/envs"
+cache_dir = "~/.cache/gestvenv"
+templates_dir = "~/.config/gestvenv/templates"
+
+[security]
+check_vulnerabilities = true
+auto_update_pip = true
 ```
 
 ### Configuration via CLI
 
 ```bash
-# Configurer le mode hors ligne par défaut
-gestvenv config set offline_mode true
+# Afficher la configuration
+gestvenv config show
 
-# Configurer la taille maximale du cache
-gestvenv config set cache.max_size 10GB
+# Modifier un paramètre
+gestvenv config set preferred_backend uv
+gestvenv config set auto_activate true
 
-# Configurer le nettoyage automatique
-gestvenv config set cache.auto_cleanup false
+# Backend spécifique
+gestvenv backend set pip --index-url https://pypi.org/simple
+gestvenv backend info uv
 ```
 
-## 🎯 Optimisations et Performance
+---
 
-- ⚡ **Création d'environnement** : < 10 secondes
-- ⚡ **Démarrage de l'application** : < 2 secondes  
-- ⚡ **Support de 50+ environnements** simultanés
-- 💾 **Cache intelligent** : Réduction de 80% du temps d'installation
-- 🔒 **Mode hors ligne** : Développement sans interruption
+## 🔧 Cas d'usage avancés
 
-## 🤝 Contribution
-
-Les contributions sont les bienvenues ! Consultez notre [guide de contribution](CONTRIBUTING.md).
-
-### Développement Local
+### Développement en équipe
 
 ```bash
-git clone https://github.com/thearchit3ct/gestvenv.git
-cd gestvenv
-gestvenv create gestvenv-dev --python 3.11
-gestvenv activate gestvenv-dev
-gestvenv install gestvenv-dev -e .
-pytest
+# 1. Créer l'environnement de référence
+gestvenv create-from-pyproject ./pyproject.toml reference_env --groups dev,test
+
+# 2. Exporter pour l'équipe
+gestvenv export reference_env --format json --output team_config.json
+
+# 3. Les membres de l'équipe importent
+gestvenv import team_config.json mon_env_local
 ```
 
-## 📄 License
+### CI/CD et reproductibilité
 
-Ce projet est sous licence MIT. Voir le fichier [LICENSE](LICENSE) pour plus de détails.
+```bash
+# Génération de lock file pour CI
+gestvenv sync prod_env --lock-file requirements.lock
 
-## 🆘 Support
+# Reproduction exacte en CI
+gestvenv create ci_env --from-lock requirements.lock
+```
 
-- 📖 [Documentation complète](https://github.com/thearchit3ct/gestvenv/wiki)
-- 🐛 [Signaler un bug](https://github.com/thearchit3ct/gestvenv/issues)
-- 💬 [Discussions](https://github.com/thearchit3ct/gestvenv/discussions)
-- 📧 Contact : <thearchit3ct@outlook.fr>
+### Projets multiples avec dépendances communes
+
+```bash
+# Environnement partagé pour les utilitaires
+gestvenv create utils_env --packages "black,isort,pytest,mypy"
+
+# Lier aux projets spécifiques
+gestvenv create projet1 --inherit utils_env --packages "flask"
+gestvenv create projet2 --inherit utils_env --packages "django"
+```
+
+---
+
+## 🚀 Migration depuis autres outils
+
+### Depuis virtualenv/venv
+
+```bash
+# Découverte automatique des environnements existants
+gestvenv migrate --discover
+
+# Migration manuelle
+gestvenv migrate --from-path /path/to/old/env --name nouveau_nom
+```
+
+### Depuis poetry
+
+```bash
+# Import direct depuis poetry.lock
+gestvenv import pyproject.toml mon_env --backend poetry
+
+# Conversion vers format universel
+gestvenv convert-from-poetry pyproject.toml
+```
+
+### Depuis conda
+
+```bash
+# Export depuis conda
+conda env export > environment.yml
+
+# Import dans GestVenv
+gestvenv import environment.yml mon_env --format conda
+```
+
+---
+
+## 🧪 API Python
+
+### Utilisation programmatique
+
+```python
+from gestvenv import EnvironmentManager
+
+# Créer le gestionnaire
+manager = EnvironmentManager()
+
+# Créer un environnement
+success, message = manager.create_environment(
+    name="mon_projet",
+    python_version="3.11",
+    packages=["flask", "pytest"],
+    backend_type="uv"
+)
+
+# Informations
+environments = manager.list_environments()
+env_info = manager.get_environment_info("mon_projet")
+
+# Synchronisation
+success, message = manager.sync_environment(
+    name="mon_projet", 
+    groups=["dev", "test"]
+)
+```
+
+### Configuration programmatique
+
+```python
+from gestvenv import ConfigManager
+
+config = ConfigManager()
+
+# Paramètres généraux
+config.set_setting("preferred_backend", "uv")
+config.set_offline_mode(True)
+
+# Backends
+config.set_backend_setting("uv", "resolution", "highest")
+
+# Templates
+template_data = {...}
+config.add_template("web_app", template_data)
+```
+
+---
+
+## 🛠️ Développement
+
+### Installation pour le développement
+
+```bash
+git clone https://github.com/gestvenv/gestvenv.git
+cd gestvenv
+
+# Installation en mode développement
+pip install -e ".[dev,test]"
+
+# Installation des hooks pre-commit
+pre-commit install
+```
+
+### Tests
+
+```bash
+# Tests complets
+pytest
+
+# Tests avec couverture
+pytest --cov=gestvenv --cov-report=html
+
+# Tests spécifiques
+pytest tests/test_environment_manager.py
+pytest -m "not slow"  # Exclure les tests lents
+```
+
+### Contribution
+
+1. Fork du repository
+2. Création d'une branche : `git checkout -b feature/nouvelle-fonctionnalite`
+3. Commits : `git commit -am 'Ajout nouvelle fonctionnalité'`
+4. Push : `git push origin feature/nouvelle-fonctionnalite`
+5. Pull Request
+
+---
+
+## 📝 FAQ
+
+### Questions fréquentes
+
+**Q: Quelle est la différence avec pip-tools ou poetry ?**
+R: GestVenv orchestre différents backends (pip, uv, poetry) et se concentre sur la gestion d'environnements plutôt que sur un seul workflow.
+
+**Q: Puis-je utiliser GestVenv avec mes projets poetry existants ?**
+R: Oui, GestVenv détecte automatiquement les projets poetry et utilise le backend approprié.
+
+**Q: Comment migrer mes environnements existants ?**
+R: Utilisez `gestvenv migrate --discover` pour la détection automatique ou `gestvenv migrate --from-path` pour la migration manuelle.
+
+**Q: GestVenv modifie-t-il mes fichiers pyproject.toml ?**
+R: Non, GestVenv lit les configurations sans les modifier. Il peut créer des fichiers de lock séparés.
+
+---
+
+## 📄 Licence
+
+GestVenv est distribué sous licence MIT. Voir [LICENSE](LICENSE) pour plus de détails.
+
+---
+
+## 🙏 Remerciements
+
+- TheArchit3ct pour la création et le développement de GestVenv
+- L'équipe Python pour les PEP modernes
+- Les mainteneurs de pip, uv, poetry, et pdm
+- La communauté open source Python
+
+---
+
+## 📞 Support
+
+- 🐛 **Bugs** : [GitHub Issues](https://github.com/gestvenv/gestvenv/issues)
+- 💬 **Discussions** : [GitHub Discussions](https://github.com/gestvenv/gestvenv/discussions)
+- 📖 **Documentation** : [gestvenv.readthedocs.io](https://gestvenv.readthedocs.io)
+- 📧 **Contact** : TheArchit3ct - thearchit3ct@outlook.fr
 
 ---
 
 <div align="center">
 
-**Développé avec ❤️ pour la communauté Python**
+**⭐ Si GestVenv vous aide, n'hésitez pas à mettre une étoile sur GitHub ! ⭐**
 
-⭐ Si GestVenv vous est utile, n'hésitez pas à laisser une étoile sur GitHub !
+[🏠 Site web](https://gestvenv.org) • [📚 Documentation](https://docs.gestvenv.org) • [🐙 GitHub](https://github.com/gestvenv/gestvenv)
 
 </div>
-
----
-
-*GestVenv - Simplifiez votre gestion d'environnements Python*

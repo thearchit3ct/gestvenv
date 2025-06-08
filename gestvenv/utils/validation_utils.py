@@ -1,351 +1,374 @@
 """
-Utilitaires de validation pour GestVenv.
-
-Ce module fournit des fonctions pour valider différentes entrées utilisateur
-et vérifier des contraintes.
+Utilitaires de validation pour GestVenv v1.1.
+Validation de packages, versions, configurations, etc.
 """
 
-import os
 import re
-import logging
+import sys
 from pathlib import Path
-from typing import Optional, List, Tuple, Dict, Any, Union, Pattern
+from typing import List, Dict, Any, Optional, Tuple, Union
+import logging
+from packaging import version as pkg_version
+from packaging.specifiers import SpecifierSet, InvalidSpecifier
+from packaging.requirements import Requirement, InvalidRequirement
 
-# Configuration du logger
 logger = logging.getLogger(__name__)
 
-def is_valid_name(name: str, min_length: int = 1, max_length: int = 50,
-                 pattern: str = r'^[a-zA-Z0-9_-]+$') -> Tuple[bool, str]:
-    """
-    Valide un nom selon des critères donnés.
-    
-    Args:
-        name: Nom à valider
-        min_length: Longueur minimale
-        max_length: Longueur maximale
-        pattern: Expression régulière que le nom doit respecter
-        
-    Returns:
-        Tuple[bool, str]: (validité, message d'erreur si invalide)
-    """
-    if not name:
-        return False, "Le nom ne peut pas être vide"
-    
-    if len(name) < min_length:
-        return False, f"Le nom est trop court (minimum {min_length} caractères)"
-    
-    if len(name) > max_length:
-        return False, f"Le nom est trop long (maximum {max_length} caractères)"
-    
-    # Vérifier le pattern
-    if not re.match(pattern, name):
-        return False, f"Le nom doit respecter le format: {pattern}"
-    
-    return True, ""
+class ValidationError(Exception):
+    """Exception pour les erreurs de validation."""
+    pass
 
-def is_valid_path(path: Union[str, Path], must_exist: bool = False,
-                 must_be_dir: bool = False, must_be_file: bool = False) -> Tuple[bool, Optional[Path], str]:
-    """
-    Valide un chemin selon des critères donnés.
+class ValidationUtils:
+    """Utilitaires de validation avancés."""
     
-    Args:
-        path: Chemin à valider
-        must_exist: Si True, le chemin doit exister
-        must_be_dir: Si True, le chemin doit être un répertoire
-        must_be_file: Si True, le chemin doit être un fichier
-        
-    Returns:
-        Tuple[bool, Optional[Path], str]: (validité, chemin résolu si valide, message d'erreur sinon)
-    """
-    if not path:
-        return False, None, "Le chemin ne peut pas être vide"
+    # Expressions régulières pour validation
+    PACKAGE_NAME_PATTERN = re.compile(r'^[a-zA-Z0-9]([a-zA-Z0-9._-]*[a-zA-Z0-9])?$')
+    VERSION_PATTERN = re.compile(r'^\d+(\.\d+)*([a-zA-Z0-9]+(\.\d+)*)?$')
+    EMAIL_PATTERN = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+    URL_PATTERN = re.compile(
+        r'^https?://'  # http:// ou https://
+        r'(?:(?:[A-Z0-9](?:[A-Z0-9-]{0,61}[A-Z0-9])?\.)+[A-Z]{2,6}\.?|'  # domaine
+        r'localhost|'  # localhost
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})'  # IP
+        r'(?::\d+)?'  # port optionnel
+        r'(?:/?|[/?]\S+)$', re.IGNORECASE
+    )
     
-    try:
-        # Convertir en Path si c'est une chaîne
-        if isinstance(path, str):
-            # Gérer le cas des chemins utilisateur (~)
-            if path.startswith("~"):
-                path_obj = Path(os.path.expanduser(path))
-            else:
-                path_obj = Path(path)
-        else:
-            path_obj = path
+    @staticmethod
+    def validate_package_name(name: str, strict: bool = True) -> Tuple[bool, Optional[str]]:
+        """
+        Valide un nom de package Python.
         
-        # Convertir en chemin absolu
-        if not path_obj.is_absolute():
-            path_obj = Path.cwd() / path_obj
+        Args:
+            name: Nom du package à valider
+            strict: Mode strict (PEP 508) ou permissif
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not name:
+            return False, "Le nom du package ne peut pas être vide"
         
-        # Résoudre le chemin
-        resolved_path = path_obj.resolve()
+        if not isinstance(name, str):
+            return False, "Le nom du package doit être une chaîne"
         
-        # Vérifier l'existence
-        if must_exist and not resolved_path.exists():
-            return False, None, f"Le chemin n'existe pas: {resolved_path}"
+        # Vérifier la longueur
+        if len(name) > 214:  # Limite PyPI
+            return False, "Le nom du package ne peut pas dépasser 214 caractères"
         
-        # Vérifier si c'est un répertoire
-        if must_be_dir and not resolved_path.is_dir():
-            return False, None, f"Le chemin n'est pas un répertoire: {resolved_path}"
+        if strict:
+            # Validation stricte selon PEP 508
+            if not ValidationUtils.PACKAGE_NAME_PATTERN.match(name):
+                return False, (
+                    "Le nom du package doit commencer et finir par une lettre ou un chiffre, "
+                    "et ne peut contenir que des lettres, chiffres, points, tirets et underscores"
+                )
+            
+            # Vérifier les caractères interdits
+            if name.startswith(('.', '-', '_')) or name.endswith(('.', '-', '_')):
+                return False, "Le nom du package ne peut pas commencer ou finir par '.', '-' ou '_'"
+            
+            # Vérifier les séquences multiples
+            if '..' in name or '--' in name or '__' in name:
+                return False, "Le nom du package ne peut pas contenir de séquences multiples de séparateurs"
         
-        # Vérifier si c'est un fichier
-        if must_be_file and not resolved_path.is_file():
-            return False, None, f"Le chemin n'est pas un fichier: {resolved_path}"
+        # Vérifier que ce n'est pas un mot-clé Python
+        import keyword
+        if keyword.iskeyword(name):
+            return False, f"'{name}' est un mot-clé Python réservé"
         
-        return True, resolved_path, ""
-        
-    except Exception as e:
-        return False, None, f"Erreur lors de la validation du chemin: {e}"
-
-def is_safe_directory(directory: Union[str, Path], forbidden_paths: Optional[List[str]] = None) -> Tuple[bool, str]:
-    """
-    Vérifie si un répertoire est sécuritaire à manipuler (pas un répertoire système critique).
+        return True, None
     
-    Args:
-        directory: Répertoire à vérifier
-        forbidden_paths: Liste optionnelle de chemins interdits supplémentaires
+    @staticmethod
+    def validate_version(version_str: str, allow_prereleases: bool = True) -> Tuple[bool, Optional[str]]:
+        """
+        Valide une version de package.
         
-    Returns:
-        Tuple[bool, str]: (sécurité, message d'avertissement si non sécuritaire)
-    """
-    # Convertir en Path et résoudre
-    try:
-        if isinstance(directory, str):
-            resolved_path = Path(directory).resolve()
-        else:
-            resolved_path = directory.resolve()
-    except Exception as e:
-        return False, f"Erreur lors de la résolution du chemin: {e}"
-    
-    # Chemins système critiques par défaut
-    system_paths = [
-        "/",
-        "/bin",
-        "/boot",
-        "/dev",
-        "/etc",
-        "/home",
-        "/lib",
-        "/lib64",
-        "/media",
-        "/mnt",
-        "/opt",
-        "/proc",
-        "/root",
-        "/run",
-        "/sbin",
-        "/srv",
-        "/sys",
-        "/tmp",
-        "/usr",
-        "/var",
-        "C:\\",
-        "C:\\Windows",
-        "C:\\Program Files",
-        "C:\\Program Files (x86)",
-        "C:\\Users"
-    ]
-    
-    # Ajouter les chemins interdits supplémentaires
-    if forbidden_paths:
-        system_paths.extend(forbidden_paths)
-    
-    # Pour les chemins temporaires de test, ils sont généralement sûrs
-    if "/tmp/" in str(resolved_path) and "tmp" in str(resolved_path):
-        return True, ""
-    
-    # Vérifier si le répertoire est un chemin système critique
-    for sys_path in system_paths:
+        Args:
+            version_str: Chaîne de version à valider
+            allow_prereleases: Autoriser les pré-versions
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not version_str:
+            return False, "La version ne peut pas être vide"
+        
+        if not isinstance(version_str, str):
+            return False, "La version doit être une chaîne"
+        
         try:
-            sys_path_obj = Path(sys_path).resolve()
+            parsed_version = pkg_version.parse(version_str)
             
-            if resolved_path == sys_path_obj:
-                return False, f"Opération refusée: '{resolved_path}' est un répertoire système critique"
+            # Vérifier si c'est une pré-version
+            if not allow_prereleases and parsed_version.is_prerelease:
+                return False, "Les pré-versions ne sont pas autorisées"
+            
+            return True, None
+            
+        except pkg_version.InvalidVersion as e:
+            return False, f"Version invalide: {e}"
+    
+    @staticmethod
+    def validate_requirement(requirement_str: str) -> Tuple[bool, Optional[str], Optional[Requirement]]:
+        """
+        Valide une spécification de requirement (ex: "requests>=2.25.0").
+        
+        Args:
+            requirement_str: Chaîne de requirement à valider
+            
+        Returns:
+            (valide, message_erreur, objet_requirement)
+        """
+        if not requirement_str:
+            return False, "Le requirement ne peut pas être vide", None
+        
+        if not isinstance(requirement_str, str):
+            return False, "Le requirement doit être une chaîne", None
+        
+        try:
+            req = Requirement(requirement_str.strip())
+            
+            # Valider le nom du package
+            name_valid, name_error = ValidationUtils.validate_package_name(req.name)
+            if not name_valid:
+                return False, f"Nom de package invalide: {name_error}", None
+            
+            # Valider les spécificateurs de version
+            if req.specifier:
+                try:
+                    # Vérifier que les spécificateurs sont valides
+                    SpecifierSet(str(req.specifier))
+                except InvalidSpecifier as e:
+                    return False, f"Spécificateur de version invalide: {e}", None
+            
+            return True, None, req
+            
+        except InvalidRequirement as e:
+            return False, f"Requirement invalide: {e}", None
+    
+    @staticmethod
+    def validate_requirements_list(requirements: List[str]) -> Tuple[bool, List[str], List[Requirement]]:
+        """
+        Valide une liste de requirements.
+        
+        Args:
+            requirements: Liste de chaînes de requirements
+            
+        Returns:
+            (tout_valide, liste_erreurs, liste_requirements_valides)
+        """
+        errors = []
+        valid_requirements = []
+        
+        for i, req_str in enumerate(requirements):
+            valid, error, req_obj = ValidationUtils.validate_requirement(req_str)
+            
+            if valid and req_obj:
+                valid_requirements.append(req_obj)
+            else:
+                errors.append(f"Ligne {i+1}: {error}")
+        
+        return len(errors) == 0, errors, valid_requirements
+    
+    @staticmethod
+    def validate_python_version(version_str: str) -> Tuple[bool, Optional[str]]:
+        """
+        Valide une spécification de version Python.
+        
+        Args:
+            version_str: Spécification de version Python (ex: ">=3.9")
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not version_str:
+            return False, "La version Python ne peut pas être vide"
+        
+        try:
+            specifier = SpecifierSet(version_str)
+            
+            # Vérifier que la version actuelle est compatible si possible
+            current_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+            if not specifier.contains(current_version):
+                logger.warning(f"Version Python actuelle {current_version} non compatible avec {version_str}")
+            
+            return True, None
+            
+        except InvalidSpecifier as e:
+            return False, f"Spécification de version Python invalide: {e}"
+    
+    @staticmethod
+    def validate_email(email: str) -> Tuple[bool, Optional[str]]:
+        """
+        Valide une adresse email.
+        
+        Args:
+            email: Adresse email à valider
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not email:
+            return False, "L'email ne peut pas être vide"
+        
+        if not isinstance(email, str):
+            return False, "L'email doit être une chaîne"
+        
+        if len(email) > 254:  # RFC 5321
+            return False, "L'email ne peut pas dépasser 254 caractères"
+        
+        if not ValidationUtils.EMAIL_PATTERN.match(email):
+            return False, "Format d'email invalide"
+        
+        return True, None
+    
+    @staticmethod
+    def validate_url(url: str, schemes: Optional[List[str]] = None) -> Tuple[bool, Optional[str]]:
+        """
+        Valide une URL.
+        
+        Args:
+            url: URL à valider
+            schemes: Schémas autorisés (default: ['http', 'https'])
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not url:
+            return False, "L'URL ne peut pas être vide"
+        
+        if not isinstance(url, str):
+            return False, "L'URL doit être une chaîne"
+        
+        if schemes is None:
+            schemes = ['http', 'https']
+        
+        # Vérifier le schéma
+        url_lower = url.lower()
+        if not any(url_lower.startswith(f"{scheme}://") for scheme in schemes):
+            return False, f"L'URL doit commencer par un des schémas: {', '.join(schemes)}"
+        
+        if not ValidationUtils.URL_PATTERN.match(url):
+            return False, "Format d'URL invalide"
+        
+        return True, None
+    
+    @staticmethod
+    def validate_path(path: Union[str, Path], must_exist: bool = False, 
+                     must_be_file: bool = False, must_be_dir: bool = False) -> Tuple[bool, Optional[str]]:
+        """
+        Valide un chemin de fichier ou répertoire.
+        
+        Args:
+            path: Chemin à valider
+            must_exist: Le chemin doit exister
+            must_be_file: Le chemin doit être un fichier
+            must_be_dir: Le chemin doit être un répertoire
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not path:
+            return False, "Le chemin ne peut pas être vide"
+        
+        try:
+            path_obj = Path(path)
+            
+            if must_exist and not path_obj.exists():
+                return False, f"Le chemin n'existe pas: {path}"
+            
+            if path_obj.exists():
+                if must_be_file and not path_obj.is_file():
+                    return False, f"Le chemin doit être un fichier: {path}"
                 
-            # Vérifier si c'est un sous-répertoire d'un chemin système
-            try:
-                resolved_path.relative_to(sys_path_obj)
-                # Si on arrive ici, c'est un sous-répertoire
-                # Exception pour les répertoires liés à l'application
-                if "gestvenv" in str(resolved_path).lower() or "test" in str(resolved_path).lower():
-                    continue
-                return False, f"Opération refusée: '{resolved_path}' est dans un répertoire système critique"
-            except ValueError:
-                # Pas un sous-répertoire, continuer
-                continue
-                
-        except Exception:
-            continue
-    
-    return True, ""
-
-def matches_pattern(text: str, pattern: str) -> bool:
-    """
-    Vérifie si un texte correspond à un motif d'expression régulière.
-    
-    Args:
-        text: Texte à vérifier
-        pattern: Motif d'expression régulière
-        
-    Returns:
-        bool: True si le texte correspond au motif
-    """
-    try:
-        return bool(re.match(pattern, text))
-    except re.error:
-        logger.error(f"Expression régulière invalide: {pattern}")
-        return False
-
-def parse_version_string(version: str) -> Optional[Tuple[int, ...]]:
-    """
-    Analyse une chaîne de version en ses composants numériques.
-    
-    Args:
-        version: Chaîne de version (ex: '3.9.2')
-        
-    Returns:
-        Tuple d'entiers ou None si la version est invalide
-    """
-    # Pattern pour une version X.Y.Z...
-    match = re.match(r'^(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:\.(\d+))?', version)
-    
-    if not match:
-        return None
-    
-    # Extraire les composants en ignorant les valeurs None
-    components = []
-    for i in range(1, 5):  # max 4 composants
-        if match.group(i) is not None:
-            components.append(int(match.group(i)))
-    
-    return tuple(components) if components else None
-
-def is_valid_python_version(version: str) -> Tuple[bool, str]:
-    """
-    Valide une spécification de version Python.
-    
-    Args:
-        version: Version Python à valider (ex: 'python3.9', 'python', '3.9')
-        
-    Returns:
-        Tuple[bool, str]: (validité, message d'erreur si invalide)
-    """
-    if not version:
-        return True, ""  # Version vide est valide (utilise la version par défaut)
-    
-    # Si le format est simplement "python" ou "python3"
-    if version in ["python", "python3"]:
-        return True, ""
-    
-    # Si le format est "pythonX.Y" ou "python3.X"
-    if matches_pattern(version, r'^python(?:3\.(\d+))?$'):
-        return True, ""
-    
-    # Si le format est simplement "3.X"
-    match = re.match(r'^3\.(\d+)$', version)
-    if match:
-        minor_version = int(match.group(1))
-        if minor_version < 6:
-            return False, "GestVenv nécessite Python 3.6 ou supérieur"
-        return True, ""
-    
-    # Si sous Windows, vérifier le format "py -3.X"
-    if os.name == 'nt':  # Windows
-        match = re.match(r'^py -3\.(\d+)$', version)
-        if match:
-            minor_version = int(match.group(1))
-            if minor_version < 6:
-                return False, "GestVenv nécessite Python 3.6 ou supérieur"
-            return True, ""
-    
-    return False, "Format de version Python invalide"
-
-def is_valid_package_name(package: str) -> Tuple[bool, str]:
-    """
-    Valide un nom de package Python, avec éventuellement une version spécifiée.
-    
-    Args:
-        package: Nom du package à valider (ex: 'flask', 'flask==2.0.1')
-        
-    Returns:
-        Tuple[bool, str]: (validité, message d'erreur si invalide)
-    """
-    if not package:
-        return False, "Le nom du package ne peut pas être vide"
-    
-    # Format de base pour les noms de packages
-    # Ce regex permet les formats comme "flask", "flask==2.0.1", "flask>=2.0.1", "flask[extra]"
-    pattern = r'^([a-zA-Z0-9]|[a-zA-Z0-9][a-zA-Z0-9._-]*[a-zA-Z0-9])(\[[a-zA-Z0-9._-]+\])?((==|>=|<=|>|<|!=)[0-9]+(\.[0-9]+)*)?$'
-    
-    if not matches_pattern(package, pattern):
-        # Vérifier si c'est un chemin local ou une URL Git
-        if package.startswith(("git+", "http://", "https://", "./", "/", "~/")):
-            return True, ""
-        return False, f"Format de package invalide: {package}"
-    
-    return True, ""
-
-def validate_packages_list(packages_str: str) -> Tuple[bool, List[str], str]:
-    """
-    Valide une liste de packages séparés par des virgules.
-    
-    Args:
-        packages_str: Chaîne de packages séparés par des virgules
-        
-    Returns:
-        Tuple[bool, List[str], str]: (validité, liste de packages, message d'erreur si invalide)
-    """
-    if not packages_str:
-        return False, [], "La liste de packages ne peut pas être vide"
-    
-    # Séparer la chaîne en liste de packages
-    package_list = [pkg.strip() for pkg in packages_str.split(",")]
-    
-    # Valider chaque package individuellement
-    invalid_packages = []
-    for pkg in package_list:
-        valid, message = is_valid_package_name(pkg)
-        if not valid:
-            invalid_packages.append((pkg, message))
-    
-    if invalid_packages:
-        error_message = "Packages invalides: " + ", ".join([f"{pkg} ({msg})" for pkg, msg in invalid_packages])
-        return False, [], error_message
-    
-    return True, package_list, ""
-
-def parse_key_value_string(kv_string: str, delimiter: str = ",", separator: str = ":") -> Tuple[bool, Dict[str, str], str]:
-    """
-    Analyse une chaîne au format "clé1:valeur1,clé2:valeur2".
-    
-    Args:
-        kv_string: Chaîne de paires clé-valeur
-        delimiter: Délimiteur entre les paires
-        separator: Séparateur entre les clés et les valeurs
-        
-    Returns:
-        Tuple[bool, Dict[str, str], str]: (validité, dictionnaire, message d'erreur si invalide)
-    """
-    if not kv_string:
-        return True, {}, ""  # Chaîne vide est valide (pas de paires)
-    
-    result = {}
-    
-    try:
-        # Séparer les paires
-        pairs = kv_string.split(delimiter)
-        
-        for pair in pairs:
-            if separator not in pair:
-                return False, {}, f"Format invalide (manque '{separator}') : {pair}"
+                if must_be_dir and not path_obj.is_dir():
+                    return False, f"Le chemin doit être un répertoire: {path}"
             
-            key, value = pair.split(separator, 1)
-            key = key.strip()
-            value = value.strip()
+            return True, None
             
-            if not key:
-                return False, {}, "Les clés ne peuvent pas être vides"
-            
-            result[key] = value
+        except Exception as e:
+            return False, f"Chemin invalide: {e}"
+    
+    @staticmethod
+    def validate_environment_name(name: str) -> Tuple[bool, Optional[str]]:
+        """
+        Valide un nom d'environnement virtuel.
         
-        return True, result, ""
-    except Exception as e:
-        return False, {}, f"Erreur lors de l'analyse: {e}"
+        Args:
+            name: Nom de l'environnement à valider
+            
+        Returns:
+            (valide, message_erreur)
+        """
+        if not name:
+            return False, "Le nom de l'environnement ne peut pas être vide"
+        
+        if not isinstance(name, str):
+            return False, "Le nom de l'environnement doit être une chaîne"
+        
+        # Vérifier la longueur
+        if len(name) > 100:
+            return False, "Le nom de l'environnement ne peut pas dépasser 100 caractères"
+        
+        # Vérifier les caractères autorisés (alphanumériques, tirets, underscores)
+        if not re.match(r'^[a-zA-Z0-9_-]+$', name):
+            return False, "Le nom de l'environnement ne peut contenir que des lettres, chiffres, tirets et underscores"
+        
+        # Vérifier qu'il ne commence pas par un tiret
+        if name.startswith('-'):
+            return False, "Le nom de l'environnement ne peut pas commencer par un tiret"
+        
+        # Vérifier les noms réservés
+        reserved_names = ['python', 'pip', 'setuptools', 'wheel', 'conda', 'base', 'root']
+        if name.lower() in reserved_names:
+            return False, f"'{name}' est un nom réservé"
+        
+        return True, None
+    
+    @staticmethod
+    def sanitize_filename(filename: str, replacement_char: str = '_') -> str:
+        """
+        Nettoie un nom de fichier en supprimant/remplaçant les caractères interdits.
+        
+        Args:
+            filename: Nom de fichier à nettoyer
+            replacement_char: Caractère de remplacement
+            
+        Returns:
+            Nom de fichier nettoyé
+        """
+        # Caractères interdits sur la plupart des systèmes
+        forbidden_chars = r'<>:"/\|?*'
+        
+        # Remplacer les caractères interdits
+        cleaned = filename
+        for char in forbidden_chars:
+            cleaned = cleaned.replace(char, replacement_char)
+        
+        # Supprimer les espaces en début/fin
+        cleaned = cleaned.strip()
+        
+        # Remplacer les espaces multiples par un seul
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        
+        # Limiter la longueur (255 caractères pour la plupart des systèmes)
+        if len(cleaned) > 255:
+            name, ext = Path(cleaned).stem, Path(cleaned).suffix
+            max_name_length = 255 - len(ext)
+            cleaned = name[:max_name_length] + ext
+        
+        return cleaned
+
+# Fonctions utilitaires pour compatibilité
+def validate_package_name(name: str) -> Tuple[bool, Optional[str]]:
+    """Fonction utilitaire pour valider un nom de package."""
+    return ValidationUtils.validate_package_name(name)
+
+def validate_version(version_str: str) -> Tuple[bool, Optional[str]]:
+    """Fonction utilitaire pour valider une version."""
+    return ValidationUtils.validate_version(version_str)
+
+def validate_requirement(requirement_str: str) -> Tuple[bool, Optional[str], Optional[Requirement]]:
+    """Fonction utilitaire pour valider un requirement."""
+    return ValidationUtils.validate_requirement(requirement_str)

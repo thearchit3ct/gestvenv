@@ -1,250 +1,362 @@
 """
-Utilitaires de formatage pour GestVenv.
-
-Ce module fournit des fonctions pour formater et afficher des données
-de manière cohérente et lisible.
+Utilitaires de formatage et d'affichage pour GestVenv v1.1.
+Formatage des tailles, durées, tableaux, couleurs.
 """
 
-import os
 import time
-import datetime
+from datetime import datetime, timedelta
+from typing import List, Dict, Any, Optional, Union
+from pathlib import Path
 import logging
-from typing import List, Dict, Any, Optional, Union, Tuple
 
-# Configuration du logger
 logger = logging.getLogger(__name__)
 
-# Définition des couleurs pour le terminal
-COLORS = {
-    "reset": "\033[0m",
-    "bold": "\033[1m",
-    "underline": "\033[4m",
-    "black": "\033[30m",
-    "red": "\033[31m",
-    "green": "\033[32m",
-    "yellow": "\033[33m",
-    "blue": "\033[34m",
-    "magenta": "\033[35m",
-    "cyan": "\033[36m",
-    "white": "\033[37m",
-    "bg_black": "\033[40m",
-    "bg_red": "\033[41m",
-    "bg_green": "\033[42m",
-    "bg_yellow": "\033[43m",
-    "bg_blue": "\033[44m",
-    "bg_magenta": "\033[45m",
-    "bg_cyan": "\033[46m",
-    "bg_white": "\033[47m"
-}
-
-def format_timestamp(timestamp: Union[float, int, str, datetime.datetime],
-                    format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
-    """
-    Formate un timestamp en chaîne de date lisible.
+class Colors:
+    """Codes couleurs ANSI pour le terminal."""
     
-    Args:
-        timestamp: Timestamp à formater (float, int, chaîne ISO ou datetime)
-        format_str: Format de sortie
+    # Couleurs de base
+    BLACK = '\033[30m'
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
+    
+    # Couleurs vives
+    BRIGHT_BLACK = '\033[90m'
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
+    BRIGHT_WHITE = '\033[97m'
+    
+    # Styles
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
+    ITALIC = '\033[3m'
+    UNDERLINE = '\033[4m'
+    BLINK = '\033[5m'
+    REVERSE = '\033[7m'
+    STRIKETHROUGH = '\033[9m'
+    
+    # Reset
+    RESET = '\033[0m'
+    END = '\033[0m'
+
+class FormatUtils:
+    """Utilitaires de formatage et d'affichage."""
+    
+    @staticmethod
+    def format_size(size_bytes: int, decimal_places: int = 2) -> str:
+        """
+        Formate une taille en bytes dans une unité lisible.
         
-    Returns:
-        str: Timestamp formaté
-    """
-    try:
-        if isinstance(timestamp, (float, int)):
-            dt = datetime.datetime.fromtimestamp(timestamp)
-        elif isinstance(timestamp, str):
-            # Essayer d'analyser une chaîne ISO
-            dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
-        elif isinstance(timestamp, datetime.datetime):
-            dt = timestamp
+        Args:
+            size_bytes: Taille en bytes
+            decimal_places: Nombre de décimales
+            
+        Returns:
+            Taille formatée (ex: "1.5 GB")
+        """
+        if size_bytes < 0:
+            return "0 B"
+        
+        units = ['B', 'KB', 'MB', 'GB', 'TB', 'PB']
+        size = float(size_bytes)
+        unit_index = 0
+        
+        while size >= 1024 and unit_index < len(units) - 1:
+            size /= 1024
+            unit_index += 1
+        
+        if unit_index == 0:  # Bytes
+            return f"{int(size)} {units[unit_index]}"
         else:
-            raise ValueError(f"Type de timestamp non pris en charge: {type(timestamp)}")
+            return f"{size:.{decimal_places}f} {units[unit_index]}"
+    
+    @staticmethod
+    def format_duration(seconds: float, precise: bool = False) -> str:
+        """
+        Formate une durée en secondes dans une unité lisible.
         
-        return dt.strftime(format_str)
-    except Exception as e:
-        logger.error(f"Erreur lors du formatage du timestamp: {e}")
-        return str(timestamp)
-
-def truncate_string(s: str, max_length: int = 80, suffix: str = "...") -> str:
-    """
-    Tronque une chaîne si elle dépasse une longueur maximale.
-    
-    Args:
-        s: Chaîne à tronquer
-        max_length: Longueur maximale
-        suffix: Suffixe à ajouter si la chaîne est tronquée
+        Args:
+            seconds: Durée en secondes
+            precise: Affichage précis ou approximatif
+            
+        Returns:
+            Durée formatée (ex: "2m 30s", "1.5 minutes")
+        """
+        if seconds < 0:
+            return "0s"
         
-    Returns:
-        str: Chaîne tronquée
-    """
-    if len(s) <= max_length:
-        return s
-    
-    return s[:max_length - len(suffix)] + suffix
-
-def format_list_as_table(data: List[Dict[str, Any]], columns: Optional[List[str]] = None,
-                        header: bool = True, padding: int = 2) -> List[str]:
-    """
-    Formate une liste de dictionnaires en tableau textuel.
-    
-    Args:
-        data: Liste de dictionnaires à formater
-        columns: Liste des colonnes à inclure (par défaut: toutes)
-        header: Si True, inclut une ligne d'en-tête
-        padding: Nombre d'espaces de remplissage entre les colonnes
+        if seconds < 1:
+            if precise:
+                return f"{seconds*1000:.0f}ms"
+            return "< 1s"
         
-    Returns:
-        List[str]: Liste de lignes formatées
-    """
-    if not data:
-        return []
+        if seconds < 60:
+            return f"{seconds:.1f}s" if precise else f"{int(seconds)}s"
+        
+        minutes = int(seconds // 60)
+        remaining_seconds = int(seconds % 60)
+        
+        if minutes < 60:
+            if precise:
+                return f"{minutes}m {remaining_seconds}s"
+            return f"{minutes}m" if remaining_seconds < 30 else f"{minutes+1}m"
+        
+        hours = int(minutes // 60)
+        remaining_minutes = int(minutes % 60)
+        
+        if hours < 24:
+            if precise:
+                return f"{hours}h {remaining_minutes}m"
+            return f"{hours}h"
+        
+        days = int(hours // 24)
+        remaining_hours = int(hours % 24)
+        
+        if precise:
+            return f"{days}d {remaining_hours}h"
+        return f"{days}d"
     
-    # Déterminer les colonnes
-    if not columns:
-        # Utiliser toutes les clés uniques des dictionnaires
-        columns = sorted(set(key for item in data for key in item.keys()))
-    
-    # Déterminer la largeur de chaque colonne
-    col_widths = {col: len(col) for col in columns}
-    for item in data:
-        for col in columns:
-            if col in item:
-                col_widths[col] = max(col_widths[col], len(str(item[col])))
-    
-    # Générer les lignes du tableau
-    lines = []
-    
-    # Ajouter l'en-tête
-    if header:
-        header_line = "".join(f"{col:{col_widths[col] + padding}}" for col in columns)
+    @staticmethod
+    def format_table(data: List[Dict[str, Any]], headers: Optional[List[str]] = None,
+                     max_width: int = 80, show_index: bool = False) -> str:
+        """
+        Formate des données en tableau ASCII.
+        
+        Args:
+            data: Données à afficher
+            headers: En-têtes des colonnes (auto-détectés si None)
+            max_width: Largeur maximale du tableau
+            show_index: Afficher un index numérique
+            
+        Returns:
+            Tableau formaté en chaîne
+        """
+        if not data:
+            return "Aucune donnée à afficher"
+        
+        # Déterminer les en-têtes
+        if headers is None:
+            headers = list(data[0].keys())
+        
+        # Ajouter l'index si demandé
+        if show_index:
+            headers = ['#'] + headers
+            for i, row in enumerate(data):
+                row = {'#': str(i + 1), **row}
+                data[i] = row
+        
+        # Calculer la largeur des colonnes
+        col_widths = {}
+        for header in headers:
+            col_widths[header] = len(str(header))
+        
+        for row in data:
+            for header in headers:
+                value = str(row.get(header, ''))
+                col_widths[header] = max(col_widths[header], len(value))
+        
+        # Ajuster les largeurs si nécessaire
+        total_width = sum(col_widths.values()) + len(headers) * 3 + 1
+        if total_width > max_width:
+            # Réduire les colonnes proportionnellement
+            reduction = (total_width - max_width) / len(headers)
+            for header in headers:
+                col_widths[header] = max(8, int(col_widths[header] - reduction))
+        
+        # Construire le tableau
+        lines = []
+        
+        # Ligne d'en-tête
+        header_line = '|'
+        separator_line = '+'
+        for header in headers:
+            width = col_widths[header]
+            header_line += f" {header:<{width}} |"
+            separator_line += '-' * (width + 2) + '+'
+        
+        lines.append(separator_line)
         lines.append(header_line)
-        separator = "".join("-" * (col_widths[col] + padding) for col in columns)
-        lines.append(separator)
-    
-    # Ajouter les lignes de données
-    for item in data:
-        line = "".join(f"{str(item.get(col, '')):{col_widths[col] + padding}}" for col in columns)
-        lines.append(line)
-    
-    return lines
-
-def get_color_for_terminal(color_name: str) -> str:
-    """
-    Retourne le code ANSI pour une couleur donnée.
-    
-    Args:
-        color_name: Nom de la couleur
+        lines.append(separator_line)
         
-    Returns:
-        str: Code ANSI pour la couleur ou chaîne vide si non disponible
-    """
-    # Vérifier si les couleurs sont supportées
-    if not _supports_color():
-        return ""
+        # Lignes de données
+        for row in data:
+            data_line = '|'
+            for header in headers:
+                width = col_widths[header]
+                value = str(row.get(header, ''))
+                # Tronquer si trop long
+                if len(value) > width:
+                    value = value[:width-3] + '...'
+                data_line += f" {value:<{width}} |"
+            lines.append(data_line)
+        
+        lines.append(separator_line)
+        
+        return '\n'.join(lines)
     
-    return COLORS.get(color_name.lower(), "")
-
-def _supports_color() -> bool:
-    """
-    Vérifie si le terminal supporte les couleurs.
+    @staticmethod
+    def colorize(text: str, color: str, bold: bool = False) -> str:
+        """
+        Ajoute des couleurs à un texte pour le terminal.
+        
+        Args:
+            text: Texte à coloriser
+            color: Couleur (nom ou code ANSI)
+            bold: Texte en gras
+            
+        Returns:
+            Texte colorisé
+        """
+        # Mapping des couleurs par nom
+        color_map = {
+            'black': Colors.BLACK,
+            'red': Colors.RED,
+            'green': Colors.GREEN,
+            'yellow': Colors.YELLOW,
+            'blue': Colors.BLUE,
+            'magenta': Colors.MAGENTA,
+            'cyan': Colors.CYAN,
+            'white': Colors.WHITE,
+            'bright_red': Colors.BRIGHT_RED,
+            'bright_green': Colors.BRIGHT_GREEN,
+            'bright_yellow': Colors.BRIGHT_YELLOW,
+            'bright_blue': Colors.BRIGHT_BLUE,
+            'bright_magenta': Colors.BRIGHT_MAGENTA,
+            'bright_cyan': Colors.BRIGHT_CYAN,
+        }
+        
+        # Récupérer le code couleur
+        color_code = color_map.get(color.lower(), color)
+        
+        # Construire le texte colorisé
+        result = color_code
+        if bold:
+            result += Colors.BOLD
+        result += text + Colors.RESET
+        
+        return result
     
-    Returns:
-        bool: True si le terminal supporte les couleurs
-    """
-    # Vérifier les variables d'environnement
-    if os.environ.get("TERM") == "dumb":
-        return False
+    @staticmethod
+    def format_progress_bar(current: int, total: int, width: int = 50, 
+                           filled_char: str = '█', empty_char: str = '░') -> str:
+        """
+        Crée une barre de progression ASCII.
+        
+        Args:
+            current: Valeur actuelle
+            total: Valeur totale
+            width: Largeur de la barre
+            filled_char: Caractère de remplissage
+            empty_char: Caractère vide
+            
+        Returns:
+            Barre de progression formatée
+        """
+        if total <= 0:
+            return f"[{empty_char * width}] 0%"
+        
+        percentage = min(100, (current / total) * 100)
+        filled_width = int((current / total) * width)
+        empty_width = width - filled_width
+        
+        bar = filled_char * filled_width + empty_char * empty_width
+        return f"[{bar}] {percentage:.1f}%"
     
-    # Vérifier si la sortie est redirigée
-    if not os.isatty(1):  # 1 = stdout
-        return False
+    @staticmethod
+    def format_list(items: List[str], style: str = "bullet", 
+                   indent: int = 2, max_items: Optional[int] = None) -> str:
+        """
+        Formate une liste d'éléments.
+        
+        Args:
+            items: Liste d'éléments
+            style: Style de la liste ('bullet', 'number', 'dash')
+            indent: Indentation en espaces
+            max_items: Nombre maximum d'éléments à afficher
+            
+        Returns:
+            Liste formatée
+        """
+        if not items:
+            return "Aucun élément"
+        
+        # Limiter le nombre d'éléments si nécessaire
+        display_items = items[:max_items] if max_items else items
+        
+        # Choisir le marqueur selon le style
+        if style == "bullet":
+            marker = "•"
+        elif style == "number":
+            marker = None  # Sera remplacé par le numéro
+        elif style == "dash":
+            marker = "-"
+        else:
+            marker = "•"
+        
+        # Construire la liste
+        lines = []
+        indent_str = " " * indent
+        
+        for i, item in enumerate(display_items):
+            if style == "number":
+                prefix = f"{i + 1}."
+            else:
+                prefix = marker
+            
+            lines.append(f"{indent_str}{prefix} {item}")
+        
+        # Ajouter un indicateur si des éléments sont tronqués
+        if max_items and len(items) > max_items:
+            remaining = len(items) - max_items
+            lines.append(f"{indent_str}... et {remaining} élément(s) de plus")
+        
+        return '\n'.join(lines)
     
-    # Vérifier le système d'exploitation
-    plat = os.environ.get("TERM") or os.name
-    
-    # ANSI est supporté sur la plupart des Unix et Windows 10+
-    if plat in ("linux", "cygwin", "xterm", "xterm-color", "xterm-256color"):
-        return True
-    
-    # Windows 10 build 16257+ supporte ANSI nativement
-    if os.name == "nt":
+    @staticmethod
+    def format_timestamp(timestamp: Optional[Union[datetime, float, int]] = None,
+                        format_str: str = "%Y-%m-%d %H:%M:%S") -> str:
+        """
+        Formate un timestamp en chaîne lisible.
+        
+        Args:
+            timestamp: Timestamp à formater (datetime, timestamp Unix ou None pour maintenant)
+            format_str: Format de sortie
+            
+        Returns:
+            Timestamp formaté
+        """
+        if timestamp is None:
+            dt = datetime.now()
+        elif isinstance(timestamp, datetime):
+            dt = timestamp
+        elif isinstance(timestamp, (int, float)):
+            dt = datetime.fromtimestamp(timestamp)
+        else:
+            return "Timestamp invalide"
+        
         try:
-            import ctypes
-            version = ctypes.windll.ntdll.RtlGetVersion
-            version.argtypes = [ctypes.POINTER(ctypes.c_ulong)]
-            version.restype = ctypes.c_ulong
-            
-            class OSVERSIONINFO(ctypes.Structure):
-                _fields_ = [
-                    ("dwOSVersionInfoSize", ctypes.c_ulong),
-                    ("dwMajorVersion", ctypes.c_ulong),
-                    ("dwMinorVersion", ctypes.c_ulong),
-                    ("dwBuildNumber", ctypes.c_ulong),
-                    ("dwPlatformId", ctypes.c_ulong),
-                    ("szCSDVersion", ctypes.c_wchar * 128)
-                ]
-            
-            os_version = OSVERSIONINFO()
-            os_version.dwOSVersionInfoSize = ctypes.sizeof(OSVERSIONINFO)
-            version(ctypes.byref(os_version))
-            
-            # Windows 10 build 16257+ supporte ANSI
-            if os_version.dwMajorVersion >= 10 and os_version.dwBuildNumber >= 16257:
-                return True
-        except Exception:
-            pass
-    
-    return False
+            return dt.strftime(format_str)
+        except Exception as e:
+            logger.error(f"Erreur formatage timestamp: {e}")
+            return str(dt)
 
+# Fonctions utilitaires pour compatibilité
 def format_size(size_bytes: int) -> str:
-    """
-    Formate une taille en octets en une chaîne lisible (KiB, MiB, GiB).
-    
-    Args:
-        size_bytes: Taille en octets
-        
-    Returns:
-        str: Taille formatée
-    """
-    if size_bytes < 0:
-        raise ValueError("La taille ne peut pas être négative")
-    
-    if size_bytes < 1024:
-        return f"{size_bytes} B"
-    
-    size_kb = size_bytes / 1024.0
-    if size_kb < 1024:
-        return f"{size_kb:.2f} KiB"
-    
-    size_mb = size_kb / 1024.0
-    if size_mb < 1024:
-        return f"{size_mb:.2f} MiB"
-    
-    size_gb = size_mb / 1024.0
-    return f"{size_gb:.2f} GiB"
+    """Fonction utilitaire pour formater une taille."""
+    return FormatUtils.format_size(size_bytes)
 
 def format_duration(seconds: float) -> str:
-    """
-    Formate une durée en secondes en une chaîne lisible.
-    
-    Args:
-        seconds: Durée en secondes
-        
-    Returns:
-        str: Durée formatée
-    """
-    if seconds < 0:
-        raise ValueError("La durée ne peut pas être négative")
-    
-    if seconds < 1:
-        return f"{seconds * 1000:.0f} ms"
-    
-    if seconds < 60:
-        return f"{seconds:.1f} s"
-    
-    minutes = seconds / 60
-    if minutes < 60:
-        return f"{int(minutes)}m {int(seconds % 60)}s"
-    
-    hours = minutes / 60
-    return f"{int(hours)}h {int(minutes % 60)}m {int(seconds % 60)}s"
+    """Fonction utilitaire pour formater une durée."""
+    return FormatUtils.format_duration(seconds)
+
+def format_table(data: List[Dict[str, Any]]) -> str:
+    """Fonction utilitaire pour formater un tableau."""
+    return FormatUtils.format_table(data)
