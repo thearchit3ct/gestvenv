@@ -382,7 +382,7 @@ class StrategyManager:
 class ConfigValidator:
     """Validateur de configuration avec réparation automatique."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.logger = logging.getLogger(__name__ + '.ConfigValidator')
     
     def validate_config(self, config_dict: Dict[str, Any]) -> Tuple[bool, List[str], List[str]]:

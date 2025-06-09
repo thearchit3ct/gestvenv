@@ -79,7 +79,7 @@ class CacheEntry:
             return self.size / self.original_size
         return 1.0
     
-    def update_access(self):
+    def update_access(self) -> None:
         """Met à jour les statistiques d'accès."""
         self.last_accessed = time.time()
         self.access_count += 1
@@ -156,7 +156,7 @@ class CacheService:
         
         logger.debug(f"CacheService initialisé avec config: {self.config}")
     
-    def _initialize_cache(self):
+    def _initialize_cache(self) -> None:
         """Initialise la structure du cache."""
         try:
             # Création des répertoires
@@ -180,7 +180,7 @@ class CacheService:
             # Recréation du cache en cas d'erreur critique
             self._reset_cache()
     
-    def _load_index(self):
+    def _load_index(self) -> None:
         """Charge l'index du cache depuis le disque."""
         try:
             if self.index_file.exists():
@@ -207,7 +207,7 @@ class CacheService:
             logger.error(f"Erreur lors du chargement de l'index: {e}")
             self._index = {}
     
-    def _save_index(self):
+    def _save_index(self) -> None:
         """Sauvegarde l'index du cache sur disque."""
         try:
             # Préparation des données
@@ -235,7 +235,7 @@ class CacheService:
         except Exception as e:
             logger.error(f"Erreur lors de la sauvegarde de l'index: {e}")
     
-    def _verify_cache_integrity(self):
+    def _verify_cache_integrity(self) -> None:
         """Vérifie l'intégrité du cache et nettoie les entrées orphelines."""
         orphaned_entries = []
         
@@ -749,7 +749,7 @@ class CacheService:
         
         return (time.time() - last_cleanup) > cleanup_interval
     
-    def _cleanup_cache(self):
+    def _cleanup_cache(self) -> None:
         """Effectue un nettoyage automatique du cache."""
         logger.info("Nettoyage automatique du cache...")
         
@@ -762,7 +762,7 @@ class CacheService:
         # Vérification de l'intégrité
         self._verify_cache_integrity()
     
-    def _reset_cache(self):
+    def _reset_cache(self) -> None:
         """Recrée complètement le cache."""
         logger.warning("Recréation complète du cache...")
         

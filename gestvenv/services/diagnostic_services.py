@@ -155,7 +155,7 @@ class DiagnosticService:
     
     def __init__(self, environment_service=None, package_service=None,
                  system_service=None, cache_service=None, migration_service=None,
-                 config: Optional[Dict[str, Any]] = None):
+                 config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialise le service de diagnostic.
         

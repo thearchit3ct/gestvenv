@@ -230,7 +230,7 @@ class PdmBackend(PackageBackend):
                 backend_used=self.name
             )
     
-    def _customize_pyproject_toml(self, project_dir: Path, name: str):
+    def _customize_pyproject_toml(self, project_dir: Path, name: str) -> None:
         """Personnalise le pyproject.toml généré."""
         pyproject_path = project_dir / "pyproject.toml"
         if not pyproject_path.exists():
@@ -295,7 +295,7 @@ class PdmBackend(PackageBackend):
     
     def _setup_venv_environment(self, project_dir: Path, venv_path: Path, python_version: str, **kwargs) -> InstallResult:
         """Configure un environnement virtuel classique."""
-        pdm_cmd = self._find_pdm_executable()
+        pdm_cmd: str | None = self._find_pdm_executable()
         
         try:
             # Configurer PDM pour utiliser venv

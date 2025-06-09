@@ -43,7 +43,7 @@ class EnvironmentHealth:
     site_packages: Optional[Path] = None
     issues: List[str] = None
     
-    def __post_init__(self):
+    def __post_init__(self) -> None:
         if self.issues is None:
             self.issues = []
     
@@ -94,7 +94,7 @@ class EnvironmentService:
     # Pattern pour validation des noms d'environnements
     NAME_PATTERN = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9_-]*[a-zA-Z0-9]$|^[a-zA-Z0-9]$')
     
-    def __init__(self, system_service=None, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, system_service=None, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialise le service d'environnements.
         

@@ -34,7 +34,7 @@ class MigrationAnalysis:
     performance_gains: Dict[str, str] = field(default_factory=dict)
     migration_feasible: bool = True
     
-    def add_suggestion(self, category: str, description: str, command: str, priority: str = "medium"):
+    def add_suggestion(self, category: str, description: str, command: str, priority: str = "medium") -> None:
         """Ajoute une suggestion de migration."""
         self.suggestions.append(MigrationSuggestion(category, description, command, priority))
 
@@ -278,7 +278,7 @@ class ConfigMigrator:
 class MigrationService:
     """Service principal de migration."""
     
-    def __init__(self):
+    def __init__(self) -> None:
         self.converter = RequirementsConverter()
         self.config_migrator = ConfigMigrator()
     
@@ -386,7 +386,7 @@ class MigrationService:
             
             # Créer une sauvegarde si demandée
             if backup:
-                backup_dir = project_path / ".gestvenv_backup"
+                backup_dir: Path = project_path / ".gestvenv_backup"
                 backup_dir.mkdir(exist_ok=True)
                 
                 for file_to_backup in [requirements_file]:

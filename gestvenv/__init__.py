@@ -70,7 +70,7 @@ except ImportError as e:
     
     # Définir des classes de substitution pour éviter les erreurs
     class _ImportError:
-        def __init__(self, *args, **kwargs):
+        def __init__(self, *args, **kwargs) -> None:
             raise ImportError(f"GestVenv import failed: {_IMPORT_ERROR}")
     
     EnvironmentManager = _ImportError

@@ -1,51 +1,118 @@
 """
-Module core de GestVenv - Gestionnaire d'Environnements Virtuels Python.
+Module core de GestVenv - Gestionnaire d'Environnements Virtuels Python v1.1.
 
 Ce package contient les composants principaux et les abstractions de base de GestVenv.
 Il fournit une interface unifiée pour la gestion des environnements virtuels Python,
 des packages et de leur configuration.
 
+Nouveautés v1.1:
+    - Support pyproject.toml (PEP 621)
+    - Backends modulaires (pip, uv, poetry, pdm)
+    - Migration automatique v1.0 → v1.1
+    - Templates de projets
+    - Diagnostic avancé
+
 Composants principaux:
-    - models: Classes de données et structures partagées
+    - models: Classes de données et structures partagées (étendu v1.1)
     - env_manager: Gestionnaire principal des environnements virtuels
-    - config_manager: Gestionnaire de configuration et persistance
+    - config_manager: Gestionnaire de configuration et persistance (nouveau v1.1)
+    - strategies: Stratégies de gestion (nouveau v1.1)
 
 Classes de données:
-    - EnvironmentInfo: Représente un environnement virtuel avec ses métadonnées
-    - PackageInfo: Représente un package Python avec ses dépendances
+    - EnvironmentInfo: Représente un environnement virtuel avec ses métadonnées (étendu)
+    - PackageInfo: Représente un package Python avec ses dépendances (étendu)
+    - PyProjectInfo: Métadonnées pyproject.toml (nouveau v1.1)
     - EnvironmentHealth: État de santé d'un environnement virtuel
     - ConfigInfo: Configuration globale de GestVenv
 
-Gestionnaires:
-    - EnvironmentManager: Interface principale pour toutes les opérations sur les environnements
-    - ConfigManager: Gestion de la configuration, sauvegarde et restauration
-
 Usage:
     from gestvenv.core import EnvironmentManager, ConfigManager
-    from gestvenv.core import EnvironmentInfo, PackageInfo
+    from gestvenv.core import EnvironmentInfo, PyProjectInfo
     
     # Créer un gestionnaire d'environnements
     manager = EnvironmentManager()
     
-    # Créer un nouvel environnement
+    # Créer un environnement avec pyproject.toml
     success, message = manager.create_environment(
         name="mon_projet",
         python_version="python3.11",
-        packages="flask,requests"
+        from_pyproject="./pyproject.toml"
     )
 """
 
-# Imports des classes de données (models)
-from .models import (
-    EnvironmentInfo,
-    PackageInfo, 
-    EnvironmentHealth,
-    ConfigInfo
-)
+import logging
+from typing import Optional
+
+# Configuration du logger pour le module core
+logger = logging.getLogger(__name__)
+
+# Imports des classes de données (models) - avec gestion d'erreurs
+try:
+    from .models import (
+        # Classes existantes v1.0 (étendues)
+        EnvironmentInfo,
+        PackageInfo, 
+        EnvironmentHealth,
+        ConfigInfo,
+        
+        # Nouvelles classes v1.1
+        PyProjectInfo,
+        BackendType,
+        SourceFileType,
+        HealthStatus,
+        
+        # Constantes et utilitaires
+        SCHEMA_VERSION,
+        COMPATIBLE_VERSIONS,
+    )
+    _MODELS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Erreur import models: {e}")
+    _MODELS_AVAILABLE = False
 
 # Imports des gestionnaires principaux
-from .env_manager import EnvironmentManager
-from .config_manager import ConfigManager
+try:
+    from .env_manager import EnvironmentManager
+    _ENV_MANAGER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Erreur import EnvironmentManager: {e}")
+    EnvironmentManager = None
+    _ENV_MANAGER_AVAILABLE = False
+
+try:
+    from .config_manager import ConfigManager
+    _CONFIG_MANAGER_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Erreur import ConfigManager: {e}")
+    ConfigManager = None
+    _CONFIG_MANAGER_AVAILABLE = False
+
+# Imports des nouveaux modules v1.1
+try:
+    from .strategies import (
+        GestVenvStrategies,
+        get_default_strategies,
+        BackendSelectionStrategy,
+        CacheStrategy,
+    )
+    _STRATEGIES_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Stratégies non disponibles: {e}")
+    _STRATEGIES_AVAILABLE = False
+
+try:
+    from .exceptions import (
+        GestVenvError,
+        EnvironmentError,
+        ConfigurationError,
+        BackendError,
+        MigrationError,
+        ValidationError,
+    )
+    _EXCEPTIONS_AVAILABLE = True
+except ImportError as e:
+    logger.warning(f"Exceptions personnalisées non disponibles: {e}")
+    _EXCEPTIONS_AVAILABLE = False
 
 # Information sur le module
 __version__ = "1.1.1"
@@ -53,12 +120,6 @@ __author__ = "thearchit3ct"
 
 # Exports publics du module core
 __all__ = [
-    # Classes de données
-    'EnvironmentInfo',
-    'PackageInfo', 
-    'EnvironmentHealth',
-    'ConfigInfo',
-    
     # Gestionnaires principaux
     'EnvironmentManager',
     'ConfigManager',
@@ -68,146 +129,68 @@ __all__ = [
     '__author__'
 ]
 
+# Ajouter les classes de données si disponibles
+if _MODELS_AVAILABLE:
+    __all__.extend([
+        # Classes de données v1.0 (étendues)
+        'EnvironmentInfo',
+        'PackageInfo', 
+        'EnvironmentHealth',
+        'ConfigInfo',
+        
+        # Nouvelles classes v1.1
+        'PyProjectInfo',
+        'BackendType',
+        'SourceFileType',
+        'HealthStatus',
+        
+        # Constantes
+        'SCHEMA_VERSION',
+        'COMPATIBLE_VERSIONS',
+    ])
+
+# Ajouter les stratégies si disponibles
+if _STRATEGIES_AVAILABLE:
+    __all__.extend([
+        'GestVenvStrategies',
+        'get_default_strategies',
+        'BackendSelectionStrategy',
+        'CacheStrategy',
+    ])
+
+# Ajouter les exceptions si disponibles
+if _EXCEPTIONS_AVAILABLE:
+    __all__.extend([
+        'GestVenvError',
+        'EnvironmentError',
+        'ConfigurationError',
+        'BackendError',
+        'MigrationError',
+        'ValidationError',
+    ])
+
+def get_core_status() -> dict:
+    """
+    Retourne le statut des composants du module core.
+    
+    Returns:
+        dict: Statut de chaque composant
+    """
+    return {
+        'models': _MODELS_AVAILABLE,
+        'env_manager': _ENV_MANAGER_AVAILABLE,
+        'config_manager': _CONFIG_MANAGER_AVAILABLE,
+        'strategies': _STRATEGIES_AVAILABLE,
+        'exceptions': _EXCEPTIONS_AVAILABLE,
+    }
+
 # Validation des imports au niveau du module
 def _validate_imports() -> None:
     """Valide que tous les imports critiques sont disponibles."""
-    required_modules = {
-        'EnvironmentInfo': EnvironmentInfo,
-        'PackageInfo': PackageInfo,
-        'EnvironmentHealth': EnvironmentHealth,
-        'ConfigInfo': ConfigInfo,
-        'EnvironmentManager': EnvironmentManager,
-        'ConfigManager': ConfigManager,
-    }
-    
-    missing_modules = []
-    for name, module in required_modules.items():
-        if module is None:
-            missing_modules.append(name)
-    
-    if missing_modules:
-        raise ImportError(
-            f"Modules critiques manquants dans gestvenv.core: {', '.join(missing_modules)}"
-        )
+    if not _ENV_MANAGER_AVAILABLE or not _CONFIG_MANAGER_AVAILABLE:
+        logger.error("Composants critiques du core non disponibles")
+        if __debug__:
+            print(f"Statut core: {get_core_status()}")
 
-# Valider les imports lors du chargement du module
-try:
-    _validate_imports()
-except ImportError as e:
-    import logging
-    logger = logging.getLogger(__name__)
-    logger.error(f"Erreur lors de l'initialisation du module core: {e}")
-    raise
-
-# Fonction utilitaire pour créer rapidement un gestionnaire d'environnements
-def create_manager(config_path=None) -> EnvironmentManager:
-    """
-    Crée et retourne une instance de EnvironmentManager configurée.
-    
-    Args:
-        config_path (str, optional): Chemin vers le fichier de configuration.
-            Si None, utilise le chemin par défaut.
-    
-    Returns:
-        EnvironmentManager: Instance configurée du gestionnaire d'environnements.
-    
-    Example:
-        >>> from gestvenv.core import create_manager
-        >>> manager = create_manager()
-        >>> environments = manager.list_environments()
-    """
-    return EnvironmentManager(config_path=config_path)
-
-# Fonction utilitaire pour l'introspection du module
-def get_module_info():
-    """
-    Retourne des informations sur le module core.
-    
-    Returns:
-        dict: Dictionnaire contenant les informations du module.
-    """
-    return {
-        'name': 'gestvenv.core',
-        'version': __version__,
-        'author': __author__,
-        'components': {
-            'models': [
-                'EnvironmentInfo',
-                'PackageInfo', 
-                'EnvironmentHealth',
-                'ConfigInfo'
-            ],
-            'managers': [
-                'EnvironmentManager',
-                'ConfigManager'
-            ]
-        },
-        'description': 'Module principal de GestVenv pour la gestion des environnements virtuels Python'
-    }
-
-# Ajout au namespace pour faciliter l'introspection
-__all__.extend(['create_manager', 'get_module_info'])
-
-# Documentation des classes principales pour l'aide en ligne
-_HELP_TEXT = {
-    'EnvironmentManager': """
-    Gestionnaire principal pour les environnements virtuels Python.
-    
-    Fonctionnalités principales:
-    - Création et suppression d'environnements
-    - Installation et gestion des packages
-    - Import/export de configurations
-    - Diagnostic et réparation
-    """,
-    
-    'ConfigManager': """
-    Gestionnaire de configuration pour GestVenv.
-    
-    Fonctionnalités principales:
-    - Sauvegarde et restauration de configurations
-    - Gestion des paramètres globaux
-    - Import/export de configurations d'environnements
-    - Gestion des sauvegardes automatiques
-    """,
-    
-    'EnvironmentInfo': """
-    Classe de données représentant un environnement virtuel.
-    
-    Contient:
-    - Métadonnées de l'environnement (nom, chemin, version Python)
-    - Liste des packages installés
-    - État de santé de l'environnement
-    - Informations de création et de modification
-    """,
-    
-    'PackageInfo': """
-    Classe de données représentant un package Python.
-    
-    Contient:
-    - Nom et version du package
-    - Dépendances et packages dépendants
-    - Métadonnées d'installation
-    """
-}
-
-def help_component(component_name):
-    """
-    Affiche l'aide pour un composant spécifique du module core.
-    
-    Args:
-        component_name (str): Nom du composant pour lequel afficher l'aide.
-    
-    Example:
-        >>> from gestvenv.core import help_component
-        >>> help_component('EnvironmentManager')
-    """
-    if component_name in _HELP_TEXT:
-        print(f"Aide pour {component_name}:")
-        print(_HELP_TEXT[component_name])
-    else:
-        available_components = list(_HELP_TEXT.keys())
-        print(f"Composant '{component_name}' non trouvé.")
-        print(f"Composants disponibles: {', '.join(available_components)}")
-
-# Ajout de help_component aux exports
-__all__.append('help_component')
+# Validation à l'import
+_validate_imports()

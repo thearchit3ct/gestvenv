@@ -145,7 +145,7 @@ class MigrationStrategy(ABC):
 class RequirementsToPyprojectStrategy(MigrationStrategy):
     """Stratégie de migration requirements.txt → pyproject.toml."""
     
-    def __init__(self, system_service=None):
+    def __init__(self, system_service=None) -> None:
         self.system_service = system_service
     
     def can_migrate(self, source_path: Path) -> bool:
@@ -533,7 +533,7 @@ class RequirementsToPyprojectStrategy(MigrationStrategy):
 class VersionMigrationStrategy(MigrationStrategy):
     """Stratégie de migration entre versions de GestVenv."""
     
-    def __init__(self, system_service=None):
+    def __init__(self, system_service=None) -> None:
         self.system_service = system_service
         
         # Définition des migrations supportées
@@ -830,7 +830,7 @@ class MigrationService:
     - Support de multiples stratégies de migration
     """
     
-    def __init__(self, system_service=None, config: Optional[Dict[str, Any]] = None):
+    def __init__(self, system_service=None, config: Optional[Dict[str, Any]] = None) -> None:
         """
         Initialise le service de migration.
         
