@@ -1,20 +1,37 @@
-# Package initialization
 """
-GestVenv - Gestionnaire d'Environnements Virtuels Python.
-
-GestVenv est un outil qui simplifie et centralise la gestion des environnements virtuels Python,
-offrant une alternative unifiée aux outils existants comme venv, virtualenv et pipenv.
+GestVenv - Gestionnaire d'environnements virtuels Python moderne
 """
 
-__version__ = "1.1.1"
-__author__ = "thearchit3ct"
-__email__ = "thearchit3ct@outlook.fr"
-__license__ = "MIT"
+from gestvenv.core.environment_manager import EnvironmentManager
+from gestvenv.core.exceptions import (
+    GestVenvError,
+    EnvironmentNotFoundError,
+    BackendError,
+    CacheError,
+    ValidationError,
+)
+from gestvenv.backends.backend_manager import BackendManager
+from gestvenv.services.cache_service import CacheService
+from gestvenv.services.diagnostic_service import DiagnosticService
 
-# Imports pour faciliter l'accès depuis l'extérieur
-from .core.env_manager import EnvironmentManager
+try:
+    from gestvenv.__version__ import __version__
+except ImportError:
+    __version__ = "unknown"
 
-# Fonction pratique pour obtenir la version
+__all__ = [
+    "__version__",
+    "EnvironmentManager",
+    "BackendManager", 
+    "CacheService",
+    "DiagnosticService",
+    "GestVenvError",
+    "EnvironmentNotFoundError",
+    "BackendError",
+    "CacheError",
+    "ValidationError",
+]
+
 def get_version() -> str:
-    """Retourne la version actuelle de GestVenv."""
+    """Retourne la version de GestVenv"""
     return __version__

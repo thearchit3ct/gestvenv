@@ -1,3 +1,0 @@
-# team workflows
-
-Documentation en cours de rédaction...
