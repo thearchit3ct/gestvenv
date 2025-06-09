@@ -1,1818 +1,1078 @@
 #!/usr/bin/env python3
 """
-GestVenv - Gestionnaire d'Environnements Virtuels Python.
+GestVenv v1.1 - Interface Ligne de Commande (CLI)
+================================================
 
-Interface en ligne de commande pour créer, gérer et partager des environnements virtuels Python.
-GestVenv offre une alternative unifiée aux outils existants comme venv, virtualenv et pipenv.
+Interface moderne pour la gestion d'environnements virtuels Python avec:
+- Support pyproject.toml (PEP 621, 517, 518)
+- Backends multiples (pip, uv, poetry, pdm)
+- Migration automatique v1.0 → v1.1
+- Cache intelligent et mode hors ligne
+- Templates et alias d'environnements
 
 Usage:
-    gestvenv <commande> [options] [arguments]
-
-Commandes disponibles:
-    create      - Crée un nouvel environnement virtuel
-    activate    - Active un environnement virtuel
-    deactivate  - Désactive l'environnement actif
-    delete      - Supprime un environnement virtuel
-    list        - Liste tous les environnements virtuels
-    info        - Affiche des informations sur un environnement
-    install     - Installe des packages dans un environnement
-    uninstall   - Désinstalle des packages d'un environnement
-    update      - Met à jour des packages dans un environnement
-    export      - Exporte la configuration d'un environnement
-    import      - Importe une configuration d'environnement
-    clone       - Clone un environnement existant
-    run         - Exécute une commande dans un environnement
-    config      - Configure les paramètres par défaut
-    check       - Vérifie les mises à jour disponibles
-    pyversions  - Liste les versions Python disponibles
-    docs        - Affiche la documentation
+    gestvenv <command> [options]
+    
+Commandes principales:
+    create          Créer un nouvel environnement
+    list            Lister les environnements
+    activate        Activer un environnement
+    delete          Supprimer un environnement
+    install         Installer des packages
+    sync            Synchroniser avec pyproject.toml
+    
+Voir 'gestvenv --help' pour la liste complète.
 """
 
-import os
 import sys
 import argparse
 import logging
-import textwrap
-# import datetime
+import json
+import os
+from typing import Optional, List, Dict, Any, Tuple
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, Callable
+from datetime import datetime
 
-# Imports des modules core
-from gestvenv.core.env_manager import EnvironmentManager
-from gestvenv.core.config_manager import ConfigManager
+# Imports avec gestion d'erreurs pour compatibilité
+try:
+    from gestvenv import get_environment_manager, get_config_manager, check_dependencies
+    from gestvenv import EnvironmentManager, ConfigManager
+    from gestvenv import __version__, configure_logging
+except ImportError as e:
+    print(f"❌ Erreur d'import GestVenv: {e}")
+    print("Vérifiez que GestVenv est correctement installé.")
+    sys.exit(1)
 
-# Imports des modules utils
-from gestvenv.utils.format_utils import (
-    get_color_for_terminal, format_timestamp, format_list_as_table, 
-    truncate_string, format_size, format_duration
-)
-from gestvenv.utils.system_utils import get_terminal_size, get_current_username
-from gestvenv.utils.validation_utils import parse_key_value_string
+# ===== CONFIGURATION COULEURS ET STYLE =====
 
-# Version de l'application
-__version__ = "1.1.1"
-
-# Configuration du logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(levelname)s: %(message)s'
-)
-logger = logging.getLogger("gestvenv")
-
-# Couleurs pour le terminal
-COLORS = {
-    "reset": get_color_for_terminal("reset"),
-    "bold": get_color_for_terminal("bold"),
-    "green": get_color_for_terminal("green"),
-    "yellow": get_color_for_terminal("yellow"),
-    "blue": get_color_for_terminal("blue"),
-    "red": get_color_for_terminal("red"),
-    "cyan": get_color_for_terminal("cyan"),
-    "magenta": get_color_for_terminal("magenta")
-}
-
-# Classe principale pour gérer l'interface en ligne de commande
-class CLI:
-    """Classe pour gérer l'interface en ligne de commande de GestVenv."""
+class Colors:
+    """Codes ANSI pour couleurs terminal (désactivables avec --no-color)."""
+    RESET = '\033[0m'
+    BOLD = '\033[1m'
+    DIM = '\033[2m'
     
-    def __init__(self) -> None:
-        """Initialise l'interface en ligne de commande."""
-        self.env_manager = EnvironmentManager()
-        self.config_manager = ConfigManager()
-        self.parser = self._create_parser()
+    # Couleurs de base
+    RED = '\033[31m'
+    GREEN = '\033[32m'
+    YELLOW = '\033[33m'
+    BLUE = '\033[34m'
+    MAGENTA = '\033[35m'
+    CYAN = '\033[36m'
+    WHITE = '\033[37m'
     
-    def _create_parser(self) -> argparse.ArgumentParser:
-        """
-        Crée et configure le parseur d'arguments.
-        
-        Returns:
-            argparse.ArgumentParser: Parseur configuré
-        """
-        # Créer le parseur principal
-        parser = argparse.ArgumentParser(
-            description="GestVenv - Gestionnaire d'Environnements Virtuels Python",
-            formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog=textwrap.dedent(f"""
-                exemples:
-                  gestvenv create mon_projet              # Crée un nouvel environnement
-                  gestvenv activate mon_projet            # Active un environnement
-                  gestvenv install "flask,pytest"         # Installe des packages
-                  gestvenv list                          # Liste tous les environnements
-                  gestvenv export mon_projet              # Exporte la configuration
-                  
-                Pour plus d'informations sur une commande:
-                  gestvenv <commande> --help
-                
-                Version: {__version__}
-            """)
-        )
-        
-        parser.add_argument('--version', action='version', version=f'GestVenv {__version__}')
-        parser.add_argument('--debug', action='store_true', help='Active le mode debug pour les logs détaillés')
-        
-        # Créer des sous-parseurs pour chaque commande
-        subparsers = parser.add_subparsers(dest='command', title='commandes', help='Commande à exécuter')
-        
-        # Commande: create
-        create_parser = subparsers.add_parser('create', help='Crée un nouvel environnement virtuel')
-        create_parser.add_argument('name', help='Nom de l\'environnement à créer')
-        create_parser.add_argument('--python', dest='python_version', help='Version Python à utiliser (ex: python3.9)')
-        create_parser.add_argument('--packages', help='Liste de packages à installer, séparés par des virgules')
-        create_parser.add_argument('--path', help='Chemin personnalisé pour l\'environnement')
-        
-        # Commande: activate
-        activate_parser = subparsers.add_parser('activate', help='Active un environnement virtuel')
-        activate_parser.add_argument('name', help='Nom de l\'environnement à activer')
-        
-        # Commande: deactivate
-        subparsers.add_parser('deactivate', help='Désactive l\'environnement actif')
-        
-        # Commande: delete
-        delete_parser = subparsers.add_parser('delete', help='Supprime un environnement virtuel')
-        delete_parser.add_argument('name', help='Nom de l\'environnement à supprimer')
-        delete_parser.add_argument('--force', action='store_true', help='Force la suppression sans confirmation')
-        
-        # Commande: list
-        list_parser = subparsers.add_parser('list', help='Liste tous les environnements virtuels')
-        list_parser.add_argument('--verbose', '-v', action='store_true', help='Affiche des informations détaillées')
-        list_parser.add_argument('--json', action='store_true', help='Affiche les résultats au format JSON')
-        
-        # Commande: info
-        info_parser = subparsers.add_parser('info', help='Affiche des informations sur un environnement')
-        info_parser.add_argument('name', help='Nom de l\'environnement')
-        info_parser.add_argument('--json', action='store_true', help='Affiche les résultats au format JSON')
-        
-        # Commande: install
-        install_parser = subparsers.add_parser('install', help='Installe des packages dans l\'environnement actif ou spécifié')
-        install_parser.add_argument('packages', help='Liste de packages à installer, séparés par des virgules')
-        install_parser.add_argument('--env', help='Nom de l\'environnement (utilise l\'environnement actif par défaut)')
-        
-        # Commande: uninstall
-        uninstall_parser = subparsers.add_parser('uninstall', help='Désinstalle des packages de l\'environnement actif ou spécifié')
-        uninstall_parser.add_argument('packages', help='Liste de packages à désinstaller, séparés par des virgules')
-        uninstall_parser.add_argument('--env', help='Nom de l\'environnement (utilise l\'environnement actif par défaut)')
-        
-        # Commande: update
-        update_parser = subparsers.add_parser('update', help='Met à jour des packages dans l\'environnement actif ou spécifié')
-        update_parser.add_argument('packages', nargs='?', help='Liste de packages à mettre à jour, séparés par des virgules')
-        update_parser.add_argument('--env', help='Nom de l\'environnement (utilise l\'environnement actif par défaut)')
-        update_parser.add_argument('--all', action='store_true', help='Met à jour tous les packages')
-        
-        # Commande: export
-        export_parser = subparsers.add_parser('export', help='Exporte la configuration d\'un environnement')
-        export_parser.add_argument('name', help='Nom de l\'environnement à exporter')
-        export_parser.add_argument('--output', help='Chemin du fichier de sortie')
-        export_parser.add_argument('--format', choices=['json', 'requirements'], default='json',
-                                help='Format d\'export (json ou requirements.txt)')
-        export_parser.add_argument('--add-metadata', dest='metadata',
-                                help='Métadonnées supplémentaires au format "clé1:valeur1,clé2:valeur2"')
-        
-        # Commande: import
-        import_parser = subparsers.add_parser('import', help='Importe une configuration d\'environnement')
-        import_parser.add_argument('file', help='Chemin vers le fichier de configuration ou requirements.txt')
-        import_parser.add_argument('--name', help='Nom à utiliser pour le nouvel environnement')
-        
-        # Commande: clone
-        clone_parser = subparsers.add_parser('clone', help='Clone un environnement existant')
-        clone_parser.add_argument('source', help='Nom de l\'environnement source')
-        clone_parser.add_argument('target', help='Nom du nouvel environnement')
-        
-        # Commande: run
-        run_parser = subparsers.add_parser('run', help='Exécute une commande dans un environnement virtuel')
-        run_parser.add_argument('name', help='Nom de l\'environnement')
-        run_parser.add_argument('command', nargs='+', help='Commande à exécuter')
-        
-        # Commande: config
-        config_parser = subparsers.add_parser('config', help='Configure les paramètres par défaut')
-        config_parser.add_argument('--set-python', dest='default_python',
-                                help='Définit la commande Python par défaut')
-        config_parser.add_argument('--show', action='store_true', help='Affiche la configuration actuelle')
-        
-        # Commande: check
-        check_parser = subparsers.add_parser('check', help='Vérifie les mises à jour disponibles pour les packages')
-        check_parser.add_argument('name', nargs='?', help='Nom de l\'environnement (utilise l\'environnement actif par défaut)')
-        
-        # Commande: pyversions
-        subparsers.add_parser('pyversions', help='Liste les versions Python disponibles sur le système')
-        
-        # Commande: docs
-        docs_parser = subparsers.add_parser('docs', help='Affiche la documentation')
-        docs_parser.add_argument('topic', nargs='?', help='Sujet spécifique de la documentation')
-        
-        # Commande: cache
-        cache_parser = subparsers.add_parser('cache', help='Gère le cache de packages')
-        cache_subparsers = cache_parser.add_subparsers(dest='cache_command', title='commandes', help='Commande de cache à exécuter')
+    # Couleurs brillantes
+    BRIGHT_RED = '\033[91m'
+    BRIGHT_GREEN = '\033[92m'
+    BRIGHT_YELLOW = '\033[93m'
+    BRIGHT_BLUE = '\033[94m'
+    BRIGHT_MAGENTA = '\033[95m'
+    BRIGHT_CYAN = '\033[96m'
 
-        # Commande: cache list
-        cache_subparsers.add_parser('list', help='Liste les packages disponibles dans le cache')
-
-        # Commande: cache clean
-        cache_clean_parser = cache_subparsers.add_parser('clean', help='Nettoie le cache en supprimant les packages obsolètes')
-        cache_clean_parser.add_argument('--max-age', type=int, default=90, help='Âge maximum en jours pour les packages rarement utilisés')
-        cache_clean_parser.add_argument('--max-size', type=int, default=5000, help='Taille maximale du cache en Mo')
-
-        # Commande: cache info
-        cache_subparsers.add_parser('info', help='Affiche des informations sur le cache')
-
-        # Commande: cache add
-        cache_add_parser = cache_subparsers.add_parser('add', help='Ajoute un package au cache')
-        cache_add_parser.add_argument('packages', help='Liste de packages à ajouter au cache, séparés par des virgules')
-
-        # Commande: cache export
-        cache_export_parser = cache_subparsers.add_parser('export', help='Exporte le contenu du cache')
-        cache_export_parser.add_argument('--output', help='Chemin du fichier de sortie')
-
-        # Commande: cache import
-        cache_import_parser = cache_subparsers.add_parser('import', help='Importe des packages dans le cache')
-        cache_import_parser.add_argument('file', help='Chemin vers le fichier d\'export')
-
-        # Commande: cache remove
-        cache_remove_parser = cache_subparsers.add_parser('remove', help='Supprime des packages du cache')
-        cache_remove_parser.add_argument('packages', help='Liste de packages à supprimer du cache, séparés par des virgules')
-
-        # Options pour le mode hors ligne dans les commandes existantes
-        for cmd_parser in [create_parser, install_parser, update_parser]:
-            cmd_parser.add_argument('--offline', action='store_true', help='Utilise uniquement les packages du cache (mode hors ligne)')
-   
-        # Modifier le parseur pour la commande 'config'
-        # config_parser = subparsers.add_parser('config', help='Configure les paramètres par défaut')
-        # config_parser.add_argument('--set-python', dest='default_python',
-                                # help='Définit la commande Python par défaut')
-        config_parser.add_argument('--offline', dest='offline_mode', action='store_true',
-                                help='Active le mode hors ligne (utilise uniquement les packages du cache)')
-        config_parser.add_argument('--online', dest='online_mode', action='store_true',
-                                help='Désactive le mode hors ligne')
-        config_parser.add_argument('--enable-cache', dest='enable_cache', action='store_true',
-                                help='Active l\'utilisation du cache de packages')
-        config_parser.add_argument('--disable-cache', dest='disable_cache', action='store_true',
-                                help='Désactive l\'utilisation du cache de packages')
-        config_parser.add_argument('--cache-max-size', dest='cache_max_size', type=int,
-                                help='Définit la taille maximale du cache en Mo')
-        config_parser.add_argument('--cache-max-age', dest='cache_max_age', type=int,
-                                help='Définit l\'âge maximal des packages dans le cache en jours')
-   
-        return parser
+class UIFormatter:
+    """Gestionnaire d'affichage avec support couleurs et formatage."""
     
-    def print_colored(self, text: str, color: str = "reset") -> None:
-        """
-        Affiche du texte coloré dans le terminal.
-        
-        Args:
-            text: Texte à afficher
-            color: Couleur à utiliser
-        """
-        print(f"{COLORS.get(color, '')}{text}{COLORS['reset']}")
+    def __init__(self, use_colors: bool = True):
+        self.use_colors = use_colors and sys.stdout.isatty()
+        self.colors = Colors() if self.use_colors else self._create_no_color()
     
-    def print_success(self, message: str) -> None:
+    def _create_no_color(self):
+        """Crée un objet Colors sans couleurs."""
+        class NoColor:
+            def __getattr__(self, name):
+                return ''
+        return NoColor()
+    
+    def success(self, message: str) -> str:
+        """Formate un message de succès."""
+        return f"{self.colors.BRIGHT_GREEN}✅ {message}{self.colors.RESET}"
+    
+    def error(self, message: str) -> str:
+        """Formate un message d'erreur."""
+        return f"{self.colors.BRIGHT_RED}❌ {message}{self.colors.RESET}"
+    
+    def warning(self, message: str) -> str:
+        """Formate un message d'avertissement."""
+        return f"{self.colors.BRIGHT_YELLOW}⚠️  {message}{self.colors.RESET}"
+    
+    def info(self, message: str) -> str:
+        """Formate un message d'information."""
+        return f"{self.colors.BRIGHT_BLUE}ℹ️  {message}{self.colors.RESET}"
+    
+    def highlight(self, text: str) -> str:
+        """Met en surbrillance du texte."""
+        return f"{self.colors.BOLD}{self.colors.CYAN}{text}{self.colors.RESET}"
+    
+    def dim(self, text: str) -> str:
+        """Affiche du texte atténué."""
+        return f"{self.colors.DIM}{text}{self.colors.RESET}"
+
+# ===== CLASSE CLI PRINCIPALE =====
+
+class GestVenvCLI:
+    """
+    Interface ligne de commande principale pour GestVenv v1.1.
+    
+    Gère toutes les commandes utilisateur et coordonne avec les services backend.
+    """
+    
+    def __init__(self):
+        self.ui = UIFormatter()
+        self.env_manager: Optional[EnvironmentManager] = None
+        self.config_manager: Optional[ConfigManager] = None
+        self.logger = logging.getLogger(__name__)
+        
+        # Configuration par défaut
+        self.verbose = False
+        self.quiet = False
+        self.offline_mode = False
+        self.preferred_backend = None
+        
+    def setup_logging(self, verbose: bool = False, quiet: bool = False):
+        """Configure le logging selon les options utilisateur."""
+        if quiet:
+            level = logging.ERROR
+        elif verbose:
+            level = logging.DEBUG
+        else:
+            level = logging.INFO
+            
+        configure_logging(level)
+        self.verbose = verbose
+        self.quiet = quiet
+    
+    def initialize_managers(self, config_path: Optional[str] = None):
+        """Initialise les gestionnaires avec gestion d'erreurs."""
+        try:
+            self.env_manager = get_environment_manager(config_path)
+            self.config_manager = get_config_manager(config_path)
+        except Exception as e:
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
+            self.print_error(f"Impossible d'initialiser GestVenv: {e}")
+            sys.exit(1)
+    
+    # ===== MÉTHODES D'AFFICHAGE =====
+    
+    def print_success(self, message: str):
         """Affiche un message de succès."""
-        self.print_colored(f"✓ {message}", "green")
+        if not self.quiet:
+            print(self.ui.success(message))
     
-    def print_error(self, message: str) -> None:
+    def print_error(self, message: str):
         """Affiche un message d'erreur."""
-        self.print_colored(f"✗ {message}", "red")
+        print(self.ui.error(message), file=sys.stderr)
     
-    def print_warning(self, message: str) -> None:
-        """Affiche un message d'avertissement."""
-        self.print_colored(f"! {message}", "yellow")
+    def print_warning(self, message: str):
+        """Affiche un avertissement."""
+        if not self.quiet:
+            print(self.ui.warning(message))
     
-    def print_info(self, message: str) -> None:
-        """Affiche un message d'information."""
-        self.print_colored(message, "blue")
+    def print_info(self, message: str):
+        """Affiche une information."""
+        if not self.quiet:
+            print(self.ui.info(message))
     
-    def print_header(self, message: str) -> None:
-        """Affiche un en-tête."""
-        self.print_colored(f"\n{message}", "bold")
-        self.print_colored("=" * len(message))
+    def print_json(self, data: Any):
+        """Affiche des données au format JSON."""
+        print(json.dumps(data, indent=2, default=str, ensure_ascii=False))
     
-
+    # ===== COMMANDES ENVIRONNEMENTS =====
+    
     def cmd_create(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour créer un nouvel environnement virtuel.
-        
-        Args:
-            args: Arguments de ligne de commande
+        """Commande: gestvenv create <name> [options]"""
+        try:
+            # Validation du nom
+            if not args.name or not args.name.strip():
+                self.print_error("Le nom de l'environnement est requis")
+                return 1
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        self.print_header(f"Création de l'environnement '{args.name}'")
-        
-        # Informations sur l'environnement en cours de création
-        self.print_info(f"Nom de l'environnement: {args.name}")
-        
-        if args.python_version:
-            self.print_info(f"Version Python spécifiée: {args.python_version}")
-        else:
-            default_python = self.config_manager.get_default_python()
-            self.print_info(f"Utilisation de la version Python par défaut: {default_python}")
-        
-        if args.packages:
-            self.print_info(f"Packages à installer: {args.packages}")
-        
-        if args.path:
-            self.print_info(f"Chemin personnalisé: {args.path}")
-        
-        # Vérifier si le mode hors ligne est spécifié ou actif globalement
-        offline_mode = args.offline if hasattr(args, 'offline') and args.offline else self.config_manager.get_offline_mode()
-        
-        if offline_mode:
-            self.print_info("Mode hors ligne activé - utilisation uniquement des packages du cache")
+            # Préparation des options
+            create_options = {
+                'name': args.name.strip(),
+                'python_version': args.python,
+                'backend': args.backend or self.preferred_backend,
+                'custom_path': Path(args.path) if args.path else None,
+                'offline_mode': self.offline_mode or args.offline,
+            }
             
-            # Vérifier si les packages sont disponibles dans le cache
+            # Packages initiaux
             if args.packages:
-                from gestvenv.services.cache_service import CacheService
-                cache_service = CacheService()
-                
                 packages = [pkg.strip() for pkg in args.packages.split(',') if pkg.strip()]
-                missing_packages = []
-                
-                for pkg in packages:
-                    # Extraire le nom et la version du package
-                    pkg_name = pkg.split('==')[0].split('>')[0].split('<')[0].strip()
-                    pkg_version = None
-                    
-                    if '==' in pkg:
-                        pkg_version = pkg.split('==')[1].strip()
-                    
-                    if not cache_service.has_package(pkg_name, pkg_version):
-                        missing_packages.append(pkg)
-                
-                if missing_packages:
-                    self.print_error(f"Mode hors ligne activé mais les packages suivants ne sont pas disponibles dans le cache: {', '.join(missing_packages)}")
-                    
-                    # Proposer des solutions
-                    self.print_info("\nSolutions possibles:")
-                    self.print_info("1. Désactiver le mode hors ligne: gestvenv config --online")
-                    self.print_info("2. Ajouter les packages manquants au cache: gestvenv cache add \"" + ','.join(missing_packages) + "\"")
-                    self.print_info("3. Créer l'environnement sans packages: gestvenv create " + args.name + " (puis installer les packages plus tard)")
-                    
+                create_options['initial_packages'] = packages
+            
+            # Création depuis pyproject.toml
+            if args.from_pyproject:
+                pyproject_path = Path(args.from_pyproject)
+                if not pyproject_path.exists():
+                    self.print_error(f"Fichier pyproject.toml introuvable: {pyproject_path}")
                     return 1
-        
-        # Créer l'environnement
-        success, message = self.env_manager.create_environment(
-            args.name,
-            python_version=args.python_version,
-            packages=args.packages,
-            path=args.path,
-            offline=offline_mode
-        )
-        
-        if success:
-            self.print_success(message)
-            
-            # Afficher comment activer l'environnement
-            active_cmd = self.env_manager.activate_environment(args.name)[1]
-            
-            if active_cmd:
-                self.print_info("\nPour activer cet environnement, utilisez:")
-                print(f"\n    {active_cmd}\n")
                 
-                self.print_info("Ou utilisez la commande intégrée:")
-                print(f"\n    gestvenv activate {args.name}\n")
+                groups = None
+                if args.groups:
+                    groups = [g.strip() for g in args.groups.split(',') if g.strip()]
+                
+                env_info = self.env_manager.create_from_pyproject(
+                    pyproject_path=pyproject_path,
+                    env_name=args.name,
+                    dependency_groups=groups,
+                    backend=create_options['backend']
+                )
+            else:
+                # Création standard
+                env_info = self.env_manager.create_environment(**create_options)
+            
+            # Affichage du résultat
+            self.print_success(f"Environnement '{env_info.name}' créé avec succès")
+            self.print_info(f"Chemin: {self.ui.highlight(str(env_info.path))}")
+            self.print_info(f"Python: {self.ui.highlight(env_info.python_version)}")
+            if hasattr(env_info, 'backend_type'):
+                self.print_info(f"Backend: {self.ui.highlight(env_info.backend_type.value)}")
+            
+            if create_options.get('initial_packages'):
+                self.print_info(f"Packages installés: {', '.join(create_options['initial_packages'])}")
+            
+            # Instructions d'activation
+            print()
+            self.print_info(f"Pour activer: {self.ui.highlight(f'gestvenv activate {args.name}')}")
             
             return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_activate(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour activer un environnement virtuel.
-        
-        Args:
-            args: Arguments de ligne de commande
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        success, message = self.env_manager.activate_environment(args.name)
-        
-        if success:
-            # Comme nous ne pouvons pas réellement modifier l'environnement du processus parent,
-            # nous affichons la commande que l'utilisateur doit exécuter
-            self.print_info(f"\nPour activer l'environnement '{args.name}', exécutez:")
-            print(f"\n    {message}\n")
-            
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_deactivate(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour désactiver l'environnement actif.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        success, message = self.env_manager.deactivate_environment()
-        
-        if success:
-            self.print_info("\nPour désactiver l'environnement actif, exécutez:")
-            print(f"\n    {message}\n")
-            
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_delete(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour supprimer un environnement virtuel.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Si --force n'est pas utilisé, demander confirmation
-        if not args.force:
-            confirm = input(f"Êtes-vous sûr de vouloir supprimer l'environnement '{args.name}' ? (o/N) ")
-            if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-                self.print_info("Opération annulée.")
-                return 0
-        
-        self.print_header(f"Suppression de l'environnement '{args.name}'")
-        
-        success, message = self.env_manager.delete_environment(args.name, force=args.force)
-        
-        if success:
-            self.print_success(message)
-            return 0
-        else:
-            self.print_error(message)
+        except Exception as e:
+            self.print_error(f"Erreur lors de la création: {e}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             return 1
     
     def cmd_list(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour lister tous les environnements virtuels.
-        
-        Args:
-            args: Arguments de ligne de commande
+        """Commande: gestvenv list [options]"""
+        try:
+            environments = self.env_manager.list_environments()
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        environments = self.env_manager.list_environments()
-        
-        if args.json:
-            # Afficher au format JSON
-            import json
-            print(json.dumps(environments, indent=2))
-            return 0
-        
-        if not environments:
-            self.print_info("Aucun environnement trouvé.")
-            self.print_info("\nUtilisez 'gestvenv create <nom>' pour créer un nouvel environnement.")
-            return 0
-        
-        self.print_header("Environnements virtuels disponibles")
-        
-        for env in environments:
-            name = env["name"]
-            python_version = env["python_version"]
-            packages_count = env["packages_count"]
-            is_active = env["active"]
-            exists = env["exists"]
+            if not environments:
+                self.print_info("Aucun environnement trouvé.")
+                return 0
             
-            if is_active:
-                status = f"{COLORS['green']}● ACTIF{COLORS['reset']}"
-            elif not exists:
-                status = f"{COLORS['red']}✗ MANQUANT{COLORS['reset']}"
+            # Filtrage si demandé
+            if args.filter:
+                filter_term = args.filter.lower()
+                environments = [
+                    env for env in environments 
+                    if filter_term in env.name.lower()
+                ]
+            
+            # Format JSON
+            if args.format == 'json':
+                env_data = [self._env_to_dict(env) for env in environments]
+                self.print_json(env_data)
+                return 0
+            
+            # Format tableau
+            self._print_environments_table(environments, verbose=args.verbose)
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors du listage: {e}")
+            return 1
+    
+    def cmd_activate(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv activate <name>"""
+        try:
+            success, message = self.env_manager.activate_environment(args.name)
+            
+            if success:
+                self.print_success(f"Environnement '{args.name}' activé")
+                
+                # Instructions pour l'utilisateur
+                env_info = self.env_manager.get_environment_info(args.name)
+                if env_info:
+                    activate_script = env_info.path / "Scripts" / "activate" if os.name == 'nt' else env_info.path / "bin" / "activate"
+                    print()
+                    self.print_info("Pour activer dans votre shell:")
+                    if os.name == 'nt':
+                        print(f"  {self.ui.highlight(str(activate_script))}")
+                    else:
+                        print(f"  {self.ui.highlight(f'source {activate_script}')}")
             else:
-                status = f"{COLORS['blue']}○ inactif{COLORS['reset']}"
+                self.print_error(message)
+                return 1
+                
+            return 0
             
-            print(f"{status}  {COLORS['bold']}{name}{COLORS['reset']}")
+        except Exception as e:
+            self.print_error(f"Erreur lors de l'activation: {e}")
+            return 1
+    
+    def cmd_deactivate(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv deactivate"""
+        try:
+            success, message = self.env_manager.deactivate_environment()
             
-            if args.verbose:
-                print(f"  Python: {python_version}")
-                print(f"  Packages: {packages_count}")
-                print(f"  Chemin: {env['path']}")
-                print()
-        
-        total = len(environments)
-        self.print_info(f"\nTotal: {total} environnement(s)")
-        
-        active_env = self.env_manager.get_active_environment()
-        if active_env:
-            self.print_info(f"Environnement actif: {active_env}")
-        
-        return 0
+            if success:
+                self.print_success("Environnement désactivé")
+            else:
+                self.print_error(message)
+                return 1
+                
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la désactivation: {e}")
+            return 1
+    
+    def cmd_delete(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv delete <name> [--force]"""
+        try:
+            # Confirmation si pas de --force
+            if not args.force:
+                response = input(f"⚠️  Supprimer l'environnement '{args.name}' ? [y/N]: ")
+                if response.lower() not in ['y', 'yes', 'oui']:
+                    self.print_info("Suppression annulée")
+                    return 0
+            
+            success, message = self.env_manager.delete_environment(args.name, force=args.force)
+            
+            if success:
+                self.print_success(f"Environnement '{args.name}' supprimé")
+            else:
+                self.print_error(message)
+                return 1
+                
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la suppression: {e}")
+            return 1
     
     def cmd_info(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour afficher des informations détaillées sur un environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
+        """Commande: gestvenv info <name>"""
+        try:
+            env_info = self.env_manager.get_environment_info(args.name)
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        env_info = self.env_manager.get_environment_info(args.name)
-        
-        if not env_info:
-            self.print_error(f"L'environnement '{args.name}' n'existe pas.")
-            return 1
-        
-        if args.json:
-            # Afficher au format JSON
-            import json
-            print(json.dumps(env_info, indent=2))
+            if not env_info:
+                self.print_error(f"Environnement '{args.name}' introuvable")
+                return 1
+            
+            if args.format == 'json':
+                self.print_json(self._env_to_dict(env_info))
+                return 0
+            
+            # Affichage détaillé
+            self._print_environment_details(env_info)
             return 0
-        
-        self.print_header(f"Informations sur l'environnement '{args.name}'")
-        
-        # Statut
-        if env_info["active"]:
-            status = f"{COLORS['green']}● ACTIF{COLORS['reset']}"
-        elif not env_info["exists"]:
-            status = f"{COLORS['red']}✗ MANQUANT{COLORS['reset']}"
-        else:
-            status = f"{COLORS['blue']}○ inactif{COLORS['reset']}"
-        
-        print(f"Statut: {status}")
-        print(f"Python: {env_info['python_version']}")
-        
-        # Formater la date de création si elle est présente
-        if 'created_at' in env_info:
-            created_at = format_timestamp(env_info['created_at'])
-            print(f"Créé le: {created_at}")
-        
-        print(f"Chemin: {env_info['path']}")
-        
-        # Santé de l'environnement
-        health = env_info.get("health", {})
-        if env_info["exists"]:
-            health_status = []
-            for check, result in health.items():
-                icon = "✓" if result else "✗"
-                color = "green" if result else "red"
-                health_status.append(f"{COLORS[color]}{icon}{COLORS['reset']} {check}")
             
-            print("\nSanté de l'environnement:")
-            print("  " + ", ".join(health_status))
-        
-        # Packages
-        self.print_header("Packages installés")
-        
-        packages_installed = env_info.get("packages_installed", [])
-        if not packages_installed:
-            self.print_info("Aucun package installé.")
-        else:
-            # Trier les packages par nom
-            packages = sorted(packages_installed, key=lambda x: x["name"])
-            
-            for pkg in packages:
-                print(f"{pkg['name']} {COLORS['cyan']}=={COLORS['reset']} {pkg['version']}")
-        
-        return 0
+        except Exception as e:
+            self.print_error(f"Erreur lors de la récupération des informations: {e}")
+            return 1
+    
+    # ===== COMMANDES PACKAGES =====
     
     def cmd_install(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour installer des packages dans un environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Déterminer l'environnement cible
-        env_name = args.env
-        if not env_name:
-            env_name = self.env_manager.get_active_environment()
-            if not env_name:
-                self.print_error("Aucun environnement actif. Spécifiez un environnement avec --env.")
+        """Commande: gestvenv install <env> <packages> [options]"""
+        try:
+            packages = [pkg.strip() for pkg in args.packages if pkg.strip()]
+            if not packages:
+                self.print_error("Aucun package spécifié")
                 return 1
-        
-        self.print_header(f"Installation de packages dans '{env_name}'")
-        self.print_info(f"Packages à installer: {args.packages}")
-        
-        # Installer les packages
-        success, message = self.env_manager.update_packages(
-            env_name, 
-            packages=args.packages, 
-            all_packages=False
-        )
-        
-        if success:
-            self.print_success(message)
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_uninstall(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour désinstaller des packages d'un environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Déterminer l'environnement cible
-        env_name = args.env
-        if not env_name:
-            env_name = self.env_manager.get_active_environment()
-            if not env_name:
-                self.print_error("Aucun environnement actif. Spécifiez un environnement avec --env.")
+            install_options = {
+                'backend': args.backend or self.preferred_backend,
+                'offline_mode': self.offline_mode or args.offline,
+                'upgrade': args.upgrade,
+                'dev_dependencies': args.dev,
+            }
+            
+            self.print_info(f"Installation de {len(packages)} package(s) dans '{args.env_name}'...")
+            
+            success, results = self.env_manager.install_packages(
+                env_name=args.env_name,
+                packages=packages,
+                **install_options
+            )
+            
+            if success:
+                self.print_success(f"Packages installés avec succès dans '{args.env_name}'")
+                for pkg in packages:
+                    print(f"  ✓ {pkg}")
+            else:
+                self.print_error(f"Erreur lors de l'installation: {results}")
                 return 1
-        
-        # Demander confirmation
-        confirm = input(f"Êtes-vous sûr de vouloir désinstaller les packages suivants de '{env_name}' ?\n"
-                       f"{args.packages}\n"
-                       f"(o/N) ")
-        
-        if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-            self.print_info("Opération annulée.")
+                
             return 0
-        
-        self.print_header(f"Désinstallation de packages de '{env_name}'")
-        
-        # TODO: Implémenter la méthode uninstall_packages dans l'EnvironmentManager
-        # Pour l'instant, nous utilisons un message temporaire
-        self.print_error("La désinstallation de packages n'est pas encore implémentée.")
-        return 1
-    
-    def cmd_update(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour mettre à jour des packages dans un environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Déterminer l'environnement cible
-        env_name = args.env
-        if not env_name:
-            env_name = self.env_manager.get_active_environment()
-            if not env_name:
-                self.print_error("Aucun environnement actif. Spécifiez un environnement avec --env.")
+        except Exception as e:
+            self.print_error(f"Erreur lors de l'installation: {e}")
+            return 1
+    
+    def cmd_sync(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv sync <env> [options]"""
+        try:
+            sync_options = {
+                'groups': args.groups.split(',') if args.groups else None,
+                'strict_mode': args.strict,
+                'update_lock': args.update_lock,
+            }
+            
+            self.print_info(f"Synchronisation de l'environnement '{args.env_name}'...")
+            
+            success, message = self.env_manager.sync_environment(
+                env_name=args.env_name,
+                **sync_options
+            )
+            
+            if success:
+                self.print_success(f"Environnement '{args.env_name}' synchronisé")
+            else:
+                self.print_error(message)
                 return 1
-        
-        if not args.packages and not args.all:
-            self.print_error("Vous devez spécifier des packages à mettre à jour ou utiliser --all")
-            return 1
-        
-        self.print_header(f"Mise à jour de packages dans '{env_name}'")
-        
-        if args.all:
-            self.print_info("Mise à jour de tous les packages")
-        else:
-            self.print_info(f"Packages à mettre à jour: {args.packages}")
-        
-        # Mettre à jour les packages
-        success, message = self.env_manager.update_packages(
-            env_name, 
-            packages=args.packages, 
-            all_packages=args.all
-        )
-        
-        if success:
-            self.print_success(message)
+                
             return 0
-        else:
-            self.print_error(message)
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la synchronisation: {e}")
             return 1
     
-    def cmd_export(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour exporter la configuration d'un environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        self.print_header(f"Export de l'environnement '{args.name}'")
-        
-        format_type = args.format
-        self.print_info(f"Format d'export: {format_type}")
-        
-        if args.output:
-            self.print_info(f"Fichier de sortie: {args.output}")
-        
-        # Exporter l'environnement
-        success, message = self.env_manager.export_environment(
-            args.name,
-            output_path=args.output,
-            format_type=format_type,
-            metadata=args.metadata
-        )
-        
-        if success:
-            self.print_success(message)
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_import(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour importer une configuration d'environnement.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        self.print_header("Import d'environnement")
-        
-        self.print_info(f"Fichier source: {args.file}")
-        if args.name:
-            self.print_info(f"Nom de l'environnement: {args.name}")
-        
-        # Importer l'environnement
-        success, message = self.env_manager.import_environment(args.file, args.name)
-        
-        if success:
-            self.print_success(message)
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_clone(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour cloner un environnement existant.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        self.print_header(f"Clonage de l'environnement '{args.source}' vers '{args.target}'")
-        
-        # Cloner l'environnement
-        success, message = self.env_manager.clone_environment(args.source, args.target)
-        
-        if success:
-            self.print_success(message)
-            return 0
-        else:
-            self.print_error(message)
-            return 1
-    
-    def cmd_run(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour exécuter une commande dans un environnement virtuel.
-        
-        Args:
-            args: Arguments de ligne de commande
-            
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        command = args.command
-        
-        self.print_header(f"Exécution dans l'environnement '{args.name}'")
-        self.print_info(f"Commande: {' '.join(command)}")
-        
-        # Exécuter la commande dans l'environnement
-        ret_code, stdout, stderr = self.env_manager.run_command_in_environment(args.name, command)
-        
-        if stdout:
-            print(stdout)
-        if stderr:
-            self.print_error(stderr)
-        
-        return int(ret_code) if ret_code is not None else 1
+    # ===== COMMANDES CONFIGURATION =====
     
     def cmd_config(self, args: argparse.Namespace) -> int:
-       """
-       Commande pour configurer les paramètres par défaut.
+        """Commande: gestvenv config [options]"""
+        try:
+            if args.show:
+                config = self.config_manager.export_config()
+                if args.format == 'json':
+                    self.print_json(config)
+                else:
+                    self._print_config_summary(config)
+                return 0
+            
+            # Modification de configuration
+            if args.set_python:
+                self.config_manager.set_setting('default_python_version', args.set_python)
+                self.print_success(f"Version Python par défaut: {args.set_python}")
+            
+            if args.set_backend:
+                self.config_manager.set_setting('preferred_backend', args.set_backend)
+                self.print_success(f"Backend préféré: {args.set_backend}")
+            
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur de configuration: {e}")
+            return 1
     
-       Args:
-           args: Arguments de ligne de commande
-
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       # Variables pour suivre si des modifications ont été effectuées
-       modified = False
+    def cmd_backend(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv backend [list|set|info]"""
+        try:
+            if args.action == 'list':
+                self._print_available_backends()
+            elif args.action == 'set' and args.backend:
+                self.config_manager.set_setting('preferred_backend', args.backend)
+                self.print_success(f"Backend par défaut: {args.backend}")
+            elif args.action == 'info' and args.backend:
+                self._print_backend_info(args.backend)
+            else:
+                self.print_error("Action ou backend manquant")
+                return 1
+                
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur backend: {e}")
+            return 1
     
-       if args.default_python:
-           self.print_header("Configuration de Python par défaut")
-
-           # Définir la commande Python par défaut
-           success, message = self.env_manager.set_default_python(args.default_python)
-
-           if success:
-               self.print_success(message)
-               modified = True
-           else:
-               self.print_error(message)
-               return 1
-    
-       # Gestion du mode hors ligne
-       if args.offline_mode and args.online_mode:
-           self.print_error("Options incompatibles: --offline et --online ne peuvent pas être utilisées ensemble")
-           return 1
-    
-       if args.offline_mode:
-           self.print_header("Activation du mode hors ligne")
-
-           if self.config_manager.set_offline_mode(True):
-               self.print_success("Mode hors ligne activé")
-               modified = True
-           else:
-               self.print_error("Échec de l'activation du mode hors ligne")
-               return 1
-    
-       if args.online_mode:
-           self.print_header("Désactivation du mode hors ligne")
-
-           if self.config_manager.set_offline_mode(False):
-               self.print_success("Mode hors ligne désactivé")
-               modified = True
-           else:
-               self.print_error("Échec de la désactivation du mode hors ligne")
-               return 1
-    
-       # Gestion du cache
-       if args.enable_cache and args.disable_cache:
-           self.print_error("Options incompatibles: --enable-cache et --disable-cache ne peuvent pas être utilisées ensemble")
-           return 1
-    
-       if args.enable_cache:
-           self.print_header("Activation du cache de packages")
-
-           if self.config_manager.set_cache_enabled(True):
-               self.print_success("Cache de packages activé")
-               modified = True
-           else:
-               self.print_error("Échec de l'activation du cache de packages")
-               return 1
-    
-       if args.disable_cache:
-           self.print_header("Désactivation du cache de packages")
-
-           if self.config_manager.set_cache_enabled(False):
-               self.print_success("Cache de packages désactivé")
-               modified = True
-           else:
-               self.print_error("Échec de la désactivation du cache de packages")
-               return 1
-    
-       # Configuration de la taille maximale du cache
-       if args.cache_max_size:
-           self.print_header(f"Configuration de la taille maximale du cache: {args.cache_max_size} Mo")
-
-           if self.config_manager.set_setting("cache_max_size_mb", args.cache_max_size):
-               self.print_success(f"Taille maximale du cache définie à {args.cache_max_size} Mo")
-               modified = True
-           else:
-               self.print_error("Échec de la configuration de la taille maximale du cache")
-               return 1
-    
-       # Configuration de l'âge maximal des packages dans le cache
-       if args.cache_max_age:
-           self.print_header(f"Configuration de l'âge maximal des packages: {args.cache_max_age} jours")
-
-           if self.config_manager.set_setting("cache_max_age_days", args.cache_max_age):
-               self.print_success(f"Âge maximal des packages défini à {args.cache_max_age} jours")
-               modified = True
-           else:
-               self.print_error("Échec de la configuration de l'âge maximal des packages")
-               return 1
-    
-       # Afficher la configuration actuelle
-       if args.show or not modified:
-           self.print_header("Configuration actuelle")
-
-           # Afficher les informations de configuration
-           default_python = self.config_manager.get_default_python()
-           active_env = self.env_manager.get_active_environment()
-
-           print(f"Commande Python par défaut: {default_python}")
-
-           if active_env:
-               print(f"Environnement actif: {active_env}")
-           else:
-               print("Aucun environnement actif")
-
-           # Afficher l'état du mode hors ligne et du cache
-           offline_mode = self.config_manager.get_offline_mode()
-           use_cache = self.config_manager.get_cache_enabled()
-           cache_max_size = self.config_manager.get_setting("cache_max_size_mb", 5000)
-           cache_max_age = self.config_manager.get_setting("cache_max_age_days", 90)
-
-           print(f"\nMode hors ligne: {get_color_for_terminal('green') if offline_mode else get_color_for_terminal('red')}{offline_mode}{get_color_for_terminal('reset')}")
-           print(f"Utilisation du cache: {get_color_for_terminal('green') if use_cache else get_color_for_terminal('red')}{use_cache}{get_color_for_terminal('reset')}")
-           print(f"Taille maximale du cache: {cache_max_size} Mo")
-           print(f"Âge maximal des packages: {cache_max_age} jours")
-
-           # Afficher les paramètres additionnels
-           settings = self.config_manager.config.settings
-           if settings:
-               print("\nAutres paramètres:")
-               for key, value in settings.items():
-                   if key not in ["offline_mode", "use_package_cache", "cache_max_size_mb", "cache_max_age_days"]:
-                       print(f"  {key}: {value}")
-    
-       return 0
+    # ===== COMMANDES UTILITAIRES =====
     
     def cmd_check(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour vérifier les mises à jour disponibles pour les packages.
-        
-        Args:
-            args: Arguments de ligne de commande
+        """Commande: gestvenv check <env>"""
+        try:
+            health_info = self.env_manager.check_environment_health(args.env_name)
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Déterminer l'environnement cible
-        env_name = args.name
-        if not env_name:
-            env_name = self.env_manager.get_active_environment()
-            if not env_name:
-                self.print_error("Aucun environnement actif. Spécifiez un nom d'environnement.")
-                return 1
-        
-        self.print_header(f"Vérification des mises à jour pour '{env_name}'")
-        
-        # Vérifier les mises à jour
-        success, updates, message = self.env_manager.check_for_updates(env_name)
-        
-        if not success:
-            self.print_error(message)
+            if args.format == 'json':
+                self.print_json(health_info.__dict__)
+                return 0
+            
+            self._print_health_check(args.env_name, health_info)
+            return 0 if health_info.is_healthy else 1
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la vérification: {e}")
             return 1
-        
-        if not updates:
-            self.print_success("Tous les packages sont à jour.")
-            return 0
-        
-        self.print_info(f"{len(updates)} package(s) peuvent être mis à jour:")
-        
-        for pkg in updates:
-            try:
-                name = pkg.get("name", "Inconnu")
-                current = pkg.get("current_version", "?")
-                latest = pkg.get("latest_version", "?")
-                
-                print(f"{name}: {COLORS['yellow']}{current}{COLORS['reset']} → {COLORS['green']}{latest}{COLORS['reset']}")
-            except Exception as e:
-                self.print_error(f"Erreur lors de l'affichage du package: {str(e)}")
-        
-        self.print_info("\nPour mettre à jour tous les packages:")
-        print(f"  gestvenv update --all --env {env_name}")
-        
-        return 0
     
-    def cmd_pyversions(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour lister les versions Python disponibles sur le système.
-        
-        Args:
-            args: Arguments de ligne de commande
+    def cmd_migrate(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv migrate [options]"""
+        try:
+            if args.analyze:
+                # Analyse des configurations existantes
+                self.print_info("Analyse de la migration...")
+                # Logique d'analyse à implémenter
+                return 0
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        from gestvenv.services.system_service import SystemService
-        system_service = SystemService()
-        
-        self.print_header("Versions Python disponibles")
-        
-        # Obtenir les versions Python disponibles
-        versions = system_service.get_available_python_versions()
-        
-        if not versions:
-            self.print_warning("Aucune version Python trouvée sur le système.")
-            return 1
-        
-        default_python = self.config_manager.get_default_python()
-        
-        for v in versions:
-            cmd = v["command"]
-            version = v["version"]
+            # Migration automatique
+            self.print_info("Migration des configurations v1.0 vers v1.1...")
+            from gestvenv import migrate_from_v1_0
             
-            is_default = cmd == default_python
-            if is_default:
-                print(f"{COLORS['green']}✓{COLORS['reset']} {COLORS['bold']}{cmd}{COLORS['reset']} - Version {version} (défaut)")
+            success = migrate_from_v1_0(args.config_path)
+            if success:
+                self.print_success("Migration réussie !")
             else:
-                print(f"  {cmd} - Version {version}")
+                self.print_error("Échec de la migration")
+                return 1
+                
+            return 0
+            
+        except Exception as e:
+            self.print_error(f"Erreur lors de la migration: {e}")
+            return 1
+    
+    def cmd_version(self, args: argparse.Namespace) -> int:
+        """Commande: gestvenv version"""
+        print(f"GestVenv v{__version__}")
         
-        self.print_info(f"\nTotal: {len(versions)} version(s) trouvée(s)")
-        self.print_info("\nPour définir la version par défaut:")
-        print("  gestvenv config --set-python <commande>")
+        if args.verbose:
+            print(f"Python: {sys.version}")
+            print(f"Plateforme: {sys.platform}")
+            
+            # État des dépendances
+            deps = check_dependencies()
+            print("\nDépendances:")
+            for dep, available in deps.items():
+                status = "✓" if available else "✗"
+                print(f"  {status} {dep}")
         
         return 0
     
-    def cmd_docs(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour afficher la documentation.
-        
-        Args:
-            args: Arguments de ligne de commande
+    # ===== MÉTHODES D'AFFICHAGE SPÉCIALISÉES =====
+    
+    def _print_environments_table(self, environments: List[Any], verbose: bool = False):
+        """Affiche une table des environnements."""
+        if verbose:
+            # Table détaillée
+            print(f"\n{'Nom':<20} {'Actif':<6} {'Python':<10} {'Backend':<8} {'Packages':<10} {'Santé':<8}")
+            print("─" * 85)
             
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        topic = args.topic.lower() if args.topic else "general"
+            for env in environments:
+                active = "✓" if getattr(env, 'is_active', False) else ""
+                backend = getattr(env, 'backend_type', 'pip').name if hasattr(getattr(env, 'backend_type', None), 'name') else 'pip'
+                pkg_count = len(getattr(env, 'packages', []))
+                health = "✓" if getattr(env, 'health', None) and getattr(env.health, 'is_healthy', False) else "⚠"
+                
+                print(f"{env.name:<20} {active:<6} {env.python_version:<10} {backend:<8} {pkg_count:<10} {health:<8}")
+        else:
+            # Table simple
+            print(f"\n{'Nom':<20} {'Actif':<6} {'Python':<10} {'Packages':<10}")
+            print("─" * 50)
+            
+            for env in environments:
+                active = "✓" if getattr(env, 'is_active', False) else ""
+                pkg_count = len(getattr(env, 'packages', []))
+                
+                print(f"{env.name:<20} {active:<6} {env.python_version:<10} {pkg_count:<10}")
         
-        doc_topics = {
-            "general": {
-                "title": "Documentation générale",
-                "content": """
-GestVenv - Gestionnaire d'Environnements Virtuels Python
-
-GestVenv est un outil qui simplifie la gestion des environnements virtuels Python. Il offre une
-interface unifiée pour créer, activer et gérer vos environnements virtuels et leurs packages.
-
-Principales fonctionnalités:
-- Création et suppression d'environnements virtuels
-- Activation et désactivation d'environnements
-- Installation, mise à jour et suppression de packages
-- Export et import de configurations d'environnements
-- Clonage d'environnements existants
-
-Pour plus d'informations sur des sujets spécifiques, utilisez:
-  gestvenv docs <sujet>
-
-Sujets disponibles: commandes, environnements, packages, export, workflow
-            """
+        print(f"\nTotal: {len(environments)} environnement(s)")
+    
+    def _print_environment_details(self, env_info: Any):
+        """Affiche les détails d'un environnement."""
+        print(f"\n{self.ui.highlight('📦 Environnement:')} {env_info.name}")
+        print(f"   {self.ui.dim('Chemin:')} {env_info.path}")
+        print(f"   {self.ui.dim('Python:')} {env_info.python_version}")
+        print(f"   {self.ui.dim('Créé:')} {getattr(env_info, 'created_at', 'Inconnu')}")
+        print(f"   {self.ui.dim('Actif:')} {'Oui' if getattr(env_info, 'is_active', False) else 'Non'}")
+        
+        if hasattr(env_info, 'backend_type'):
+            print(f"   {self.ui.dim('Backend:')} {env_info.backend_type.value}")
+        
+        # Packages installés
+        packages = getattr(env_info, 'packages', [])
+        if packages:
+            print(f"\n{self.ui.highlight('📚 Packages installés:')} ({len(packages)})")
+            for pkg in packages[:10]:  # Limiter l'affichage
+                print(f"   • {pkg.name} {pkg.version}" if hasattr(pkg, 'version') else f"   • {pkg}")
+            if len(packages) > 10:
+                print(f"   ... et {len(packages) - 10} autres")
+        
+        # Informations pyproject.toml
+        if hasattr(env_info, 'pyproject_info') and env_info.pyproject_info:
+            print(f"\n{self.ui.highlight('📋 Configuration pyproject.toml:')}")
+            pyproject = env_info.pyproject_info
+            print(f"   {self.ui.dim('Nom du projet:')} {pyproject.name}")
+            if hasattr(pyproject, 'version'):
+                print(f"   {self.ui.dim('Version:')} {pyproject.version}")
+            if hasattr(pyproject, 'description'):
+                print(f"   {self.ui.dim('Description:')} {pyproject.description}")
+        
+        # Santé de l'environnement
+        if hasattr(env_info, 'health') and env_info.health:
+            health = env_info.health
+            print(f"\n{self.ui.highlight('🔍 État de santé:')}")
+            score = getattr(health, 'health_score', 0)
+            status = "✅ Excellent" if score >= 0.9 else "⚠️ Attention" if score >= 0.7 else "❌ Problème"
+            print(f"   {self.ui.dim('Score général:')} {status} ({score:.1%})")
+    
+    def _print_health_check(self, env_name: str, health_info: Any):
+        """Affiche les résultats d'un check de santé."""
+        print(f"\n{self.ui.highlight(f'🔍 Vérification de {env_name}:')}")
+        
+        checks = [
+            ("Environnement existe", getattr(health_info, 'exists', False)),
+            ("Python disponible", getattr(health_info, 'python_available', False)),
+            ("pip disponible", getattr(health_info, 'pip_available', False)),
+            ("Script d'activation", getattr(health_info, 'activation_script_exists', False)),
+            ("Backend disponible", getattr(health_info, 'backend_available', False)),
+            ("Dépendances synchronisées", getattr(health_info, 'dependencies_synchronized', True)),
+        ]
+        
+        for check_name, status in checks:
+            symbol = "✅" if status else "❌"
+            print(f"   {symbol} {check_name}")
+        
+        # Score global
+        score = getattr(health_info, 'health_score', 0)
+        print(f"\n   {self.ui.highlight('Score global:')} {score:.1%}")
+        
+        # Problèmes de sécurité
+        security_issues = getattr(health_info, 'security_issues', [])
+        if security_issues:
+            print(f"\n{self.ui.warning('Problèmes de sécurité détectés:')}")
+            for issue in security_issues:
+                print(f"   ⚠️  {issue}")
+    
+    def _print_available_backends(self):
+        """Affiche les backends disponibles."""
+        print(f"\n{self.ui.highlight('🔧 Backends disponibles:')}")
+        
+        backends_info = [
+            ("pip", "Backend standard Python", True),
+            ("uv", "Backend ultra-rapide (10x plus rapide)", check_dependencies().get('uv', False)),
+            ("poetry", "Gestionnaire de dépendances moderne", check_dependencies().get('poetry', False)),
+            ("pdm", "Gestionnaire moderne basé sur PEP 582", check_dependencies().get('pdm', False)),
+        ]
+        
+        for name, description, available in backends_info:
+            status = "✅" if available else "❌"
+            print(f"   {status} {self.ui.highlight(name)}: {description}")
+            if not available and name != "pip":
+                print(f"      {self.ui.dim(f'Installation: pip install {name}')}")
+    
+    def _print_backend_info(self, backend_name: str):
+        """Affiche les informations d'un backend spécifique."""
+        backend_details = {
+            'pip': {
+                'description': 'Backend standard Python',
+                'features': ['Installation de packages', 'Gestion des dépendances', 'Freeze/Export'],
+                'performance': 'Standard',
+                'available': True,
             },
-            "commandes": {
-                "title": "Documentation des commandes",
-                "content": """
-Principales commandes de GestVenv:
-
-create      - Crée un nouvel environnement virtuel
-activate    - Active un environnement virtuel
-deactivate  - Désactive l'environnement actif
-delete      - Supprime un environnement virtuel
-list        - Liste tous les environnements virtuels
-info        - Affiche des informations sur un environnement
-install     - Installe des packages dans un environnement
-uninstall   - Désinstalle des packages d'un environnement
-update      - Met à jour des packages dans un environnement
-export      - Exporte la configuration d'un environnement
-import      - Importe une configuration d'environnement
-clone       - Clone un environnement existant
-run         - Exécute une commande dans un environnement
-config      - Configure les paramètres par défaut
-check       - Vérifie les mises à jour disponibles pour les packages
-pyversions  - Liste les versions Python disponibles
-docs        - Affiche la documentation
-
-Pour plus d'informations sur une commande spécifique:
-  gestvenv <commande> --help
-            """
+            'uv': {
+                'description': 'Backend ultra-rapide développé en Rust',
+                'features': ['Installation ultra-rapide', 'Résolution optimisée', 'Cache avancé', 'Lock files'],
+                'performance': '10x plus rapide que pip',
+                'available': check_dependencies().get('uv', False),
             },
-            "environnements": {
-                "title": "Gestion des environnements",
-                "content": """
-Gestion des environnements virtuels avec GestVenv:
-
-Création d'un environnement:
-  gestvenv create mon_env --python python3.9 --packages "flask,pytest"
-
-Activation d'un environnement:
-  gestvenv activate mon_env
-  # Suivre les instructions affichées
-
-Désactivation de l'environnement actif:
-  gestvenv deactivate
-  # Suivre les instructions affichées
-
-Suppression d'un environnement:
-  gestvenv delete mon_env
-
-Listing des environnements:
-  gestvenv list
-  gestvenv list --verbose  # Informations détaillées
-
-Informations sur un environnement:
-  gestvenv info mon_env
-
-Clonage d'un environnement:
-  gestvenv clone source_env nouveau_env
-
-Exécution de commandes dans un environnement:
-  gestvenv run mon_env python script.py
-            """
+            'poetry': {
+                'description': 'Gestionnaire de dépendances et packaging',
+                'features': ['Gestion pyproject.toml', 'Lock files', 'Publication', 'Environnements virtuels'],
+                'performance': 'Optimisé pour les projets',
+                'available': check_dependencies().get('poetry', False),
             },
-            "packages": {
-                "title": "Gestion des packages",
-                "content": """
-Gestion des packages avec GestVenv:
-
-Installation de packages:
-  gestvenv install "flask,pytest"  # Dans l'environnement actif
-  gestvenv install "flask==2.0.1,pytest" --env mon_env  # Dans un environnement spécifique
-
-Désinstallation de packages:
-  gestvenv uninstall "flask,pytest"  # Dans l'environnement actif
-  gestvenv uninstall "flask" --env mon_env  # Dans un environnement spécifique
-
-Mise à jour de packages:
-  gestvenv update "flask,pytest"  # Dans l'environnement actif
-  gestvenv update --all  # Tous les packages de l'environnement actif
-  gestvenv update --all --env mon_env  # Tous les packages d'un environnement spécifique
-
-Vérification des mises à jour disponibles:
-  gestvenv check  # Pour l'environnement actif
-  gestvenv check mon_env  # Pour un environnement spécifique
-            """
+            'pdm': {
+                'description': 'Gestionnaire moderne basé sur les standards PEP',
+                'features': ['Support PEP 582', 'Lock files', 'Scripts', 'Plugins'],
+                'performance': 'Rapide et moderne',
+                'available': check_dependencies().get('pdm', False),
             },
-            "export": {
-                "title": "Export et import de configurations",
-                "content": """
-Export et import de configurations avec GestVenv:
-
-Export d'une configuration:
-  gestvenv export mon_env  # Export au format JSON par défaut
-  gestvenv export mon_env --format requirements  # Export au format requirements.txt
-  gestvenv export mon_env --output "/chemin/vers/fichier.json"  # Chemin personnalisé
-  gestvenv export mon_env --add-metadata "description:Mon projet web,auteur:John Doe"  # Avec métadonnées
-
-Import d'une configuration:
-  gestvenv import /chemin/vers/fichier.json  # Import depuis un fichier JSON
-  gestvenv import /chemin/vers/requirements.txt --name nouveau_env  # Import depuis requirements.txt
-            """
-            },
-            "workflow": {
-                "title": "Flux de travail recommandé",
-                "content": """
-Flux de travail recommandé avec GestVenv:
-
-1. Création d'un environnement pour un nouveau projet:
-   gestvenv create mon_projet --python python3.9 --packages "flask,pytest"
-
-2. Activation de l'environnement:
-   gestvenv activate mon_projet
-   # Exécuter la commande affichée
-
-3. Installation de packages supplémentaires:
-   gestvenv install "pandas,matplotlib"
-
-4. Travail sur le projet avec l'environnement activé
-
-5. Export de la configuration pour partage:
-   gestvenv export mon_projet --output "mon_projet_config.json"
-
-6. Partage de la configuration avec l'équipe
-
-7. Import de la configuration par un membre de l'équipe:
-   gestvenv import mon_projet_config.json
-
-8. Mise à jour régulière des packages:
-   gestvenv check
-   gestvenv update --all
-
-9. Création d'un environnement de développement basé sur l'environnement de production:
-   gestvenv clone mon_projet mon_projet_dev
-            """
-            }
         }
         
-        if topic not in doc_topics:
-            self.print_error(f"Sujet de documentation '{topic}' non trouvé.")
-            self.print_info("Sujets disponibles: " + ", ".join(doc_topics.keys()))
-            return 1
+        if backend_name not in backend_details:
+            self.print_error(f"Backend '{backend_name}' inconnu")
+            return
         
-        doc = doc_topics[topic]
-        self.print_header(doc["title"])
-        print(doc["content"].strip())
+        info = backend_details[backend_name]
+        status = "✅ Disponible" if info['available'] else "❌ Non installé"
         
-        return 0
+        print(f"\n{self.ui.highlight(f'🔧 Backend: {backend_name}')}")
+        print(f"   {self.ui.dim('État:')} {status}")
+        print(f"   {self.ui.dim('Description:')} {info['description']}")
+        print(f"   {self.ui.dim('Performance:')} {info['performance']}")
+        print(f"   {self.ui.dim('Fonctionnalités:')}")
+        for feature in info['features']:
+            print(f"     • {feature}")
+        
+        if not info['available'] and backend_name != 'pip':
+            print(f"\n   {self.ui.info(f'Installation: pip install {backend_name}')}")
+    
+    def _print_config_summary(self, config: Dict[str, Any]):
+        """Affiche un résumé de la configuration."""
+        print(f"\n{self.ui.highlight('⚙️ Configuration GestVenv:')}")
+        
+        # Paramètres principaux
+        print(f"   {self.ui.dim('Version:')} {config.get('config_version', 'Inconnue')}")
+        print(f"   {self.ui.dim('Python par défaut:')} {config.get('default_python', 'python3')}")
+        print(f"   {self.ui.dim('Backend préféré:')} {config.get('preferred_backend', 'pip')}")
+        print(f"   {self.ui.dim('Environnement actif:')} {config.get('active_env', 'Aucun')}")
+        
+        # Environnements
+        environments = config.get('environments', {})
+        print(f"   {self.ui.dim('Environnements:')} {len(environments)}")
+        
+        # Cache
+        cache_settings = config.get('cache_settings', {})
+        cache_enabled = cache_settings.get('enabled', False)
+        print(f"   {self.ui.dim('Cache:')} {'Activé' if cache_enabled else 'Désactivé'}")
+    
+    def _env_to_dict(self, env_info: Any) -> Dict[str, Any]:
+        """Convertit un EnvironmentInfo en dictionnaire pour JSON."""
+        return {
+            'name': env_info.name,
+            'path': str(env_info.path),
+            'python_version': env_info.python_version,
+            'is_active': getattr(env_info, 'is_active', False),
+            'created_at': getattr(env_info, 'created_at', None),
+            'packages': [
+                {'name': pkg.name, 'version': pkg.version} if hasattr(pkg, 'version') else str(pkg)
+                for pkg in getattr(env_info, 'packages', [])
+            ],
+            'backend_type': getattr(env_info, 'backend_type', 'pip').value if hasattr(getattr(env_info, 'backend_type', None), 'value') else 'pip',
+            'health_score': getattr(getattr(env_info, 'health', None), 'health_score', None),
+        }
+    
+    # ===== CONFIGURATION ARGPARSE =====
+    
+    def create_parser(self) -> argparse.ArgumentParser:
+        """Crée le parser principal avec toutes les commandes."""
+        parser = argparse.ArgumentParser(
+            prog='gestvenv',
+            description='GestVenv v1.1 - Gestionnaire d\'environnements virtuels Python moderne',
+            epilog='Voir "gestvenv <command> --help" pour l\'aide spécifique à chaque commande.',
+            formatter_class=argparse.RawDescriptionHelpFormatter
+        )
+        
+        # Options globales
+        parser.add_argument(
+            '--version', action='version', version=f'GestVenv v{__version__}'
+        )
+        parser.add_argument(
+            '--verbose', '-v', action='store_true',
+            help='Mode verbeux avec logs détaillés'
+        )
+        parser.add_argument(
+            '--quiet', '-q', action='store_true',
+            help='Mode silencieux (erreurs uniquement)'
+        )
+        parser.add_argument(
+            '--no-color', action='store_true',
+            help='Désactive les couleurs'
+        )
+        parser.add_argument(
+            '--config', type=str,
+            help='Fichier de configuration personnalisé'
+        )
+        parser.add_argument(
+            '--offline', action='store_true',
+            help='Mode hors ligne (utilise le cache)'
+        )
+        parser.add_argument(
+            '--backend', choices=['pip', 'uv', 'poetry', 'pdm'],
+            help='Force un backend spécifique'
+        )
+        
+        # Sous-commandes
+        subparsers = parser.add_subparsers(
+            dest='command', 
+            title='Commandes disponibles',
+            description='Liste des commandes GestVenv',
+            help='Commande à exécuter'
+        )
+        
+        # Commande: create
+        create_parser = subparsers.add_parser(
+            'create', help='Créer un nouvel environnement'
+        )
+        create_parser.add_argument('name', help='Nom de l\'environnement')
+        create_parser.add_argument(
+            '--python', '-p', default='python3',
+            help='Version de Python (par défaut: python3)'
+        )
+        create_parser.add_argument(
+            '--packages', help='Packages à installer (séparés par des virgules)'
+        )
+        create_parser.add_argument(
+            '--path', help='Chemin personnalisé pour l\'environnement'
+        )
+        create_parser.add_argument(
+            '--from-pyproject', help='Créer depuis un fichier pyproject.toml'
+        )
+        create_parser.add_argument(
+            '--groups', help='Groupes de dépendances pyproject.toml (séparés par des virgules)'
+        )
+        create_parser.add_argument(
+            '--offline', action='store_true', help='Mode hors ligne'
+        )
+        create_parser.add_argument(
+            '--backend', choices=['pip', 'uv', 'poetry', 'pdm'],
+            help='Backend à utiliser'
+        )
+        
+        # Commande: list
+        list_parser = subparsers.add_parser(
+            'list', help='Lister les environnements'
+        )
+        list_parser.add_argument(
+            '--verbose', '-v', action='store_true',
+            help='Affichage détaillé'
+        )
+        list_parser.add_argument(
+            '--filter', help='Filtrer par nom'
+        )
+        list_parser.add_argument(
+            '--format', choices=['table', 'json'], default='table',
+            help='Format de sortie'
+        )
+        
+        # Commande: activate
+        activate_parser = subparsers.add_parser(
+            'activate', help='Activer un environnement'
+        )
+        activate_parser.add_argument('name', help='Nom de l\'environnement')
+        
+        # Commande: deactivate
+        subparsers.add_parser(
+            'deactivate', help='Désactiver l\'environnement actuel'
+        )
+        
+        # Commande: delete
+        delete_parser = subparsers.add_parser(
+            'delete', help='Supprimer un environnement'
+        )
+        delete_parser.add_argument('name', help='Nom de l\'environnement')
+        delete_parser.add_argument(
+            '--force', '-f', action='store_true',
+            help='Suppression sans confirmation'
+        )
+        
+        # Commande: info
+        info_parser = subparsers.add_parser(
+            'info', help='Informations sur un environnement'
+        )
+        info_parser.add_argument('name', help='Nom de l\'environnement')
+        info_parser.add_argument(
+            '--format', choices=['text', 'json'], default='text',
+            help='Format de sortie'
+        )
+        
+        # Commande: install
+        install_parser = subparsers.add_parser(
+            'install', help='Installer des packages'
+        )
+        install_parser.add_argument('env_name', help='Nom de l\'environnement')
+        install_parser.add_argument('packages', nargs='+', help='Packages à installer')
+        install_parser.add_argument(
+            '--upgrade', '-U', action='store_true',
+            help='Mettre à jour les packages existants'
+        )
+        install_parser.add_argument(
+            '--dev', action='store_true',
+            help='Installer les dépendances de développement'
+        )
+        install_parser.add_argument(
+            '--offline', action='store_true', help='Mode hors ligne'
+        )
+        install_parser.add_argument(
+            '--backend', choices=['pip', 'uv', 'poetry', 'pdm'],
+            help='Backend à utiliser'
+        )
+        
+        # Commande: sync
+        sync_parser = subparsers.add_parser(
+            'sync', help='Synchroniser avec pyproject.toml'
+        )
+        sync_parser.add_argument('env_name', help='Nom de l\'environnement')
+        sync_parser.add_argument(
+            '--groups', help='Groupes de dépendances (séparés par des virgules)'
+        )
+        sync_parser.add_argument(
+            '--strict', action='store_true',
+            help='Mode strict (supprime les packages non listés)'
+        )
+        sync_parser.add_argument(
+            '--update-lock', action='store_true',
+            help='Mettre à jour le fichier de verrouillage'
+        )
+        
+        # Commande: config
+        config_parser = subparsers.add_parser(
+            'config', help='Gérer la configuration'
+        )
+        config_parser.add_argument(
+            '--show', action='store_true',
+            help='Afficher la configuration actuelle'
+        )
+        config_parser.add_argument(
+            '--set-python', help='Définir la version Python par défaut'
+        )
+        config_parser.add_argument(
+            '--set-backend', choices=['pip', 'uv', 'poetry', 'pdm'],
+            help='Définir le backend par défaut'
+        )
+        config_parser.add_argument(
+            '--format', choices=['text', 'json'], default='text',
+            help='Format de sortie'
+        )
+        
+        # Commande: backend
+        backend_parser = subparsers.add_parser(
+            'backend', help='Gérer les backends'
+        )
+        backend_parser.add_argument(
+            'action', choices=['list', 'set', 'info'],
+            help='Action à effectuer'
+        )
+        backend_parser.add_argument(
+            'backend', nargs='?', choices=['pip', 'uv', 'poetry', 'pdm'],
+            help='Backend (pour set/info)'
+        )
+        
+        # Commande: check
+        check_parser = subparsers.add_parser(
+            'check', help='Vérifier la santé d\'un environnement'
+        )
+        check_parser.add_argument('env_name', help='Nom de l\'environnement')
+        check_parser.add_argument(
+            '--format', choices=['text', 'json'], default='text',
+            help='Format de sortie'
+        )
+        
+        # Commande: migrate
+        migrate_parser = subparsers.add_parser(
+            'migrate', help='Migration depuis v1.0'
+        )
+        migrate_parser.add_argument(
+            '--analyze', action='store_true',
+            help='Analyser les configurations existantes'
+        )
+        migrate_parser.add_argument(
+            '--config-path', help='Chemin vers l\'ancienne configuration'
+        )
+        
+        # Commande: version
+        version_parser = subparsers.add_parser(
+            'version', help='Afficher les informations de version'
+        )
+        version_parser.add_argument(
+            '--verbose', '-v', action='store_true',
+            help='Informations détaillées'
+        )
+        
+        return parser
+    
+    # ===== MÉTHODE PRINCIPALE =====
     
     def run(self, args: Optional[List[str]] = None) -> int:
         """
-        Exécute la commande en ligne de commande.
+        Point d'entrée principal du CLI.
         
         Args:
-            args: Arguments de ligne de commande (optionnel)
+            args: Arguments en ligne de commande (None = sys.argv)
             
         Returns:
-            int: Code de retour
-        """
-        # Analyser les arguments
-        parsed_args = self.parser.parse_args(args)
-        
-        # Configurer le logging en mode debug si demandé
-        if parsed_args.debug:
-            logging.getLogger().setLevel(logging.DEBUG)
-            logger.debug("Mode debug activé")
-        
-        # Cas spécial: pas de commande spécifiée
-        if not hasattr(parsed_args, 'command') or not parsed_args.command:
-            self.parser.print_help()
-            return 1
-        
-        # Exécuter la commande appropriée
-        commands = {
-            "create": self.cmd_create,
-            "activate": self.cmd_activate,
-            "deactivate": self.cmd_deactivate,
-            "delete": self.cmd_delete,
-            "list": self.cmd_list,
-            "info": self.cmd_info,
-            "install": self.cmd_install,
-            "uninstall": self.cmd_uninstall,
-            "update": self.cmd_update,
-            "export": self.cmd_export,
-            "import": self.cmd_import,
-            "clone": self.cmd_clone,
-            "run": self.cmd_run,
-            "config": self.cmd_config,
-            "check": self.cmd_check,
-            "pyversions": self.cmd_pyversions,
-            "docs": self.cmd_docs,
-            "cache": self.cmd_cache
-        }
-        if hasattr(parsed_args, 'command') and parsed_args.command:
-            command = parsed_args.command
-            if isinstance(command, list):
-                command = command[0] if command else None
-                
-            if command in commands:
-        # if parsed_args.command in commands:
-                try:
-                    return commands[parsed_args.command](parsed_args)
-                except KeyboardInterrupt:
-                    print("\nOpération interrompue.")
-                    return 130  # Code standard pour SIGINT
-                except Exception as e:
-                    if parsed_args.debug:
-                        # En mode debug, afficher la trace complète
-                        import traceback
-                        traceback.print_exc()
-                    else:
-                        # En mode normal, afficher un message d'erreur plus convivial
-                        self.print_error(f"Erreur: {str(e)}")
-                        self.print_info("Pour plus de détails, exécutez la commande avec --debug")
-            return 1
-        else:
-            self.print_error(f"Commande inconnue: {parsed_args.command}")
-            self.parser.print_help()
-            return 1
-
-    def cmd_cache(self, args: argparse.Namespace) -> int:
-        """
-        Commande pour gérer le cache de packages.
-
-        Args:
-            args: Arguments de ligne de commande
-
-        Returns:
-            int: Code de retour (0 pour succès, autre pour erreur)
-        """
-        # Vérifier si une sous-commande a été spécifiée
-        if not hasattr(args, 'cache_command') or not args.cache_command:
-            self.print_error("Sous-commande de cache non spécifiée")
-            return 1
-
-        # Importer le service de cache
-        from gestvenv.services.cache_service import CacheService
-        cache_service = CacheService()
-
-        # Exécuter la sous-commande appropriée
-        if args.cache_command == 'list':
-            return self.cmd_cache_list(args, cache_service)
-        elif args.cache_command == 'clean':
-            return self.cmd_cache_clean(args, cache_service)
-        elif args.cache_command == 'info':
-            return self.cmd_cache_info(args, cache_service)
-        elif args.cache_command == 'add':
-            return self.cmd_cache_add(args, cache_service)
-        elif args.cache_command == 'export':
-            return self.cmd_cache_export(args, cache_service)
-        elif args.cache_command == 'import':
-            return self.cmd_cache_import(args, cache_service)
-        elif args.cache_command == 'remove':
-            return self.cmd_cache_remove(args, cache_service)
-        else:
-            self.print_error(f"Sous-commande de cache non reconnue: {args.cache_command}")
-            return 1
-
-    def cmd_cache_list(self, args: argparse.Namespace, cache_service: Any) -> int:
-        """
-        Commande pour lister les packages dans le cache - VERSION CORRIGÉE
+            int: Code de retour (0 = succès, autre = erreur)
         """
         try:
-            self.print_header("Packages disponibles dans le cache")
-
-            # Récupérer les packages disponibles
-            available_packages = cache_service.get_available_packages()
-
-            if not available_packages:
-                self.print_info("Aucun package dans le cache.")
-                self.print_info("\nUtilisez 'gestvenv cache add <package>' pour ajouter des packages.")
-                return 0
-
-            # Afficher les packages par ordre alphabétique
-            for package_name in sorted(available_packages.keys()):
-                versions = available_packages[package_name]
-
-                # Trier les versions (version la plus récente en premier)
-                try:
-                    sorted_versions = sorted(
-                        versions, 
-                        key=lambda v: [int(x) if x.isdigit() else x for x in v.split('.')],
-                        reverse=True
-                    )
-                except (ValueError, AttributeError):
-                    sorted_versions = sorted(versions)
-
-                versions_str = ", ".join(sorted_versions)
-
-                self.print_colored(f"{package_name}", "bold")
-                print(f"  Versions: {versions_str}")
-
-            # Afficher les statistiques
-            stats = cache_service.get_cache_stats()
-            package_count = len(available_packages)
-            version_count = sum(len(versions) for versions in available_packages.values())
-            total_size = stats.get('total_size_bytes', 0)
-
-            self.print_info(f"\nTotal: {package_count} package(s), {version_count} version(s)")
-            if total_size > 0:
-                size_formatted = self.format_size(total_size)
-                self.print_info(f"Taille totale: {size_formatted}")
-
-            return 0
-
-        except Exception as e:
-            self.print_error(f"Erreur lors de la liste des packages du cache: {str(e)}")
-            return 1
-
-    def cmd_cache_clean(self, args: argparse.Namespace, cache_service: Any) -> int:
-        """
-        Commande pour nettoyer le cache - VERSION CORRIGÉE
-        """
-        try:
-            self.print_header("Nettoyage du cache")
-
-            # Récupérer les paramètres de nettoyage
-            max_age = getattr(args, 'max_age', 90)
-            max_size = getattr(args, 'max_size', 5000)
-
-            # Demander confirmation si pas en mode force
-            force_clean = getattr(args, 'force', False)
-            if not force_clean:
-                # Afficher les statistiques actuelles
-                stats = cache_service.get_cache_stats()
-                current_size_mb = stats.get('total_size_bytes', 0) / (1024 * 1024)
-
-                print(f"Taille actuelle du cache: {current_size_mb:.1f} MB")
-                print(f"Paramètres de nettoyage:")
-                print(f"  • Âge maximum: {max_age} jours")
-                print(f"  • Taille maximale: {max_size} MB")
-
-                confirm = input("\nÊtes-vous sûr de vouloir nettoyer le cache ? (o/N) ")
-                if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-                    self.print_info("Opération annulée.")
-                    return 0
-
-            self.print_info(f"Nettoyage du cache (âge max: {max_age} jours, taille max: {max_size} MB)")
-
-            # Nettoyer le cache
-            try:
-                removed_count, freed_space = cache_service.clean_cache(max_age, max_size)
-
-                if removed_count > 0:
-                    freed_mb = freed_space / (1024 * 1024)
-                    self.print_success(f"{removed_count} package(s) supprimé(s)")
-                    self.print_success(f"{freed_mb:.1f} MB libéré(s)")
-                else:
-                    self.print_info("Aucun package à supprimer. Le cache est déjà optimisé.")
-
-                return 0
-
-            except Exception as e:
-                self.print_error(f"Erreur lors du nettoyage du cache: {str(e)}")
+            parser = self.create_parser()
+            parsed_args = parser.parse_args(args)
+            
+            # Configuration UI et logging
+            if parsed_args.no_color:
+                self.ui = UIFormatter(use_colors=False)
+            
+            self.setup_logging(
+                verbose=getattr(parsed_args, 'verbose', False),
+                quiet=getattr(parsed_args, 'quiet', False)
+            )
+            
+            # Configuration globale
+            self.offline_mode = getattr(parsed_args, 'offline', False)
+            self.preferred_backend = getattr(parsed_args, 'backend', None)
+            
+            # Initialisation des gestionnaires
+            config_path = getattr(parsed_args, 'config', None)
+            self.initialize_managers(config_path)
+            
+            # Dispatch des commandes
+            command_map = {
+                'create': self.cmd_create,
+                'list': self.cmd_list,
+                'activate': self.cmd_activate,
+                'deactivate': self.cmd_deactivate,
+                'delete': self.cmd_delete,
+                'info': self.cmd_info,
+                'install': self.cmd_install,
+                'sync': self.cmd_sync,
+                'config': self.cmd_config,
+                'backend': self.cmd_backend,
+                'check': self.cmd_check,
+                'migrate': self.cmd_migrate,
+                'version': self.cmd_version,
+            }
+            
+            if not parsed_args.command:
+                parser.print_help()
                 return 1
-
+            
+            if parsed_args.command not in command_map:
+                self.print_error(f"Commande inconnue: {parsed_args.command}")
+                return 1
+            
+            # Exécution de la commande
+            return command_map[parsed_args.command](parsed_args)
+            
+        except KeyboardInterrupt:
+            self.print_error("Opération interrompue par l'utilisateur")
+            return 130
         except Exception as e:
-            self.print_error(f"Erreur dans la commande de nettoyage: {str(e)}")
-            return 1
-
-    def cmd_cache_info(self, args: argparse.Namespace, cache_service: Any) -> int:
-        """
-        Commande pour afficher des informations sur le cache - VERSION CORRIGÉE
-        """
-        try:
-            self.print_header("Informations sur le cache")
-
-            # Récupérer les statistiques du cache
-            stats = cache_service.get_cache_stats()
-
-            # Afficher les informations de base
-            print(f"Répertoire du cache: {stats.get('cache_dir', 'Inconnu')}")
-            print(f"Nombre de packages: {stats.get('package_count', 0)}")
-            print(f"Nombre de versions: {stats.get('version_count', 0)}")
-
-            # Formater la taille totale
-            total_size = stats.get('total_size_bytes', 0)
-            if total_size > 0:
-                size_formatted = self.format_size(total_size)
-                print(f"Taille totale: {size_formatted}")
+            if self.verbose:
+                import traceback
+                traceback.print_exc()
             else:
-                print("Taille totale: 0 B")
-
-            # Afficher le package le plus récent si disponible
-            latest_package = stats.get('latest_package')
-            if latest_package:
-                latest_date = stats.get('latest_added_at', '')
-                if latest_date:
-                    try:
-                        from datetime import datetime
-                        dt = datetime.fromisoformat(latest_date)
-                        formatted_date = dt.strftime("%Y-%m-%d %H:%M:%S")
-                        print(f"Package le plus récent: {latest_package}")
-                        print(f"Ajouté le: {formatted_date}")
-                    except Exception:
-                        print(f"Package le plus récent: {latest_package}")
-
-            # Récupérer l'état du mode hors ligne
-            try:
-                from gestvenv.core.config_manager import ConfigManager
-                config = ConfigManager()
-                offline_mode = config.get_setting("offline_mode", False)
-                use_cache = config.get_setting("use_package_cache", True)
-
-                print(f"\nMode hors ligne: {'Activé' if offline_mode else 'Désactivé'}")
-                print(f"Utilisation du cache: {'Activée' if use_cache else 'Désactivée'}")
-            except Exception as e:
-                self.print_warning(f"Impossible de récupérer la configuration: {e}")
-
-            return 0
-
-        except Exception as e:
-            self.print_error(f"Erreur lors de la récupération des informations du cache: {str(e)}")
+                self.print_error(f"Erreur inattendue: {e}")
             return 1
 
-    def cmd_cache_add(self, args: argparse.Namespace, cache_service: Any) -> int:
-        """
-        Commande pour ajouter des packages au cache - VERSION CORRIGÉE
-
-        Args:
-            args: Arguments de ligne de commande
-            cache_service: Service de cache
-
-        Returns:
-            int: Code de retour (0 = succès, 1 = erreur)
-        """
-        try:
-            self.print_header("Ajout de packages au cache")
-
-            # Récupérer la liste des packages depuis les arguments
-            packages_str = getattr(args, 'packages', '')
-
-            if not packages_str:
-                self.print_error("Aucun package spécifié")
-                return 1
-
-            # Parser et valider les packages
-            packages = [pkg.strip() for pkg in packages_str.split(',') if pkg.strip()]
-
-            if not packages:
-                self.print_error("Aucun package valide spécifié")
-                return 1
-
-            self.print_info(f"Téléchargement et mise en cache de {len(packages)} package(s)")
-
-            # Utiliser le service de cache corrigé
-            try:
-                added_count, errors = cache_service.download_and_cache_packages(packages)
-
-                # Afficher les résultats
-                if added_count > 0:
-                    self.print_success(f"{added_count} package(s) ajouté(s) au cache avec succès")
-
-                    # Afficher les erreurs s'il y en a, mais ne pas faire échouer complètement
-                    if errors:
-                        self.print_warning(f"{len(errors)} erreur(s) rencontrée(s):")
-                        for error in errors[:5]:  # Limiter à 5 erreurs affichées
-                            self.print_warning(f"  • {error}")
-                        if len(errors) > 5:
-                            self.print_warning(f"  • ... et {len(errors) - 5} autres erreurs")
-
-                    return 0  # Succès partiel acceptable
-                else:
-                    self.print_error("Aucun package n'a pu être ajouté au cache")
-
-                    # Afficher les erreurs pour diagnostic
-                    if errors:
-                        self.print_error("Erreurs rencontrées:")
-                        for error in errors[:10]:  # Limiter à 10 erreurs
-                            self.print_error(f"  • {error}")
-                        if len(errors) > 10:
-                            self.print_error(f"  • ... et {len(errors) - 10} autres erreurs")
-
-                    return 1
-
-            except Exception as e:
-                self.print_error(f"Erreur lors de l'ajout des packages au cache: {str(e)}")
-                return 1
-
-        except Exception as e:
-            self.print_error(f"Erreur générale dans la commande cache add: {str(e)}")
-            return 1
-
-    def cmd_cache_export(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour exporter le contenu du cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
-
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Export du cache")
-    
-       # Récupérer les packages disponibles
-       available_packages = cache_service.get_available_packages()
-    
-       if not available_packages:
-           self.print_error("Aucun package dans le cache à exporter.")
-           return 1
-    
-       # Déterminer le chemin de sortie
-       import json
-       from datetime import datetime
-    
-       output_path = args.output
-       if not output_path:
-           # Générer un nom de fichier par défaut
-           timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-           output_path = f"gestvenv_cache_export_{timestamp}.json"
-    
-       # Préparer les données d'export
-       export_data = {
-           "metadata": {
-               "version": "1.0",
-               "exported_at": datetime.now().isoformat(),
-               "packages_count": sum(len(versions) for versions in available_packages.values()),
-               "cache_stats": cache_service.get_cache_stats()
-           },
-           "packages": {}
-       }
-    
-       # Ajouter les packages au export
-       for package_name, versions in available_packages.items():
-           export_data["packages"][package_name] = {
-               "versions": {}
-           }
-
-           for version in versions:
-               # Récupérer les informations du package
-               package_info = cache_service.index.get(package_name, {}).get("versions", {}).get(version, {})
-
-               if package_info:
-                   export_data["packages"][package_name]["versions"][version] = {
-                       "added_at": package_info.get("added_at", ""),
-                       "dependencies": package_info.get("dependencies", []),
-                       "size": package_info.get("size", 0),
-                       "hash": package_info.get("hash", "")
-                   }
-    
-       # Écrire le fichier d'export
-       try:
-           with open(output_path, 'w', encoding='utf-8') as f:
-               json.dump(export_data, f, indent=2, ensure_ascii=False)
-
-           self.print_success(f"Export du cache réussi: {output_path}")
-
-           # Afficher les statistiques
-           stats = cache_service.get_cache_stats()
-           self.print_info(f"{stats['package_count']} package(s), {stats['version_count']} version(s) exporté(s)")
-
-           return 0
-       except Exception as e:
-           self.print_error(f"Erreur lors de l'export du cache: {str(e)}")
-           return 1
-
-    def cmd_cache_import(self, args: argparse.Namespace, cache_service: Any) -> int:
-       """
-       Commande pour importer des packages dans le cache.
-    
-       Args:
-           args: Arguments de ligne de commande
-           cache_service: Service de gestion du cache
-
-       Returns:
-           int: Code de retour (0 pour succès, autre pour erreur)
-       """
-       self.print_header("Import de packages dans le cache")
-    
-       # Vérifier si le fichier existe
-       import json
-       from pathlib import Path
-    
-       file_path = Path(args.file)
-       if not file_path.exists():
-           self.print_error(f"Le fichier d'export n'existe pas: {file_path}")
-           return 1
-    
-       # Charger le fichier d'export
-       try:
-           with open(file_path, 'r', encoding='utf-8') as f:
-               import_data = json.load(f)
-
-           # Valider le format du fichier
-           if "packages" not in import_data:
-               self.print_error("Format de fichier d'export invalide: clé 'packages' manquante")
-               return 1
-
-           # Compteurs pour les statistiques
-           total_packages = 0
-           imported_packages = 0
-
-           # Parcourir les packages à importer
-           for package_name, package_data in import_data["packages"].items():
-               if "versions" not in package_data:
-                   continue
-               
-               for version, version_data in package_data["versions"].items():
-                   total_packages += 1
-
-                   # Vérifier si le package existe déjà dans le cache
-                   if cache_service.has_package(package_name, version):
-                       self.print_info(f"Package déjà en cache: {package_name}-{version}")
-                       continue
-                   
-                   # Télécharger et ajouter le package au cache
-                   self.print_info(f"Téléchargement et mise en cache de {package_name}=={version}")
-
-                   # Créer un répertoire temporaire pour le téléchargement
-                   import tempfile
-                   import subprocess
-
-                   with tempfile.TemporaryDirectory() as temp_dir:
-                       # Télécharger le package
-                       cmd = ["pip", "download", "--dest", temp_dir, f"{package_name}=={version}"]
-
-                       try:
-                           result = subprocess.run(cmd, capture_output=True, text=True, shell=False, check=False)
-
-                           if result.returncode != 0:
-                               self.print_error(f"Échec du téléchargement du package {package_name}=={version}: {result.stderr}")
-                               continue
-                           
-                           # Trouver le fichier téléchargé
-                           downloaded_files = list(Path(temp_dir).glob(f"{package_name.replace('-', '_')}*"))
-
-                           if not downloaded_files:
-                               self.print_error(f"Aucun fichier téléchargé pour {package_name}=={version}")
-                               continue
-                           
-                           # Ajouter le package au cache
-                           dependencies = version_data.get("dependencies", [])
-                           success = cache_service.add_package(
-                               downloaded_files[0],
-                               package_name,
-                               version,
-                               dependencies
-                           )
-
-                           if success:
-                               self.print_success(f"Package mis en cache: {package_name}-{version}")
-                               imported_packages += 1
-                           else:
-                               self.print_error(f"Échec de la mise en cache du package: {package_name}-{version}")
-
-                       except Exception as e:
-                           self.print_error(f"Erreur lors de l'import du package {package_name}=={version}: {str(e)}")
-
-           if imported_packages > 0:
-               self.print_success(f"{imported_packages}/{total_packages} package(s) importé(s) avec succès")
-           else:
-               self.print_warning("Aucun package n'a été importé")
-
-           return 0
-       except Exception as e:
-           self.print_error(f"Erreur lors de l'import du cache: {str(e)}")
-           return 1
-
-    def cmd_cache_remove(self, args: argparse.Namespace, cache_service: Any) -> int:
-        """
-        Commande pour supprimer des packages spécifiques du cache
-        """
-        try:
-            self.print_header("Suppression de packages du cache")
-            
-            # Récupérer la liste des packages
-            packages_str = getattr(args, 'packages', '')
-            if not packages_str:
-                self.print_error("Aucun package spécifié")
-                return 1
-            
-            packages = [pkg.strip() for pkg in packages_str.split(',') if pkg.strip()]
-            
-            if not packages:
-                self.print_error("Aucun package valide spécifié")
-                return 1
-            
-            # Demander confirmation
-            packages_display = ", ".join(packages)
-            confirm = input(f"Êtes-vous sûr de vouloir supprimer ces packages du cache ?\n{packages_display}\n(o/N) ")
-            
-            if confirm.lower() not in ['o', 'oui', 'y', 'yes']:
-                self.print_info("Opération annulée.")
-                return 0
-            
-            # Supprimer les packages
-            removed_count = 0
-            errors = []
-            
-            for package_spec in packages:
-                try:
-                    # Parser le nom et la version du package
-                    if "==" in package_spec:
-                        package_name, version = package_spec.split("==", 1)
-                    else:
-                        package_name, version = package_spec, None
-                    
-                    package_name = package_name.strip()
-                    
-                    if version:
-                        # Supprimer une version spécifique
-                        success, message = cache_service.remove_package(package_name, version)
-                        if success:
-                            self.print_success(message)
-                            removed_count += 1
-                        else:
-                            self.print_warning(message)
-                            errors.append(message)
-                    else:
-                        # Supprimer toutes les versions du package
-                        success, message = cache_service.remove_package(package_name)
-                        if success:
-                            self.print_success(message)
-                            # Le message contient déjà le nombre de versions supprimées
-                            removed_count += 1
-                        else:
-                            self.print_warning(message)
-                            errors.append(message)
-                            
-                except Exception as e:
-                    error_msg = f"Erreur lors de la suppression de {package_spec}: {str(e)}"
-                    self.print_error(error_msg)
-                    errors.append(error_msg)
-            
-            # Résumé des résultats
-            if removed_count > 0:
-                self.print_success(f"{removed_count} package(s) supprimé(s) du cache avec succès")
-            else:
-                self.print_warning("Aucun package n'a été supprimé du cache")
-            
-            if errors:
-                self.print_warning(f"{len(errors)} erreur(s) rencontrée(s)")
-            
-            return 0 if removed_count > 0 else 1
-            
-        except Exception as e:
-            self.print_error(f"Erreur lors de la suppression des packages: {str(e)}")
-            return 1
-
-    # Fonction utilitaire pour formater la taille
-    def format_size(self, size_bytes: int) -> str:
-        """
-        Formate une taille en octets en une chaîne lisible.
-        
-        Args:
-            size_bytes: Taille en octets
-            
-        Returns:
-            str: Taille formatée
-        """
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f} KiB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f} MiB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GiB"
-
+# ===== POINT D'ENTRÉE =====
 
 def main() -> int:
-    """
-    Point d'entrée principal de GestVenv.
-    
-    Returns:
-        int: Code de retour
-    """
-    cli = CLI()
+    """Point d'entrée principal du script CLI."""
+    cli = GestVenvCLI()
     return cli.run()
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     sys.exit(main())
+
+# ===== NOTES DÉVELOPPEURS =====
+"""
+ARCHITECTURE CLI v1.1:
+
+1. GESTION DES COMMANDES:
+   - Parser modulaire avec argparse
+   - Dispatch centralisé via dictionnaire
+   - Gestion d'erreurs robuste avec codes de retour
+
+2. INTERFACE UTILISATEUR:
+   - Support couleurs avec désactivation possible
+   - Formatage JSON/texte selon contexte
+   - Messages d'erreur informatifs et contextuels
+
+3. INTÉGRATION SERVICES:
+   - Lazy loading des gestionnaires
+   - Configuration globale partagée
+   - Support backends multiples avec fallback
+
+4. COMPATIBILITÉ:
+   - Support Python 3.9+
+   - Gestion des dépendances optionnelles
+   - Migration transparente v1.0 → v1.1
+
+5. EXTENSIBILITÉ:
+   - Nouveau commandes via méthodes cmd_*
+   - Formatage personnalisable
+   - Plugin system préparé pour v1.2
+"""

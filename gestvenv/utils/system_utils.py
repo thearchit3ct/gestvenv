@@ -1,8 +1,6 @@
 """
-Utilitaires d'interaction système pour GestVenv.
-
-Ce module fournit des fonctions pour interagir avec le système d'exploitation
-de manière indépendante de la plateforme.
+Utilitaires système pour GestVenv v1.1.
+Détection plateforme, commandes, ressources système.
 """
 
 import os
@@ -10,247 +8,342 @@ import sys
 import platform
 import subprocess
 import shutil
-import logging
+import psutil
 from pathlib import Path
-from typing import Optional, List, Dict, Tuple, Any, Union
+from typing import Dict, List, Optional, Tuple, Any
+import logging
+from dataclasses import dataclass
+import json
 
-# Import des utilitaires de chemin sans créer de dépendance circulaire
-from .path_utils import get_os_name
-
-# Configuration du logger
 logger = logging.getLogger(__name__)
 
-def run_simple_command(cmd: List[str], cwd: Optional[Union[str, Path]] = None,
-                       capture_output: bool = True) -> Dict[str, Any]:
-    """
-    Exécute une commande système simple et retourne les résultats.
-    
-    Args:
-        cmd: Liste des éléments de la commande à exécuter
-        cwd: Répertoire de travail pour l'exécution
-        capture_output: Si True, capture les sorties standard et d'erreur
-        
-    Returns:
-        Dict: Dictionnaire contenant le code de retour et les sorties
-    """
-    try:
-        logger.debug(f"Exécution de la commande: {' '.join(cmd)}")
-        
-        # Convertir le répertoire en Path si c'est une chaîne
-        if cwd and isinstance(cwd, str):
-            cwd = Path(cwd)
-        
-        # Exécuter la commande
-        result = subprocess.run(
-            cmd,
-            cwd=cwd,
-            capture_output=capture_output,
-            text=True,
-            check=False,
-            env=os.environ.copy()
-        )
-        
-        # Préparer le résultat
-        output = {
-            'returncode': result.returncode,
-            'stdout': result.stdout if capture_output else "",
-            'stderr': result.stderr if capture_output else ""
-        }
-        
-        # Journaliser le résultat si nécessaire
-        if result.returncode != 0:
-            logger.debug(f"Commande terminée avec code de retour non nul: {result.returncode}")
-            if capture_output and result.stderr:
-                logger.debug(f"Erreur: {result.stderr}")
-        
-        return output
-        
-    except Exception as e:
-        logger.error(f"Erreur lors de l'exécution de la commande: {e}")
-        return {
-            'returncode': 1,
-            'stdout': "",
-            'stderr': str(e)
-        }
+@dataclass
+class SystemInfo:
+    """Informations système complètes."""
+    platform: str
+    architecture: str
+    python_version: str
+    python_executable: str
+    cpu_count: int
+    memory_total: int  # en bytes
+    memory_available: int  # en bytes
+    disk_free: int  # en bytes
+    home_directory: Path
+    temp_directory: Path
+    is_virtual_env: bool
+    is_conda_env: bool
+    shell: str
+    terminal: str
 
-def get_current_username() -> str:
-    """
-    Retourne le nom d'utilisateur courant.
+@dataclass
+class CommandInfo:
+    """Informations sur une commande système."""
+    name: str
+    path: Optional[Path]
+    version: Optional[str]
+    available: bool
+    error_message: Optional[str] = None
+
+class SystemUtils:
+    """Utilitaires système avancés."""
     
-    Returns:
-        str: Nom d'utilisateur courant
-    """
-    try:
-        import getpass
-        return getpass.getuser()
-    except Exception:
-        # Fallback alternatifs selon le système
+    @staticmethod
+    def get_system_info() -> SystemInfo:
+        """
+        Collecte les informations système complètes.
+        
+        Returns:
+            Objet SystemInfo avec toutes les informations système
+        """
         try:
-            return os.environ.get('USER') or os.environ.get('USERNAME') or 'unknown'
-        except Exception:
-            return 'unknown'
-
-def is_command_available(command: str) -> bool:
-    """
-    Vérifie si une commande est disponible dans le système.
+            # Informations de base
+            system_platform = platform.system().lower()
+            architecture = platform.machine()
+            python_version = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+            python_executable = Path(sys.executable)
+            
+            # Ressources système
+            cpu_count = psutil.cpu_count()
+            memory = psutil.virtual_memory()
+            disk = psutil.disk_usage('/')
+            
+            # Répertoires système
+            home_dir = Path.home()
+            temp_dir = Path(os.environ.get('TMPDIR', '/tmp'))
+            
+            # Détection environnements virtuels
+            is_virtual_env = hasattr(sys, 'real_prefix') or (
+                hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
+            )
+            is_conda_env = 'CONDA_DEFAULT_ENV' in os.environ
+            
+            # Shell et terminal
+            shell = os.environ.get('SHELL', 'unknown')
+            terminal = os.environ.get('TERM', 'unknown')
+            
+            return SystemInfo(
+                platform=system_platform,
+                architecture=architecture,
+                python_version=python_version,
+                python_executable=python_executable,
+                cpu_count=cpu_count,
+                memory_total=memory.total,
+                memory_available=memory.available,
+                disk_free=disk.free,
+                home_directory=home_dir,
+                temp_directory=temp_dir,
+                is_virtual_env=is_virtual_env,
+                is_conda_env=is_conda_env,
+                shell=shell,
+                terminal=terminal
+            )
+            
+        except Exception as e:
+            logger.error(f"Erreur collecte informations système: {e}")
+            raise
     
-    Args:
-        command: Nom de la commande à vérifier
+    @staticmethod
+    def check_command_available(command: str, check_version: bool = True) -> CommandInfo:
+        """
+        Vérifie la disponibilité d'une commande système.
         
-    Returns:
-        bool: True si la commande est disponible
-    """
-    os_name = get_os_name()
+        Args:
+            command: Nom de la commande
+            check_version: Vérifier la version si possible
+            
+        Returns:
+            Informations sur la commande
+        """
+        try:
+            # Rechercher la commande
+            command_path = shutil.which(command)
+            
+            if not command_path:
+                return CommandInfo(
+                    name=command,
+                    path=None,
+                    version=None,
+                    available=False,
+                    error_message=f"Commande '{command}' introuvable"
+                )
+            
+            # Obtenir la version si demandée
+            version = None
+            if check_version:
+                version = SystemUtils._get_command_version(command)
+            
+            return CommandInfo(
+                name=command,
+                path=Path(command_path),
+                version=version,
+                available=True
+            )
+            
+        except Exception as e:
+            logger.error(f"Erreur vérification commande {command}: {e}")
+            return CommandInfo(
+                name=command,
+                path=None,
+                version=None,
+                available=False,
+                error_message=str(e)
+            )
     
-    # Construire la commande selon le système
-    if os_name == "windows":
-        check_cmd = ["where", command]
-    else:
-        check_cmd = ["which", command]
-    
-    # Exécuter la commande
-    result = run_simple_command(check_cmd)
-    
-    return result['returncode'] == 0
-
-def get_terminal_size() -> Tuple[int, int]:
-    """
-    Retourne la taille du terminal (colonnes, lignes).
-    
-    Returns:
-        Tuple[int, int]: (largeur, hauteur) du terminal
-    """
-    try:
-        columns, lines = shutil.get_terminal_size()
-        return columns, lines
-    except Exception:
-        # Valeurs par défaut si impossible de déterminer
-        return 80, 24
-
-def get_python_version_info() -> Dict[str, Any]:
-    """
-    Retourne des informations sur la version Python courante.
-    
-    Returns:
-        Dict: Informations sur la version Python
-    """
-    return {
-        'version': platform.python_version(),
-        'implementation': platform.python_implementation(),
-        'build': platform.python_build(),
-        'compiler': platform.python_compiler(),
-        'is_64bit': sys.maxsize > 2**32
-    }
-
-def get_system_info() -> Dict[str, str]:
-    """
-    Retourne des informations sur le système d'exploitation.
-    
-    Returns:
-        Dict: Informations sur le système
-    """
-    return {
-        'system': platform.system(),
-        'release': platform.release(),
-        'version': platform.version(),
-        'machine': platform.machine(),
-        'processor': platform.processor()
-    }
-
-def check_program_version(program: str, args: Optional[List[str]] = None,
-                         regex: str = r'(\d+\.\d+\.\d+)') -> Optional[str]:
-    """
-    Vérifie la version d'un programme en exécutant une commande.
-    
-    Args:
-        program: Nom du programme
-        args: Arguments optionnels (par défaut: ['--version'])
-        regex: Expression régulière pour extraire la version
+    @staticmethod
+    def _get_command_version(command: str) -> Optional[str]:
+        """
+        Tente d'obtenir la version d'une commande.
         
-    Returns:
-        str ou None: Version du programme ou None si non trouvée
-    """
-    import re
-    
-    if args is None:
-        args = ['--version']
-    
-    # Exécuter la commande
-    result = run_simple_command([program] + args)
-    
-    if result['returncode'] != 0:
+        Args:
+            command: Nom de la commande
+            
+        Returns:
+            Version de la commande ou None
+        """
+        version_flags = ['--version', '-v', '-V', 'version']
+        
+        for flag in version_flags:
+            try:
+                result = subprocess.run(
+                    [command, flag],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                
+                if result.returncode == 0:
+                    # Parser la sortie pour extraire la version
+                    output = result.stdout.strip()
+                    if output:
+                        # Rechercher un motif de version (x.y.z)
+                        import re
+                        version_match = re.search(r'(\d+\.\d+(?:\.\d+)?)', output)
+                        if version_match:
+                            return version_match.group(1)
+                        return output.split('\n')[0]  # Première ligne
+                        
+            except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+                continue
+        
         return None
     
-    # Rechercher la version dans la sortie
-    output = result['stdout'] or result['stderr']
-    match = re.search(regex, output)
-    
-    if match:
-        return match.group(1)
-    
-    return None
-
-def open_file(path: Union[str, Path]) -> bool:
-    """
-    Ouvre un fichier avec l'application par défaut du système.
-    
-    Args:
-        path: Chemin du fichier à ouvrir
+    @staticmethod
+    def run_command(command: List[str], cwd: Optional[Path] = None, 
+                    timeout: int = 30, capture_output: bool = True) -> Tuple[bool, str, str]:
+        """
+        Exécute une commande système de manière sécurisée.
         
-    Returns:
-        bool: True si l'opération a réussi
-    """
-    from .path_utils import resolve_path
-    path_obj = resolve_path(path)
-    
-    if not path_obj.exists():
-        logger.error(f"Le fichier '{path}' n'existe pas")
-        return False
-    
-    os_name = get_os_name()
-    
-    try:
-        if os_name == "windows":
-            # Windows
-            os.startfile(str(path_obj))
-        elif os_name == "darwin":
-            # macOS
-            subprocess.run(["open", str(path_obj)], shell=False, check=False)
-        else:
-            # Linux et autres
-            subprocess.run(["xdg-open", str(path_obj)], shell=False, check=False)
-        return True
-    except Exception as e:
-        logger.error(f"Erreur lors de l'ouverture du fichier: {e}")
-        return False
-
-def get_free_disk_space(path: Union[str, Path]) -> int:
-    """
-    Retourne l'espace disque libre en octets pour un chemin donné.
-    
-    Args:
-        path: Chemin pour lequel vérifier l'espace disque
-        
-    Returns:
-        int: Espace disque libre en octets
-    """
-    from .path_utils import resolve_path
-    path_obj = resolve_path(path)
-    
-    try:
-        if get_os_name() == "windows":
-            import ctypes
-            free_bytes = ctypes.c_ulonglong(0)
-            ctypes.windll.kernel32.GetDiskFreeSpaceExW(
-                ctypes.c_wchar_p(str(path_obj)),
-                None, None,
-                ctypes.pointer(free_bytes)
+        Args:
+            command: Liste des arguments de la commande
+            cwd: Répertoire de travail
+            timeout: Timeout en secondes
+            capture_output: Capturer stdout/stderr
+            
+        Returns:
+            (succès, stdout, stderr)
+        """
+        try:
+            logger.debug(f"Exécution commande: {' '.join(command)}")
+            
+            result = subprocess.run(
+                command,
+                cwd=cwd,
+                timeout=timeout,
+                capture_output=capture_output,
+                text=True,
+                check=False
             )
-            return free_bytes.value
-        else:
-            # Unix systems
-            stats = os.statvfs(path_obj)
-            return stats.f_frsize * stats.f_bavail
-    except Exception as e:
-        logger.error(f"Erreur lors de la récupération de l'espace disque libre: {e}")
-        return 0
+            
+            success = result.returncode == 0
+            stdout = result.stdout if capture_output else ""
+            stderr = result.stderr if capture_output else ""
+            
+            if not success:
+                logger.warning(f"Commande échouée (code {result.returncode}): {' '.join(command)}")
+                logger.warning(f"stderr: {stderr}")
+            
+            return success, stdout, stderr
+            
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout commande: {' '.join(command)}")
+            return False, "", f"Timeout après {timeout}s"
+        except Exception as e:
+            logger.error(f"Erreur exécution commande {command}: {e}")
+            return False, "", str(e)
+    
+    @staticmethod
+    def get_environment_variables(filter_prefix: Optional[str] = None) -> Dict[str, str]:
+        """
+        Récupère les variables d'environnement avec filtrage optionnel.
+        
+        Args:
+            filter_prefix: Préfixe pour filtrer les variables
+            
+        Returns:
+            Dictionnaire des variables d'environnement
+        """
+        env_vars = dict(os.environ)
+        
+        if filter_prefix:
+            env_vars = {
+                key: value for key, value in env_vars.items()
+                if key.startswith(filter_prefix)
+            }
+        
+        return env_vars
+    
+    @staticmethod
+    def is_admin() -> bool:
+        """
+        Vérifie si l'utilisateur a les privilèges administrateur.
+        
+        Returns:
+            True si administrateur, False sinon
+        """
+        try:
+            if sys.platform == "win32":
+                import ctypes
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
+            else:
+                return os.geteuid() == 0
+        except Exception:
+            return False
+    
+    @staticmethod
+    def get_python_installations() -> List[Dict[str, Any]]:
+        """
+        Détecte les installations Python disponibles.
+        
+        Returns:
+            Liste des installations Python trouvées
+        """
+        installations = []
+        
+        # Python actuel
+        current_python = {
+            "version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
+            "executable": str(Path(sys.executable)),
+            "is_current": True,
+            "is_virtual_env": hasattr(sys, 'real_prefix') or (
+                hasattr(sys, 'base_prefix') and sys.base_prefix != sys.prefix
+            )
+        }
+        installations.append(current_python)
+        
+        # Rechercher d'autres installations
+        python_commands = ['python', 'python3', 'python3.9', 'python3.10', 'python3.11', 'python3.12']
+        
+        for cmd in python_commands:
+            cmd_info = SystemUtils.check_command_available(cmd)
+            if cmd_info.available and cmd_info.path != Path(sys.executable):
+                # Obtenir la version complète
+                success, stdout, _ = SystemUtils.run_command([cmd, '--version'])
+                if success and stdout:
+                    version_str = stdout.strip().split()[-1]
+                    installations.append({
+                        "version": version_str,
+                        "executable": str(cmd_info.path),
+                        "is_current": False,
+                        "is_virtual_env": False
+                    })
+        
+        # Éliminer les doublons
+        seen_paths = set()
+        unique_installations = []
+        for install in installations:
+            if install["executable"] not in seen_paths:
+                seen_paths.add(install["executable"])
+                unique_installations.append(install)
+        
+        return unique_installations
+    
+    @staticmethod
+    def get_disk_usage(path: Union[str, Path]) -> Dict[str, int]:
+        """
+        Obtient l'utilisation disque pour un chemin.
+        
+        Args:
+            path: Chemin à analyser
+            
+        Returns:
+            Dictionnaire avec total, used, free en bytes
+        """
+        try:
+            usage = psutil.disk_usage(str(path))
+            return {
+                "total": usage.total,
+                "used": usage.used,
+                "free": usage.free
+            }
+        except Exception as e:
+            logger.error(f"Erreur analyse disque {path}: {e}")
+            return {"total": 0, "used": 0, "free": 0}
+
+# Fonctions utilitaires pour compatibilité
+def get_system_info() -> SystemInfo:
+    """Fonction utilitaire pour obtenir les informations système."""
+    return SystemUtils.get_system_info()
+
+def check_command_available(command: str) -> CommandInfo:
+    """Fonction utilitaire pour vérifier une commande."""
+    return SystemUtils.check_command_available(command)

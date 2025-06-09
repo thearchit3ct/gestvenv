@@ -1,0 +1,368 @@
+classDiagram
+    %% ========== CORE MODELS ==========
+    class PackageInfo {
+        +String name
+        +String version
+        +List~String~ required_by
+        +List~String~ dependencies
+        +to_dict() Dict
+        +from_dict(data) PackageInfo
+        +full_name String
+    }
+
+    class EnvironmentHealth {
+        +Boolean exists
+        +Boolean python_available
+        +Boolean pip_available
+        +Boolean activation_script_exists
+        +to_dict() Dict
+        +from_dict(data) EnvironmentHealth
+    }
+
+    class EnvironmentInfo {
+        +String name
+        +Path path
+        +String python_version
+        +DateTime created_at
+        +List~String~ packages
+        +List~PackageInfo~ packages_installed
+        +EnvironmentHealth health
+        +Boolean active
+        +Dict metadata
+        +to_dict() Dict
+        +from_dict(data) EnvironmentInfo
+        +is_healthy Boolean
+    }
+
+    class ConfigInfo {
+        +Dict~String,EnvironmentInfo~ environments
+        +String active_env
+        +String default_python
+        +Dict settings
+        +to_dict() Dict
+        +from_dict(data) ConfigInfo
+    }
+
+    %% ========== CORE MANAGERS ==========
+    class EnvironmentManager {
+        -ConfigManager config_manager
+        -EnvironmentService env_service
+        -PackageService pkg_service
+        -SystemService sys_service
+        +create_environment(name, python_version, packages, path, offline, requirements_file, description, metadata) Tuple~Boolean,String~
+        +activate_environment(name) Tuple~Boolean,String~
+        +deactivate_environment() Tuple~Boolean,String~
+        +delete_environment(name, force) Tuple~Boolean,String~
+        +list_environments() List~Dict~
+        +get_environment_info(name) Dict
+        +install_packages(env_name, packages, requirements_file, editable, dev, offline) Tuple~Boolean,String~
+        +uninstall_packages(env_name, packages, with_dependencies, force) Tuple~Boolean,String~
+        +clone_environment(source_name, target_name, include_packages, description) Tuple~Boolean,String~
+        +export_environment(name, output_path, format_type, metadata, include_metadata, production_ready) Tuple~Boolean,String~
+        +import_environment(input_path, name, merge, resolve_conflicts) Tuple~Boolean,String~
+        +update_packages(env_name, packages, all_packages, offline) Tuple~Boolean,String~
+        +check_for_updates(env_name) Tuple~Boolean,List,String~
+        +diagnose_environment(env_name, full_check) Tuple~Boolean,Dict~
+        +repair_environment(env_name, auto_fix) Tuple~Boolean,List~
+        +get_system_info() Dict
+        +run_command_in_environment(env_name, command, env_vars, timeout, background) Tuple~Int,String,String~
+    }
+
+    class ConfigManager {
+        +Path config_path
+        +Path backup_dir
+        +ConfigInfo config
+        +get_environment(env_name) EnvironmentInfo
+        +get_all_environments() Dict~String,EnvironmentInfo~
+        +add_environment(env_info) Boolean
+        +update_environment(env_info) Boolean
+        +remove_environment(env_name) Boolean
+        +environment_exists(env_name) Boolean
+        +get_active_environment() String
+        +set_active_environment(env_name) Boolean
+        +clear_active_environment() Boolean
+        +get_default_python() String
+        +set_default_python(python_command) Boolean
+        +get_setting(key, default) Any
+        +set_setting(key, value) Boolean
+        +export_environment_config(env_name, output_file, add_metadata) Union~String,Boolean~
+        +import_environment_config(config_file, env_name, force) Dict
+        +create_backup(backup_name) Tuple~Boolean,String~
+        +restore_from_backup(backup_name) Tuple~Boolean,String~
+        +validate_integrity() Tuple~Boolean,List~
+    }
+
+    %% ========== SERVICES ==========
+    class EnvironmentService {
+        +String system
+        +validate_environment_name(name) Tuple~Boolean,String~
+        +validate_python_version(version) Tuple~Boolean,String~
+        +validate_packages_list(packages) Tuple~Boolean,List,String~
+        +get_environment_path(name, custom_path) Path
+        +get_python_executable(name, env_path) Path
+        +get_pip_executable(name, env_path) Path
+        +get_activation_script_path(name, env_path) Path
+        +create_environment(name, python_cmd, env_path) Tuple~Boolean,String~
+        +delete_environment(env_path) Tuple~Boolean,String~
+        +check_environment_exists(env_path) Boolean
+        +check_environment_health(name, env_path) EnvironmentHealth
+        +is_safe_to_delete(name, env_path) Tuple~Boolean,String~
+        +create_temporary_environment(name, python_cmd, lifetime, auto_cleanup) Tuple~Boolean,String,Path~
+        +cleanup_temporary_environments() Tuple~Int,List~
+        +create_environment_snapshot(name, env_path, snapshot_name) Tuple~Boolean,String~
+        +restore_environment_from_snapshot(snapshot_name, target_name, target_path) Tuple~Boolean,String~
+        +compare_environments(name1, env_path1, name2, env_path2) Dict
+        +migrate_environment(name, old_path, new_path, preserve_old) Tuple~Boolean,String~
+    }
+
+    class PackageService {
+        -EnvironmentService env_service
+        -SystemService sys_service
+        -CacheService cache_service
+        +Boolean offline_mode
+        +Boolean use_cache
+        +install_packages(env_name, packages, upgrade, offline, requirements_file, editable, dev) Tuple~Boolean,String~
+        +uninstall_packages(env_name, packages, with_dependencies, force) Tuple~Boolean,String~
+        +update_packages(env_name, packages, all_packages, offline) Tuple~Boolean,String~
+        +list_installed_packages(env_name) List~Dict~
+        +show_package_info(package_name, env_name) Dict
+        +export_requirements(env_name, output_path) Tuple~Boolean,String~
+        +install_from_requirements(env_name, requirements_path, offline) Tuple~Boolean,String~
+        +check_for_updates(env_name) List~Dict~
+        +check_package_dependencies(env_name, packages) Dict~String,List~
+        +check_offline_availability(packages) Dict~String,Boolean~
+    }
+
+    class SystemService {
+        +OSType os_type
+        +String system
+        +Dict~Int,Popen~ _tracked_processes
+        +run_command(cmd, cwd, capture_output, check, timeout, env_vars, background, shell) CommandResult
+        +get_process_status(pid) ProcessInfo
+        +kill_process(pid, force) Boolean
+        +get_activation_command(env_name, env_path) String
+        +run_in_environment(env_name, env_path, command, timeout, env_vars, background) CommandResult
+        +check_python_version(python_cmd) String
+        +get_available_python_versions() List~Dict~
+        +get_system_info(use_cache) SystemInfo
+        +check_command_exists(command) Boolean
+        +create_directory(path, parents, exist_ok) Boolean
+        +get_free_disk_space(path) Int
+        +get_terminal_size() Tuple~Int,Int~
+        +check_permissions(path) Dict~String,Boolean~
+        +fix_permissions(path, recursive) Boolean
+    }
+
+    class CacheService {
+        +Path cache_dir
+        +Path metadata_dir
+        +Path packages_dir
+        +Path requirements_dir
+        +Dict index
+        +download_and_cache_packages(packages) Tuple~Int,List~
+        +add_package(package_path, package_name, version, dependencies) Boolean
+        +get_package(package_name, version) Path
+        +has_package(package_name, version) Boolean
+        +get_available_packages() Dict~String,List~
+        +clean_cache(max_age_days, max_size_mb, keep_min_versions) Tuple~Int,Int~
+        +remove_package(package_name, version) Tuple~Boolean,String~
+        +get_cache_stats() Dict
+        +verify_integrity() Dict
+        +health_check() Dict
+        +optimize_cache() Dict
+        +export_cache(output_path, include_packages) Dict
+        +import_cache(import_path, merge) Dict
+        +rebuild_index() Dict
+    }
+
+    class DiagnosticService {
+        -EnvironmentService env_service
+        -PackageService pkg_service
+        -SystemService sys_service
+        -CacheService cache_service
+        -ConfigManager config_manager
+        +Path logs_dir
+        +diagnose_environment(env_name, full_check) Dict
+        +repair_environment(env_name, auto_fix) Tuple~Boolean,List~
+        +get_system_diagnosis() Dict
+        +verify_cache_integrity() Dict
+        +get_diagnostic_logs(env_name, days) List~Dict~
+        +export_diagnostic_logs(output_path, env_name) Boolean
+    }
+
+    %% ========== UTILITY CLASSES ==========
+    class LoggingUtils {
+        <<utility>>
+        +GestVenvLogManager log_manager
+        +setup_logging(debug, structured, quiet, logs_dir)
+        +get_logger(name, category) Logger
+        +log_operation(operation, environment, duration, success, category, details)
+        +log_package_operation(operation, package_name, version, environment, success, cache_hit)
+        +log_error(error, operation, environment, category, context)
+    }
+
+    class PathUtils {
+        <<utility>>
+        +get_os_name() String
+        +expand_user_path(path_str) Path
+        +resolve_path(path_str) Path
+        +ensure_dir_exists(path) Path
+        +get_default_data_dir() Path
+        +get_normalized_path(path) String
+    }
+
+    class SystemUtils {
+        <<utility>>
+        +run_simple_command(cmd, cwd, capture_output) Dict
+        +get_current_username() String
+        +is_command_available(command) Boolean
+        +get_terminal_size() Tuple~Int,Int~
+    }
+
+    class ValidationUtils {
+        <<utility>>
+        +is_valid_name(name, min_length, max_length, pattern) Tuple~Boolean,String~
+        +is_valid_path(path, must_exist, must_be_dir, must_be_file) Tuple~Boolean,Path,String~
+        +is_safe_directory(directory, forbidden_paths) Tuple~Boolean,String~
+        +matches_pattern(text, pattern) Boolean
+        +parse_version_string(version) Tuple~Int~
+    }
+
+    class FormatUtils {
+        <<utility>>
+        +format_timestamp(timestamp, format_str) String
+        +truncate_string(s, max_length, suffix) String
+        +format_list_as_table(data, columns, header, padding) List~String~
+        +get_color_for_terminal(color_name) String
+        +format_size(size_bytes) String
+        +format_duration(seconds) String
+    }
+
+    %% ========== DATA CLASSES ==========
+    class CommandResult {
+        +Int returncode
+        +String stdout
+        +String stderr
+        +Float duration
+        +List~String~ command
+        +Path cwd
+        +Dict env_vars
+        +Int process_id
+        +ProcessState state
+    }
+
+    class SystemInfo {
+        +OSType os_type
+        +String os_name
+        +String os_version
+        +String architecture
+        +String python_version
+        +String hostname
+        +Path home_directory
+        +Int cpu_count
+        +Int memory_total
+        +TimeDelta uptime
+    }
+
+    class ProcessInfo {
+        +Int pid
+        +String name
+        +List~String~ command
+        +String status
+        +Float cpu_percent
+        +Float memory_percent
+        +DateTime create_time
+    }
+
+    %% ========== ENUMS ==========
+    class OSType {
+        <<enumeration>>
+        WINDOWS
+        LINUX
+        MACOS
+        UNKNOWN
+    }
+
+    class ProcessState {
+        <<enumeration>>
+        RUNNING
+        COMPLETED
+        FAILED
+        TIMEOUT
+        KILLED
+    }
+
+    class LogLevel {
+        <<enumeration>>
+        TRACE
+        DEBUG
+        INFO
+        WARNING
+        ERROR
+        CRITICAL
+    }
+
+    class LogCategory {
+        <<enumeration>>
+        GENERAL
+        ENVIRONMENT
+        PACKAGE
+        CACHE
+        DIAGNOSTIC
+        SYSTEM
+        CLI
+    }
+
+    %% ========== RELATIONSHIPS ==========
+    
+    %% Core Models Relationships
+    EnvironmentInfo --> EnvironmentHealth : contains
+    EnvironmentInfo --> PackageInfo : contains list
+    ConfigInfo --> EnvironmentInfo : contains map
+
+    %% Core Managers Relationships
+    EnvironmentManager --> ConfigManager : uses
+    EnvironmentManager --> EnvironmentService : uses
+    EnvironmentManager --> PackageService : uses
+    EnvironmentManager --> SystemService : uses
+    ConfigManager --> EnvironmentInfo : manages
+    ConfigManager --> ConfigInfo : manages
+
+    %% Services Relationships
+    PackageService --> EnvironmentService : uses
+    PackageService --> SystemService : uses
+    PackageService --> CacheService : uses
+    DiagnosticService --> EnvironmentService : uses
+    DiagnosticService --> PackageService : uses
+    DiagnosticService --> SystemService : uses
+    DiagnosticService --> CacheService : uses
+    DiagnosticService --> ConfigManager : uses
+
+    %% Service to Model Relationships
+    EnvironmentService --> EnvironmentHealth : creates
+    EnvironmentService --> EnvironmentInfo : works with
+    SystemService --> CommandResult : creates
+    SystemService --> SystemInfo : creates
+    SystemService --> ProcessInfo : creates
+
+    %% Enum Relationships
+    SystemService --> OSType : uses
+    SystemService --> ProcessState : uses
+    CommandResult --> ProcessState : uses
+    LoggingUtils --> LogLevel : uses
+    LoggingUtils --> LogCategory : uses
+
+    %% Utility Dependencies
+    EnvironmentManager --> PathUtils : uses
+    EnvironmentManager --> ValidationUtils : uses
+    EnvironmentManager --> LoggingUtils : uses
+    ConfigManager --> PathUtils : uses
+    ConfigManager --> FormatUtils : uses
+    EnvironmentService --> PathUtils : uses
+    EnvironmentService --> ValidationUtils : uses
+    PackageService --> PathUtils : uses
+    SystemService --> SystemUtils : uses
+    CacheService --> PathUtils : uses
+    CacheService --> FormatUtils : uses
+    DiagnosticService --> PathUtils : uses
+    DiagnosticService --> LoggingUtils : uses

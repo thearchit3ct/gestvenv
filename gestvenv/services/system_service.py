@@ -1,309 +1,621 @@
 """
-Service pour les interactions avec le système d'exploitation.
+SystemService - Service d'interactions avec le système d'exploitation.
 
-Ce module fournit les fonctionnalités pour interagir avec le système d'exploitation,
-exécuter des commandes et récupérer des informations système.
+Ce service centralise toutes les interactions avec le système :
+- Exécution de commandes shell
+- Détection et validation des versions Python
+- Opérations sur les processus
+- Informations système et environnement
+- Activation d'environnements virtuels
+
+Il fournit une interface unifiée et sécurisée pour les opérations système
+avec gestion d'erreurs, timeouts et logging complet.
 """
 
+import logging
 import os
 import platform
+import shutil
 import subprocess
-import logging
+import sys
+import time
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Any, Tuple, Union
+from dataclasses import dataclass
+from enum import Enum
 
-# Configuration du logger
 logger = logging.getLogger(__name__)
 
+
+class CommandResult:
+    """Résultat d'une commande système."""
+    
+    def __init__(self, returncode: int, stdout: str = "", stderr: str = "", 
+                 duration: float = 0.0, command: List[str] = None):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+        self.duration = duration
+        self.command = command or []
+    
+    @property
+    def success(self) -> bool:
+        """True si la commande a réussi."""
+        return self.returncode == 0
+    
+    @property
+    def failed(self) -> bool:
+        """True si la commande a échoué."""
+        return self.returncode != 0
+    
+    def __repr__(self) -> str:
+        return f"CommandResult(returncode={self.returncode}, duration={self.duration:.2f}s)"
+
+
+@dataclass
+class PythonVersion:
+    """Informations sur une version Python détectée."""
+    executable: Path
+    version: str
+    version_info: Tuple[int, int, int]
+    is_virtual: bool = False
+    location: Optional[Path] = None
+    
+    @property
+    def version_string(self) -> str:
+        """Version formatée (ex: '3.11.5')."""
+        return self.version
+    
+    @property
+    def major_minor(self) -> str:
+        """Version majeure.mineure (ex: '3.11')."""
+        return f"{self.version_info[0]}.{self.version_info[1]}"
+    
+    def is_compatible_with(self, min_version: Tuple[int, int, int]) -> bool:
+        """Vérifie la compatibilité avec une version minimum."""
+        return self.version_info >= min_version
+
+
+@dataclass 
+class SystemInfo:
+    """Informations sur le système."""
+    platform: str
+    architecture: str
+    python_version: str
+    python_executable: Path
+    shell: Optional[str] = None
+    environment_variables: Optional[Dict[str, str]] = None
+
+
 class SystemService:
-    """Service pour les interactions avec le système d'exploitation."""
+    """
+    Service pour les interactions avec le système d'exploitation.
     
-    def __init__(self) -> None:
-        """Initialise le service système."""
-        self.system = platform.system().lower()  # 'windows', 'linux', 'darwin' (macOS)
-        
-        # Initialiser le service d'environnement sans créer d'imports circulaires
-        from .environment_service import EnvironmentService
-        self.env_service = EnvironmentService()
+    Responsabilités:
+    - Exécution sécurisée de commandes
+    - Détection et validation Python
+    - Gestion des processus et environnements
+    - Informations système
+    """
     
-    def run_command(self, cmd: List[str], cwd: Optional[Path] = None,
-                  capture_output: bool = True, check: bool = False) -> Dict[str, Any]:
+    def __init__(self, config: Optional[Dict[str, Any]] = None):
         """
-        Exécute une commande système.
+        Initialise le service système.
         
         Args:
-            cmd: Liste des éléments de la commande à exécuter.
-            cwd: Répertoire de travail pour l'exécution.
-            capture_output: Si True, capture les sorties standard et d'erreur.
-            check: Si True, lève une exception en cas d'erreur.
+            config: Configuration optionnelle du service
+        """
+        self.config = config or {}
+        
+        # Configuration par défaut
+        self.default_timeout = self.config.get('default_timeout', 30)
+        self.max_timeout = self.config.get('max_timeout', 300)
+        self.shell_detection = self.config.get('shell_detection', True)
+        self.cache_python_versions = self.config.get('cache_python_versions', True)
+        
+        # Cache pour les versions Python détectées
+        self._python_versions_cache = None
+        self._cache_timestamp = 0
+        self._cache_ttl = 300  # 5 minutes
+        
+        # Détection du shell par défaut
+        self.default_shell = self._detect_default_shell()
+        
+        logger.debug(f"SystemService initialisé avec config: {self.config}")
+    
+    def run_command(self, command: Union[str, List[str]], 
+                   cwd: Optional[Path] = None,
+                   env: Optional[Dict[str, str]] = None,
+                   timeout: Optional[int] = None,
+                   capture_output: bool = True,
+                   text: bool = True,
+                   shell: bool = False,
+                   input_data: Optional[str] = None) -> CommandResult:
+        """
+        Exécute une commande système avec gestion complète.
+        
+        Args:
+            command: Commande à exécuter (string ou liste)
+            cwd: Répertoire de travail
+            env: Variables d'environnement supplémentaires
+            timeout: Timeout en secondes
+            capture_output: Capturer stdout/stderr
+            text: Mode texte pour les sorties
+            shell: Utiliser le shell système
+            input_data: Données à envoyer en entrée
             
         Returns:
-            Dictionnaire contenant le code de retour et les sorties.
+            CommandResult: Résultat complet de la commande
         """
+        start_time = time.time()
+        timeout = timeout or self.default_timeout
+        
+        # Préparation de la commande
+        if isinstance(command, str):
+            if not shell:
+                # Conversion en liste si pas de shell
+                command = command.split()
+            cmd_for_log = command
+        else:
+            cmd_for_log = ' '.join(command)
+        
+        # Préparation de l'environnement
+        final_env = os.environ.copy()
+        if env:
+            final_env.update(env)
+        
+        logger.debug(f"Exécution commande: {cmd_for_log}")
+        logger.debug(f"CWD: {cwd}, Timeout: {timeout}s, Shell: {shell}")
+        
         try:
-            logger.debug(f"Exécution de la commande: {' '.join(cmd)}")
-            
-            # Configuration de l'environnement pour subprocess
-            env = os.environ.copy()
-            
-            # Exécuter la commande
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
+            # Exécution de la commande
+            process = subprocess.run(
+                command,
+                cwd=str(cwd) if cwd else None,
+                env=final_env,
+                timeout=timeout,
                 capture_output=capture_output,
-                text=True,
-                check=check,
-                env=env
+                text=text,
+                shell=shell,
+                input=input_data
             )
             
-            # Préparer le résultat
-            output = {
-                'returncode': result.returncode,
-                'stdout': result.stdout if capture_output else "",
-                'stderr': result.stderr if capture_output else ""
-            }
+            duration = time.time() - start_time
             
-            # Journaliser le résultat
-            if result.returncode != 0:
-                logger.warning(f"Commande terminée avec code de retour non nul: {result.returncode}")
-                if result.stderr and capture_output:
-                    logger.warning(f"Erreur: {result.stderr}")
+            result = CommandResult(
+                returncode=process.returncode,
+                stdout=process.stdout if capture_output else "",
+                stderr=process.stderr if capture_output else "",
+                duration=duration,
+                command=command if isinstance(command, list) else [command]
+            )
+            
+            if result.success:
+                logger.debug(f"Commande réussie en {duration:.2f}s")
             else:
-                logger.debug("Commande exécutée avec succès")
+                logger.warning(f"Commande échouée (code {result.returncode}) en {duration:.2f}s")
+                if result.stderr:
+                    logger.debug(f"Stderr: {result.stderr[:200]}...")
             
-            return output
+            return result
+            
+        except subprocess.TimeoutExpired:
+            duration = time.time() - start_time
+            logger.error(f"Timeout de commande après {duration:.2f}s: {cmd_for_log}")
+            return CommandResult(
+                returncode=-1,
+                stderr=f"Timeout après {timeout}s",
+                duration=duration,
+                command=command if isinstance(command, list) else [command]
+            )
+            
+        except subprocess.CalledProcessError as e:
+            duration = time.time() - start_time
+            logger.error(f"Erreur de commande: {e}")
+            return CommandResult(
+                returncode=e.returncode,
+                stdout=e.stdout if hasattr(e, 'stdout') and e.stdout else "",
+                stderr=e.stderr if hasattr(e, 'stderr') and e.stderr else str(e),
+                duration=duration,
+                command=command if isinstance(command, list) else [command]
+            )
             
         except Exception as e:
-            logger.error(f"Erreur lors de l'exécution de la commande: {str(e)}")
-            return {
-                'returncode': 1,
-                'stdout': "",
-                'stderr': str(e)
-            }
-    
-    def get_activation_command(self, env_name: str, env_path: Path) -> Optional[str]:
-        """
-        Obtient la commande d'activation d'un environnement virtuel.
-        
-        Args:
-            env_name: Nom de l'environnement virtuel.
-            env_path: Chemin vers l'environnement virtuel.
-            
-        Returns:
-            Commande d'activation ou None si non disponible.
-        """
-        # Obtenir le chemin du script d'activation
-        activation_script = self.env_service.get_activation_script_path(env_name, env_path)
-        
-        if not activation_script:
-            return None
-        
-        # Générer la commande selon le système d'exploitation
-        if self.system == "windows":
-            # Sous Windows, on peut exécuter directement le script batch
-            return f'"{activation_script}"'
-        else:
-            # Sous Unix (Linux, macOS), il faut sourcer le script
-            return f'source "{activation_script}"'
-    
-    def run_in_environment(self, env_name: str, env_path: Path, 
-                         command: List[str]) -> Tuple[int, str, str]:
-        """
-        Exécute une commande dans un environnement virtuel spécifique.
-        
-        Args:
-            env_name: Nom de l'environnement virtuel.
-            env_path: Chemin vers l'environnement virtuel.
-            command: Commande à exécuter.
-            
-        Returns:
-            Tuple contenant (code de retour, sortie standard, sortie d'erreur).
-        """
-        # Obtenir l'exécutable Python de l'environnement
-        python_exe = self.env_service.get_python_executable(env_name, env_path)
-        
-        if not python_exe:
-            logger.error(f"Impossible de trouver l'exécutable Python pour l'environnement '{env_name}'")
-            return 1, "", f"Environnement '{env_name}' introuvable ou corrompu"
-        
-        # Préparer la commande avec l'exécutable Python de l'environnement
-        cmd = [str(python_exe)] + command
-        
-        # Exécuter la commande
-        result = self.run_command(cmd)
-        
-        return result['returncode'], result['stdout'], result['stderr']
+            duration = time.time() - start_time
+            logger.error(f"Erreur inattendue lors de l'exécution: {e}")
+            return CommandResult(
+                returncode=-2,
+                stderr=f"Erreur interne: {str(e)}",
+                duration=duration,
+                command=command if isinstance(command, list) else [command]
+            )
     
     def check_python_version(self, python_cmd: str) -> Optional[str]:
         """
-        Vérifie la version de Python pour une commande donnée.
+        Vérifie et retourne la version d'un exécutable Python.
         
         Args:
-            python_cmd: Commande Python à vérifier (ex: 'python', 'python3.9').
+            python_cmd: Commande Python à tester
             
         Returns:
-            Version de Python ou None si non disponible.
+            Optional[str]: Version Python ou None si invalide
         """
         try:
-            # Exécuter la commande pour obtenir la version Python
-            cmd = [python_cmd, "--version"]
-            result = self.run_command(cmd)
+            result = self.run_command([
+                python_cmd, '-c', 
+                'import sys; print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")'
+            ], timeout=10)
             
-            if result['returncode'] != 0:
-                logger.warning(f"La commande '{python_cmd}' n'est pas disponible: {result['stderr']}")
+            if result.success:
+                version = result.stdout.strip()
+                logger.debug(f"Python {python_cmd} version: {version}")
+                return version
+            else:
+                logger.debug(f"Impossible de déterminer la version de {python_cmd}: {result.stderr}")
+                return None
+                
+        except Exception as e:
+            logger.debug(f"Erreur lors de la vérification de {python_cmd}: {e}")
+            return None
+    
+    def get_python_version_info(self, python_cmd: str) -> Optional[PythonVersion]:
+        """
+        Obtient les informations détaillées sur une version Python.
+        
+        Args:
+            python_cmd: Commande Python à analyser
+            
+        Returns:
+            Optional[PythonVersion]: Informations détaillées ou None
+        """
+        try:
+            # Récupération des informations de base
+            result = self.run_command([
+                python_cmd, '-c',
+                '''
+import sys
+import os
+print(f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}")
+print(f"{sys.version_info.major},{sys.version_info.minor},{sys.version_info.micro}")
+print("1" if hasattr(sys, "base_prefix") and sys.base_prefix != sys.prefix else "0")
+print(sys.executable)
+'''
+            ], timeout=10)
+            
+            if not result.success:
                 return None
             
-            # Extraire la version du format "Python X.Y.Z"
-            version_output = result['stdout'].strip()
+            lines = result.stdout.strip().split('\n')
+            if len(lines) < 4:
+                return None
             
-            # Si la sortie est vide (ancien comportement de Python 2.x), vérifier stderr
-            if not version_output and result['stderr']:
-                version_output = result['stderr'].strip()
+            version_str = lines[0]
+            version_parts = [int(x) for x in lines[1].split(',')]
+            is_virtual = lines[2] == "1"
+            executable_path = Path(lines[3])
             
-            # Extraire la version
-            import re
-            match = re.search(r'Python (\d+\.\d+\.\d+)', version_output)
-            if match:
-                version = match.group(1)
-                logger.debug(f"Version de Python pour '{python_cmd}': {version}")
-                return version
-            
-            return None
+            return PythonVersion(
+                executable=executable_path,
+                version=version_str,
+                version_info=tuple(version_parts),
+                is_virtual=is_virtual,
+                location=executable_path.parent
+            )
             
         except Exception as e:
-            logger.error(f"Erreur lors de la vérification de la version Python: {str(e)}")
+            logger.debug(f"Erreur lors de l'analyse de {python_cmd}: {e}")
             return None
     
-    def get_available_python_versions(self) -> List[Dict[str, str]]:
+    def get_available_python_versions(self, refresh_cache: bool = False) -> List[PythonVersion]:
         """
-        Récupère les versions Python disponibles sur le système.
+        Détecte toutes les versions Python disponibles sur le système.
         
+        Args:
+            refresh_cache: Forcer le rafraîchissement du cache
+            
         Returns:
-            Liste des versions Python disponibles avec commande et version.
+            List[PythonVersion]: Liste des versions Python trouvées
         """
-        python_commands = ["python", "python3"]
+        # Vérification du cache
+        current_time = time.time()
+        if (not refresh_cache and self.cache_python_versions and 
+            self._python_versions_cache is not None and
+            current_time - self._cache_timestamp < self._cache_ttl):
+            return self._python_versions_cache
         
-        # Ajouter des versions spécifiques à vérifier
-        for minor in range(9, 14):  # Python 3.9 à 3.13
-            python_commands.append(f"python3.{minor}")
+        logger.info("Détection des versions Python disponibles...")
+        versions = []
         
-        # Sous Windows, vérifier aussi 'py' avec différents sélecteurs
-        if self.system == "windows":
-            python_commands.extend(["py", "py -3"])
-            for minor in range(7, 14):
-                python_commands.append(f"py -3.{minor}")
+        # Commandes Python communes à tester
+        python_commands = [
+            'python', 'python3', 'python3.12', 'python3.11', 'python3.10', 
+            'python3.9', 'python3.8', 'python3.7', 'python2', 'python2.7',
+            'py'  # Windows Python Launcher
+        ]
         
-        available_versions = []
+        # Ajout des versions depuis PATH
+        if sys.platform.startswith('win'):
+            # Windows: chercher dans PATH et répertoires communs
+            python_commands.extend(self._find_windows_pythons())
+        else:
+            # Unix: chercher dans les emplacements standards
+            python_commands.extend(self._find_unix_pythons())
         
+        # Test de chaque commande
+        seen_executables = set()
         for cmd in python_commands:
-            version = self.check_python_version(cmd)
-            if version:
-                available_versions.append({
-                    "command": cmd,
-                    "version": version
-                })
+            try:
+                python_info = self.get_python_version_info(cmd)
+                if python_info and python_info.executable not in seen_executables:
+                    versions.append(python_info)
+                    seen_executables.add(python_info.executable)
+                    logger.debug(f"Python trouvé: {cmd} -> {python_info.version} ({python_info.executable})")
+            except Exception as e:
+                logger.debug(f"Erreur lors du test de {cmd}: {e}")
+                continue
         
-        return available_versions
+        # Tri par version (plus récente en premier)
+        versions.sort(key=lambda v: v.version_info, reverse=True)
+        
+        # Mise en cache
+        if self.cache_python_versions:
+            self._python_versions_cache = versions
+            self._cache_timestamp = current_time
+        
+        logger.info(f"Détection terminée: {len(versions)} version(s) Python trouvée(s)")
+        return versions
     
-    def get_system_info(self) -> Dict[str, str]:
-        """
-        Récupère des informations sur le système d'exploitation.
+    def _find_windows_pythons(self) -> List[str]:
+        """Trouve les installations Python sur Windows."""
+        commands = []
         
-        Returns:
-            Dictionnaire d'informations système.
-        """
-        system_info = {
-            "system": platform.system(),
-            "release": platform.release(),
-            "version": platform.version(),
-            "machine": platform.machine(),
-            "processor": platform.processor(),
-            "python_version": platform.python_version(),
-        }
+        # Python Launcher
+        if shutil.which('py'):
+            # Lister les versions disponibles via py
+            try:
+                result = self.run_command(['py', '-0'], timeout=5)
+                if result.success:
+                    for line in result.stdout.split('\n'):
+                        line = line.strip()
+                        if line and not line.startswith('-'):
+                            # Format: -3.11-64 ou -3.11
+                            if line.startswith('-'):
+                                version = line.split('-')[1].split('-')[0]
+                                commands.append(f'py -3.{version}')
+            except Exception:
+                pass
         
-        return system_info
+        # Répertoires d'installation communs
+        common_paths = [
+            Path(os.environ.get('LOCALAPPDATA', '')) / 'Programs' / 'Python',
+            Path('C:/Python*'),
+            Path('C:/Program Files/Python*'),
+            Path('C:/Program Files (x86)/Python*')
+        ]
+        
+        for path_pattern in common_paths:
+            try:
+                if '*' in str(path_pattern):
+                    # Utilisation de glob pour les patterns
+                    parent = path_pattern.parent
+                    pattern = path_pattern.name
+                    if parent.exists():
+                        for python_dir in parent.glob(pattern):
+                            python_exe = python_dir / 'python.exe'
+                            if python_exe.exists():
+                                commands.append(str(python_exe))
+                else:
+                    python_exe = path_pattern / 'python.exe'
+                    if python_exe.exists():
+                        commands.append(str(python_exe))
+            except Exception:
+                continue
+        
+        return commands
     
-    def check_command_exists(self, command: str) -> bool:
+    def _find_unix_pythons(self) -> List[str]:
+        """Trouve les installations Python sur Unix/Linux/macOS."""
+        commands = []
+        
+        # Répertoires standards
+        standard_paths = [
+            '/usr/bin',
+            '/usr/local/bin',
+            '/opt/python*/bin',
+            '/opt/local/bin',  # MacPorts
+            '/usr/local/Cellar/python*/*/bin',  # Homebrew
+            str(Path.home() / '.pyenv' / 'versions' / '*' / 'bin'),  # pyenv
+            '/snap/bin',  # Snap packages
+        ]
+        
+        for path_pattern in standard_paths:
+            try:
+                if '*' in path_pattern:
+                    # Utilisation de glob pour les patterns
+                    import glob
+                    for path_str in glob.glob(path_pattern):
+                        path = Path(path_str)
+                        if path.exists():
+                            for python_exe in path.glob('python*'):
+                                if python_exe.is_file() and os.access(python_exe, os.X_OK):
+                                    commands.append(str(python_exe))
+                else:
+                    path = Path(path_pattern)
+                    if path.exists():
+                        for python_exe in path.glob('python*'):
+                            if python_exe.is_file() and os.access(python_exe, os.X_OK):
+                                commands.append(str(python_exe))
+            except Exception:
+                continue
+        
+        return commands
+    
+    def run_in_environment(self, env_name: str, env_path: Path, 
+                          command: List[str], **kwargs) -> CommandResult:
         """
-        Vérifie si une commande existe dans le système.
+        Exécute une commande dans un environnement virtuel activé.
         
         Args:
-            command: Nom de la commande à vérifier.
+            env_name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            command: Commande à exécuter
+            **kwargs: Arguments supplémentaires pour run_command
             
         Returns:
-            True si la commande existe, False sinon.
+            CommandResult: Résultat de la commande
+        """
+        # Préparation de l'environnement
+        activation_env = self._get_environment_variables(env_path)
+        
+        # Fusion avec l'environnement existant
+        final_env = kwargs.get('env', {})
+        final_env.update(activation_env)
+        kwargs['env'] = final_env
+        
+        logger.debug(f"Exécution dans l'environnement {env_name}: {' '.join(command)}")
+        return self.run_command(command, **kwargs)
+    
+    def _get_environment_variables(self, env_path: Path) -> Dict[str, str]:
+        """
+        Calcule les variables d'environnement pour activer un environnement virtuel.
+        
+        Args:
+            env_path: Chemin de l'environnement
+            
+        Returns:
+            Dict[str, str]: Variables d'environnement
+        """
+        env_vars = {}
+        
+        if sys.platform.startswith('win'):
+            # Windows
+            scripts_dir = env_path / 'Scripts'
+            python_exe = scripts_dir / 'python.exe'
+        else:
+            # Unix
+            scripts_dir = env_path / 'bin'
+            python_exe = scripts_dir / 'python'
+        
+        if scripts_dir.exists():
+            # Modification du PATH
+            current_path = os.environ.get('PATH', '')
+            env_vars['PATH'] = f"{scripts_dir}{os.pathsep}{current_path}"
+            
+            # Variables virtuelles
+            env_vars['VIRTUAL_ENV'] = str(env_path)
+            if python_exe.exists():
+                env_vars['PYTHON'] = str(python_exe)
+            
+            # Suppression de PYTHONHOME si présent
+            if 'PYTHONHOME' in os.environ:
+                env_vars['PYTHONHOME'] = ''
+        
+        return env_vars
+    
+    def get_activation_command(self, env_name: str, env_path: Path) -> Optional[str]:
+        """
+        Génère la commande d'activation pour un environnement.
+        
+        Args:
+            env_name: Nom de l'environnement
+            env_path: Chemin de l'environnement
+            
+        Returns:
+            Optional[str]: Commande d'activation ou None
+        """
+        if sys.platform.startswith('win'):
+            # Windows
+            activate_script = env_path / 'Scripts' / 'activate.bat'
+            if activate_script.exists():
+                return f'"{activate_script}"'
+            
+            # PowerShell
+            ps_script = env_path / 'Scripts' / 'Activate.ps1'
+            if ps_script.exists():
+                return f'& "{ps_script}"'
+        else:
+            # Unix
+            activate_script = env_path / 'bin' / 'activate'
+            if activate_script.exists():
+                return f'source "{activate_script}"'
+        
+        return None
+    
+    def get_system_info(self) -> SystemInfo:
+        """
+        Collecte les informations système complètes.
+        
+        Returns:
+            SystemInfo: Informations détaillées du système
+        """
+        return SystemInfo(
+            platform=platform.platform(),
+            architecture=platform.architecture()[0],
+            python_version=platform.python_version(),
+            python_executable=Path(sys.executable),
+            shell=self.default_shell,
+            environment_variables=dict(os.environ)
+        )
+    
+    def _detect_default_shell(self) -> Optional[str]:
+        """Détecte le shell par défaut du système."""
+        if not self.shell_detection:
+            return None
+        
+        if sys.platform.startswith('win'):
+            # Windows
+            return os.environ.get('COMSPEC', 'cmd.exe')
+        else:
+            # Unix
+            return os.environ.get('SHELL', '/bin/bash')
+    
+    def validate_python_version(self, version: str, min_version: Tuple[int, int, int] = (3, 8, 0)) -> bool:
+        """
+        Valide qu'une version Python respecte les exigences minimales.
+        
+        Args:
+            version: Version à valider (format "3.11.5")
+            min_version: Version minimale requise
+            
+        Returns:
+            bool: True si la version est valide
         """
         try:
-            # Utiliser 'where' sous Windows et 'which' sous Unix
-            if self.system == "windows":
-                result = self.run_command(["where", command])
+            parts = version.split('.')
+            if len(parts) < 3:
+                return False
+            
+            version_tuple = tuple(int(part) for part in parts[:3])
+            return version_tuple >= min_version
+            
+        except (ValueError, TypeError):
+            return False
+    
+    def which(self, command: str) -> Optional[Path]:
+        """
+        Trouve l'emplacement d'une commande dans le PATH.
+        
+        Args:
+            command: Nom de la commande
+            
+        Returns:
+            Optional[Path]: Chemin de la commande ou None
+        """
+        result = shutil.which(command)
+        return Path(result) if result else None
+    
+    def is_admin(self) -> bool:
+        """
+        Vérifie si le processus actuel a des privilèges administrateur.
+        
+        Returns:
+            bool: True si administrateur
+        """
+        try:
+            if sys.platform.startswith('win'):
+                import ctypes
+                return ctypes.windll.shell32.IsUserAnAdmin() != 0
             else:
-                result = self.run_command(["which", command])
-            
-            return result['returncode'] == 0
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la vérification de la commande '{command}': {str(e)}")
-            return False
-    
-    def create_directory(self, path: Path) -> bool:
-        """
-        Crée un répertoire si nécessaire.
-        
-        Args:
-            path: Chemin du répertoire à créer.
-            
-        Returns:
-            True si le répertoire existe ou a été créé, False sinon.
-        """
-        try:
-            # Créer le répertoire et ses parents si nécessaire
-            path.mkdir(parents=True, exist_ok=True)
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la création du répertoire '{path}': {str(e)}")
-            return False
-    
-    def file_exists(self, path: Path) -> bool:
-        """
-        Vérifie si un fichier existe.
-        
-        Args:
-            path: Chemin du fichier à vérifier.
-            
-        Returns:
-            True si le fichier existe, False sinon.
-        """
-        return path.exists() and path.is_file()
-    
-    def directory_exists(self, path: Path) -> bool:
-        """
-        Vérifie si un répertoire existe.
-        
-        Args:
-            path: Chemin du répertoire à vérifier.
-            
-        Returns:
-            True si le répertoire existe, False sinon.
-        """
-        return path.exists() and path.is_dir()
-    
-    def delete_file(self, path: Path) -> bool:
-        """
-        Supprime un fichier.
-        
-        Args:
-            path: Chemin du fichier à supprimer.
-            
-        Returns:
-            True si le fichier a été supprimé ou n'existait pas, False sinon.
-        """
-        try:
-            if path.exists() and path.is_file():
-                path.unlink()
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la suppression du fichier '{path}': {str(e)}")
+                return os.geteuid() == 0
+        except Exception:
             return False
