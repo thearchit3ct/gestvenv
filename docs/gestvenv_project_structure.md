@@ -755,5 +755,3 @@ if __name__ == "__main__":
     success = build_release()
     sys.exit(0 if success else 1)
 ```
-
-Cette structure complète fournit une base solide pour l'implémentation de GestVenv v1.1, avec une organisation modulaire, une configuration moderne, et tous les outils nécessaires pour le développement, les tests, et la distribution.
