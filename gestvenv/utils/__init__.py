@@ -1,59 +1,30 @@
 """
-Utilitaires pour GestVenv.
+Module utils de GestVenv v1.1
 
-Ce package contient des modules utilitaires indépendants utilisés par les services et les composants core:
-- path_utils: Fonctions de gestion des chemins
-- system_utils: Fonctions d'interaction avec le système
-- validation_utils: Fonctions de validation des entrées
-- format_utils: Fonctions de formatage et d'affichage
+Ce module contient tous les utilitaires du système :
+- TomlHandler : Gestionnaire TOML optimisé
+- PyProjectParser : Parser pyproject.toml conforme PEP 621  
+- ValidationUtils : Utilitaires de validation
+- PathUtils : Utilitaires de gestion des chemins
+- SecurityUtils : Utilitaires de sécurité
+- PerformanceMonitor : Monitoring de performance
 """
 
-# Définition des exports principaux pour simplifier les imports
-from .path_utils import (
-    get_os_name,
-    expand_user_path,
-    resolve_path,
-    ensure_dir_exists,
-    get_default_data_dir,
-    get_normalized_path
-)
-
-from .system_utils import (
-    run_simple_command,
-    get_current_username,
-    is_command_available,
-    get_terminal_size
-)
-
-from .validation_utils import (
-    is_valid_name,
-    is_valid_path,
-    is_safe_directory,
-    matches_pattern,
-    parse_version_string
-)
-
-from .format_utils import (
-    format_timestamp,
-    truncate_string,
-    format_list_as_table,
-    get_color_for_terminal
-)
+from .toml_handler import TomlHandler
+from .pyproject_parser import PyProjectParser
+from .validation import ValidationUtils
+from .path_utils import PathUtils
+from .security import SecurityUtils
+from .performance import PerformanceMonitor
 
 __all__ = [
-    # path_utils
-    'get_os_name', 'expand_user_path', 'resolve_path', 'ensure_dir_exists',
-    'get_default_data_dir', 'get_normalized_path',
-    
-    # system_utils
-    'run_simple_command', 'get_current_username', 'is_command_available', 
-    'get_terminal_size',
-    
-    # validation_utils
-    'is_valid_name', 'is_valid_path', 'is_safe_directory', 
-    'matches_pattern', 'parse_version_string',
-    
-    # format_utils
-    'format_timestamp', 'truncate_string', 'format_list_as_table',
-    'get_color_for_terminal'
+    "TomlHandler",
+    "PyProjectParser", 
+    "ValidationUtils",
+    "PathUtils",
+    "SecurityUtils",
+    "PerformanceMonitor",
 ]
+
+# Version du module utils
+__version__ = "1.1.0"

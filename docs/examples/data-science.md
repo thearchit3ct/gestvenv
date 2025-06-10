@@ -1,3 +1,0 @@
-# data science
-
-Documentation en cours de rédaction...

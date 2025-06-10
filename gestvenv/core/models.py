@@ -1,193 +1,528 @@
 """
-Module définissant les structures de données utilisées dans GestVenv.
-
-Ce module contient des dataclasses représentant les différentes entités
-manipulées par le gestionnaire d'environnements virtuels.
+Modèles de données pour GestVenv v1.1
 """
 
 from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum, auto
 from pathlib import Path
-from typing import List, Dict, Optional, Any, Set, Union
+from typing import Any, Dict, List, Optional, Union
+import json
+import re
+
+from packaging import version
+
+
+class EnvironmentHealth(Enum):
+    """États de santé d'un environnement"""
+    HEALTHY = "healthy"
+    NEEDS_UPDATE = "needs_update"
+    HAS_WARNINGS = "has_warnings"
+    HAS_ERRORS = "has_errors"
+    CORRUPTED = "corrupted"
+    UNKNOWN = "unknown"
+
+
+class BackendType(Enum):
+    """Types de backends supportés"""
+    PIP = "pip"
+    UV = "uv"
+    POETRY = "poetry"
+    PDM = "pdm"
+    AUTO = "auto"
+
+
+class SourceFileType(Enum):
+    """Types de fichiers sources supportés"""
+    REQUIREMENTS_TXT = "requirements.txt"
+    PYPROJECT_TOML = "pyproject.toml"
+    SETUP_PY = "setup.py"
+    POETRY_LOCK = "poetry.lock"
+    UV_LOCK = "uv.lock"
+    ENVIRONMENT_YML = "environment.yml"
+
+
+class ExportFormat(Enum):
+    """Formats d'export supportés"""
+    REQUIREMENTS = "requirements"
+    PYPROJECT = "pyproject"
+    JSON = "json"
+    YAML = "yaml"
+    POETRY = "poetry"
+    CONDA = "conda"
+
+
+class IssueLevel(Enum):
+    """Niveaux de problèmes diagnostiques"""
+    INFO = "info"
+    WARNING = "warning"
+    ERROR = "error"
+    CRITICAL = "critical"
 
 
 @dataclass
 class PackageInfo:
-    """Classe représentant les informations d'un package Python."""
+    """Informations sur un package installé"""
     name: str
     version: str
-    required_by: List[str] = field(default_factory=list)
+    source: str = "pypi"
+    is_editable: bool = False
+    local_path: Optional[Path] = None
+    backend_used: str = "pip"
+    installed_at: datetime = field(default_factory=datetime.now)
+    summary: Optional[str] = None
     dependencies: List[str] = field(default_factory=list)
+    requires: List[str] = field(default_factory=list)
     
-    def to_dict(self) -> Dict[str, Any]:
-        """Convertit l'objet en dictionnaire pour la sérialisation."""
-        return {
-            "name": self.name,
-            "version": self.version,
-            "required_by": self.required_by,
-            "dependencies": self.dependencies
-        }
+    def compare_version(self, other: str) -> int:
+        """Compare avec une autre version (-1, 0, 1)"""
+        try:
+            v1 = version.parse(self.version)
+            v2 = version.parse(other)
+            if v1 < v2:
+                return -1
+            elif v1 > v2:
+                return 1
+            return 0
+        except Exception:
+            return 0
     
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "PackageInfo":
-        """Crée une instance à partir d'un dictionnaire."""
-        return cls(
-            name=data["name"],
-            version=data["version"],
-            required_by=data.get("required_by", []),
-            dependencies=data.get("dependencies", [])
-        )
+    def is_compatible(self, python_version: str) -> bool:
+        """Vérifie la compatibilité Python"""
+        # Logique simplifiée - peut être étendue
+        return True
     
-    @property
-    def full_name(self) -> str:
-        """Retourne le nom complet du package avec sa version."""
+    def get_install_command(self) -> str:
+        """Génère la commande d'installation"""
+        if self.is_editable and self.local_path:
+            return f"-e {self.local_path}"
         return f"{self.name}=={self.version}"
+    
+    def is_development_package(self) -> bool:
+        """Indique si c'est un package de développement"""
+        dev_keywords = ['test', 'dev', 'debug', 'lint', 'format', 'coverage', 'mock']
+        return any(keyword in self.name.lower() for keyword in dev_keywords)
 
 
 @dataclass
-class EnvironmentHealth:
-    """Classe représentant l'état de santé d'un environnement virtuel."""
-    exists: bool = False
-    python_available: bool = False
-    pip_available: bool = False
-    activation_script_exists: bool = False
+class PyProjectInfo:
+    """Informations pyproject.toml (PEP 621)"""
+    name: str
+    version: str = "0.1.0"
+    description: Optional[str] = None
+    readme: Optional[str] = None
+    requires_python: Optional[str] = None
+    authors: List[Dict[str, str]] = field(default_factory=list)
+    keywords: List[str] = field(default_factory=list)
+    classifiers: List[str] = field(default_factory=list)
+    dependencies: List[str] = field(default_factory=list)
+    optional_dependencies: Dict[str, List[str]] = field(default_factory=dict)
+    urls: Dict[str, str] = field(default_factory=dict)
+    scripts: Dict[str, str] = field(default_factory=dict)
+    build_system: Dict[str, Any] = field(default_factory=dict)
+    tool_sections: Dict[str, Any] = field(default_factory=dict)
+    source_path: Optional[Path] = None
     
-    def to_dict(self) -> Dict[str, bool]:
-        """Convertit l'objet en dictionnaire pour la sérialisation."""
-        return {
-            "exists": self.exists,
-            "python_available": self.python_available,
-            "pip_available": self.pip_available,
-            "activation_script_exists": self.activation_script_exists
-        }
+    def validate_pep621(self) -> bool:
+        """Valide la conformité PEP 621"""
+        required_fields = ['name', 'version']
+        return all(getattr(self, field) for field in required_fields)
     
-    @classmethod
-    def from_dict(cls, data: Dict[str, bool]) -> "EnvironmentHealth":
-        """Crée une instance à partir d'un dictionnaire."""
-        return cls(
-            exists=data.get("exists", False),
-            python_available=data.get("python_available", False),
-            pip_available=data.get("pip_available", False),
-            activation_script_exists=data.get("activation_script_exists", False)
+    def extract_dependencies(self, groups: Optional[List[str]] = None) -> List[str]:
+        """Extrait les dépendances pour les groupes spécifiés"""
+        deps = self.dependencies.copy()
+        
+        if groups:
+            for group in groups:
+                if group in self.optional_dependencies:
+                    deps.extend(self.optional_dependencies[group])
+        
+        return deps
+    
+    def merge_dependencies(self, other: 'PyProjectInfo') -> 'PyProjectInfo':
+        """Fusionne avec un autre PyProjectInfo"""
+        merged = PyProjectInfo(
+            name=self.name,
+            version=self.version,
+            description=self.description,
+            dependencies=list(set(self.dependencies + other.dependencies))
         )
+        
+        # Fusion des dépendances optionnelles
+        for group, deps in other.optional_dependencies.items():
+            if group in merged.optional_dependencies:
+                merged.optional_dependencies[group] = list(
+                    set(merged.optional_dependencies[group] + deps)
+                )
+            else:
+                merged.optional_dependencies[group] = deps.copy()
+        
+        return merged
+    
+    def to_requirements_txt(self, include_optional: bool = False) -> str:
+        """Export vers format requirements.txt"""
+        lines = self.dependencies.copy()
+        
+        if include_optional:
+            for group_deps in self.optional_dependencies.values():
+                lines.extend(group_deps)
+        
+        return '\n'.join(lines)
+    
+    def get_dependency_groups(self) -> List[str]:
+        """Liste des groupes de dépendances optionnelles"""
+        return list(self.optional_dependencies.keys())
+    
+    def has_build_system(self) -> bool:
+        """Indique si un build system est défini"""
+        return bool(self.build_system)
 
 
 @dataclass
 class EnvironmentInfo:
-    """Classe représentant les informations d'un environnement virtuel."""
+    """Informations complètes sur un environnement"""
     name: str
     path: Path
     python_version: str
+    backend_type: BackendType = BackendType.AUTO
+    source_file_type: SourceFileType = SourceFileType.REQUIREMENTS_TXT
+    pyproject_info: Optional[PyProjectInfo] = None
+    packages: List[PackageInfo] = field(default_factory=list)
+    dependency_groups: Dict[str, List[str]] = field(default_factory=dict)
+    lock_file_path: Optional[Path] = None
+    health: EnvironmentHealth = EnvironmentHealth.UNKNOWN
+    is_active: bool = False
     created_at: datetime = field(default_factory=datetime.now)
-    packages: List[str] = field(default_factory=list)
-    packages_installed: List[PackageInfo] = field(default_factory=list)
-    health: EnvironmentHealth = field(default_factory=EnvironmentHealth)
-    active: bool = False
+    updated_at: datetime = field(default_factory=datetime.now)
+    last_used: datetime = field(default_factory=datetime.now)
     metadata: Dict[str, Any] = field(default_factory=dict)
     
+    def validate(self) -> bool:
+        """Valide la cohérence des informations"""
+        return (self.name and 
+                self.path.exists() and
+                self.python_version and
+                re.match(r'^\d+\.\d+', self.python_version))
+    
     def to_dict(self) -> Dict[str, Any]:
-        """Convertit l'objet en dictionnaire pour la sérialisation."""
+        """Sérialise en dictionnaire"""
         return {
-            "name": self.name,
-            "path": str(self.path),
-            "python_version": self.python_version,
-            "created_at": self.created_at.isoformat(),
-            "packages": self.packages,
-            "packages_installed": [pkg.to_dict() for pkg in self.packages_installed],
-            "health": self.health.to_dict(),
-            "active": self.active,
-            "metadata": self.metadata
+            'name': self.name,
+            'path': str(self.path),
+            'python_version': self.python_version,
+            'backend_type': self.backend_type.value,
+            'source_file_type': self.source_file_type.value,
+            'pyproject_info': self.pyproject_info.__dict__ if self.pyproject_info else None,
+            'packages': [pkg.__dict__ for pkg in self.packages],
+            'dependency_groups': self.dependency_groups,
+            'lock_file_path': str(self.lock_file_path) if self.lock_file_path else None,
+            'health': self.health.value,
+            'is_active': self.is_active,
+            'created_at': self.created_at.isoformat(),
+            'updated_at': self.updated_at.isoformat(),
+            'last_used': self.last_used.isoformat(),
+            'metadata': self.metadata
         }
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "EnvironmentInfo":
-        """Crée une instance à partir d'un dictionnaire."""
-        # Conversion des dates
-        if isinstance(data.get("created_at"), str):
-            created_at = datetime.fromisoformat(data["created_at"])
-        else:
-            created_at = datetime.now()
-        
-        # Conversion des packages installés
-        packages_installed = []
-        for pkg_data in data.get("packages_installed", []):
-            if isinstance(pkg_data, dict):
-                packages_installed.append(PackageInfo.from_dict(pkg_data))
-            elif isinstance(pkg_data, str):
-                # Ancien format - conversion simple
-                name, version = pkg_data.split("==") if "==" in pkg_data else (pkg_data, "")
-                packages_installed.append(PackageInfo(name=name, version=version))
-        
-        # Conversion de l'état de santé
-        health_data = data.get("health", {})
-        if isinstance(health_data, dict):
-            health = EnvironmentHealth.from_dict(health_data)
-        else:
-            health = EnvironmentHealth()
-        
-        return cls(
-            name=data["name"],
-            path=Path(data["path"]),
-            python_version=data["python_version"],
-            created_at=created_at,
-            packages=data.get("packages", []),
-            packages_installed=packages_installed,
-            health=health,
-            active=data.get("active", False),
-            metadata=data.get("metadata", {})
+    def from_dict(cls, data: Dict[str, Any]) -> 'EnvironmentInfo':
+        """Désérialise depuis un dictionnaire"""
+        env = cls(
+            name=data['name'],
+            path=Path(data['path']),
+            python_version=data['python_version'],
+            backend_type=BackendType(data.get('backend_type', 'auto')),
+            source_file_type=SourceFileType(data.get('source_file_type', 'requirements.txt')),
+            health=EnvironmentHealth(data.get('health', 'unknown')),
+            is_active=data.get('is_active', False),
+            dependency_groups=data.get('dependency_groups', {}),
+            metadata=data.get('metadata', {})
         )
+        
+        # Dates
+        if 'created_at' in data:
+            env.created_at = datetime.fromisoformat(data['created_at'])
+        if 'updated_at' in data:
+            env.updated_at = datetime.fromisoformat(data['updated_at'])
+        if 'last_used' in data:
+            env.last_used = datetime.fromisoformat(data['last_used'])
+        
+        # PyProject info
+        if data.get('pyproject_info'):
+            env.pyproject_info = PyProjectInfo(**data['pyproject_info'])
+        
+        # Packages
+        env.packages = [PackageInfo(**pkg) for pkg in data.get('packages', [])]
+        
+        # Lock file
+        if data.get('lock_file_path'):
+            env.lock_file_path = Path(data['lock_file_path'])
+        
+        return env
     
-    @property
-    def is_healthy(self) -> bool:
-        """Vérifie si l'environnement est en bonne santé."""
-        return (self.health.exists and 
-                self.health.python_available and 
-                self.health.pip_available and 
-                self.health.activation_script_exists)
+    def get_package_count(self) -> int:
+        """Nombre de packages installés"""
+        return len(self.packages)
+    
+    def get_size_mb(self) -> float:
+        """Taille de l'environnement en MB"""
+        try:
+            if not self.path.exists():
+                return 0.0
+            total_size = sum(f.stat().st_size for f in self.path.rglob('*') if f.is_file())
+            return total_size / (1024 * 1024)
+        except Exception:
+            return 0.0
+    
+    def needs_sync(self) -> bool:
+        """Indique si une synchronisation est nécessaire"""
+        if not self.pyproject_info:
+            return False
+        
+        expected_packages = set(
+            dep.split('>=')[0].split('==')[0].split('[')[0] 
+            for dep in self.pyproject_info.dependencies
+        )
+        installed_packages = set(pkg.name for pkg in self.packages)
+        
+        return expected_packages != installed_packages
 
 
 @dataclass
-class ConfigInfo:
-    """Classe représentant la configuration globale de GestVenv."""
-    environments: Dict[str, EnvironmentInfo] = field(default_factory=dict)
-    active_env: Optional[str] = None
-    default_python: str = "python3"
-    settings: Dict[str, Any] = field(default_factory=dict)
+class Config:
+    """Configuration centrale de GestVenv"""
+    version: str = "1.1.0"
+    auto_migrate: bool = True
+    default_python_version: str = "3.11"
+    environments_path: Path = field(default_factory=lambda: Path.home() / ".gestvenv" / "environments")
+    preferred_backend: str = "auto"
+    backend_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    cache_settings: Dict[str, Any] = field(default_factory=lambda: {
+        "enabled": True,
+        "max_size_mb": 1000,
+        "cleanup_interval_days": 30,
+        "compression": True
+    })
+    show_migration_hints: bool = True
+    offline_mode: bool = False
+    template_settings: Dict[str, Any] = field(default_factory=dict)
     
-    def __post_init__(self) -> None:
-        """Initialise les valeurs par défaut pour les paramètres."""
-        if not self.settings:
-            self.settings = {
-                "auto_activate": True,
-                "package_cache_enabled": True,
-                "check_updates_on_activate": True,
-                "default_export_format": "json",
-                "show_virtual_env_in_prompt": True
+    def save(self, path: Path) -> bool:
+        """Sauvegarde la configuration"""
+        try:
+            config_dict = {
+                'version': self.version,
+                'auto_migrate': self.auto_migrate,
+                'default_python_version': self.default_python_version,
+                'environments_path': str(self.environments_path),
+                'preferred_backend': self.preferred_backend,
+                'backend_configs': self.backend_configs,
+                'cache_settings': self.cache_settings,
+                'show_migration_hints': self.show_migration_hints,
+                'offline_mode': self.offline_mode,
+                'template_settings': self.template_settings
             }
-    
-    def to_dict(self) -> Dict[str, Any]:
-        """Convertit l'objet en dictionnaire pour la sérialisation."""
-        return {
-            "environments": {name: env.to_dict() for name, env in self.environments.items()},
-            "active_env": self.active_env,
-            "default_python": self.default_python,
-            "settings": self.settings
-        }
+            
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with open(path, 'w', encoding='utf-8') as f:
+                json.dump(config_dict, f, indent=2)
+            return True
+        except Exception:
+            return False
     
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "ConfigInfo":
-        """Crée une instance à partir d'un dictionnaire."""
-        environments = {}
-        env_data = data.get("environments", {})
+    def load(cls, path: Path) -> 'Config':
+        """Charge la configuration"""
+        if not path.exists():
+            return cls()
         
-        for name, env_dict in env_data.items():
-            if isinstance(env_dict, dict):
-                env_dict["name"] = name  # Assurer que le nom est inclus
-                environments[name] = EnvironmentInfo.from_dict(env_dict)
-        
-        return cls(
-            environments=environments,
-            active_env=data.get("active_env"),
-            default_python=data.get("default_python", "python3"),
-            settings=data.get("settings", {})
-        )
+        try:
+            with open(path, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            config = cls()
+            config.version = data.get('version', '1.1.0')
+            config.auto_migrate = data.get('auto_migrate', True)
+            config.default_python_version = data.get('default_python_version', '3.11')
+            config.environments_path = Path(data.get('environments_path', 
+                                                   Path.home() / ".gestvenv" / "environments"))
+            config.preferred_backend = data.get('preferred_backend', 'auto')
+            config.backend_configs = data.get('backend_configs', {})
+            config.cache_settings = data.get('cache_settings', config.cache_settings)
+            config.show_migration_hints = data.get('show_migration_hints', True)
+            config.offline_mode = data.get('offline_mode', False)
+            config.template_settings = data.get('template_settings', {})
+            
+            return config
+        except Exception:
+            return cls()
+    
+    def migrate_from_v1_0(self) -> bool:
+        """Migration depuis v1.0"""
+        # Logique de migration spécifique
+        return True
+    
+    def get_cache_max_size(self) -> int:
+        """Taille max du cache en MB"""
+        return self.cache_settings.get('max_size_mb', 1000)
+    
+    def get_cleanup_interval(self) -> int:
+        """Intervalle de nettoyage en jours"""
+        return self.cache_settings.get('cleanup_interval_days', 30)
+
+
+# Modèles de résultats
+@dataclass
+class EnvironmentResult:
+    """Résultat d'opération sur environnement"""
+    success: bool
+    message: str
+    environment: Optional[EnvironmentInfo] = None
+    warnings: List[str] = field(default_factory=list)
+    execution_time: float = 0.0
+
+
+@dataclass
+class InstallResult:
+    """Résultat d'installation de packages"""
+    success: bool
+    message: str
+    packages_installed: List[str] = field(default_factory=list)
+    packages_failed: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    execution_time: float = 0.0
+    backend_used: str = "pip"
+    lock_file_created: Optional[Path] = None
+
+
+@dataclass
+class SyncResult:
+    """Résultat de synchronisation"""
+    success: bool
+    message: str
+    packages_added: List[str] = field(default_factory=list)
+    packages_removed: List[str] = field(default_factory=list)
+    packages_updated: List[str] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    execution_time: float = 0.0
+
+
+@dataclass
+class DiagnosticIssue:
+    """Problème diagnostique"""
+    level: IssueLevel
+    category: str
+    description: str
+    solution: Optional[str] = None
+    auto_fixable: bool = False
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class OptimizationSuggestion:
+    """Suggestion d'optimisation"""
+    category: str
+    description: str
+    command: str
+    impact_score: float
+    safe_to_apply: bool
+
+
+@dataclass
+class DiagnosticReport:
+    """Rapport de diagnostic"""
+    overall_status: EnvironmentHealth = EnvironmentHealth.UNKNOWN
+    issues: List[DiagnosticIssue] = field(default_factory=list)
+    warnings: List[str] = field(default_factory=list)
+    recommendations: List[OptimizationSuggestion] = field(default_factory=list)
+    details: Dict[str, Any] = field(default_factory=dict)
+    execution_time: float = 0.0
+    generated_at: datetime = field(default_factory=datetime.now)
+    
+    def get_critical_issues(self) -> List[DiagnosticIssue]:
+        """Issues critiques"""
+        return [issue for issue in self.issues if issue.level == IssueLevel.CRITICAL]
+    
+    def get_fixable_issues(self) -> List[DiagnosticIssue]:
+        """Issues réparables automatiquement"""
+        return [issue for issue in self.issues if issue.auto_fixable]
+
+
+@dataclass
+class TemplateFile:
+    """Fichier de template"""
+    path: str
+    content: str
+    is_template: bool
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass
+class ProjectTemplate:
+    """Template de projet"""
+    name: str
+    description: str
+    version: str
+    default_params: Dict[str, Any] = field(default_factory=dict)
+    files: List[TemplateFile] = field(default_factory=list)
+    pyproject_template: Optional[PyProjectInfo] = None
+    
+    def validate(self) -> bool:
+        """Valide le template"""
+        return bool(self.name and self.description)
+    
+    def render(self, params: Dict[str, Any]) -> Dict[str, str]:
+        """Rend le template avec paramètres"""
+        rendered = {}
+        for template_file in self.files:
+            if template_file.is_template:
+                # Logique de rendu simple (à améliorer avec Jinja2)
+                content = template_file.content
+                for key, value in params.items():
+                    content = content.replace(f"{{{{{key}}}}}", str(value))
+                rendered[template_file.path] = content
+            else:
+                rendered[template_file.path] = template_file.content
+        return rendered
+
+
+@dataclass
+class CommandResult:
+    """Résultat d'exécution de commande"""
+    return_code: int
+    stdout: str
+    stderr: str
+    execution_time: float
+    success: bool
+    error: Optional[Exception] = None
+
+
+@dataclass
+class ExportResult:
+    """Résultat d'export"""
+    success: bool
+    message: str
+    output_path: Path
+    format: ExportFormat
+    items_exported: int
+    warnings: List[str] = field(default_factory=list)
+
+
+@dataclass
+class ActivationResult:
+    """Résultat d'activation"""
+    success: bool
+    message: str
+    activation_script: Path
+    activation_command: str
+    environment_variables: Dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class RepairResult:
+    """Résultat de réparation"""
+    success: bool
+    message: str
+    issues_fixed: List[str] = field(default_factory=list)
+    issues_remaining: List[str] = field(default_factory=list)
+    actions_taken: List[str] = field(default_factory=list)

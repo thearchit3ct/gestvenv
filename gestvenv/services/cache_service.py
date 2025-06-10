@@ -1,799 +1,632 @@
 """
-Service de gestion du cache pour GestVenv.
-
-Ce module fournit les fonctionnalités pour gérer le cache local des packages,
-permettant l'installation et la mise à jour des packages en mode hors ligne.
+Service de cache intelligent pour GestVenv v1.1
 """
 
-import os
-import json
-import shutil
+import gzip
 import hashlib
+import json
 import logging
-import tempfile
+import os
+import shutil
 import subprocess
-import re
-from datetime import datetime
+import time
+from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union, Set, cast
+from typing import Dict, List, Optional, Any, Tuple
 
-# Configuration du logger
+from ..core.models import (
+    Config,
+    EnvironmentInfo,
+    InstallResult,
+    ExportResult
+)
+from ..core.exceptions import CacheError
+
 logger = logging.getLogger(__name__)
 
+
 class CacheService:
-    """Service pour gérer le cache local de packages."""
+    """Service de cache intelligent avec support hors ligne"""
     
-    def __init__(self, cache_dir: Optional[Path] = None):
-        """
-        Initialise le service de cache.
+    def __init__(self, config: Config):
+        self.config = config
+        self.cache_path = Path.home() / ".gestvenv" / "cache"
+        self.enabled = config.cache_settings.get("enabled", True)
+        self.max_size_mb = config.cache_settings.get("max_size_mb", 1000)
+        self.compression = config.cache_settings.get("compression", True)
+        self.offline_mode = config.cache_settings.get("offline_mode", False)
         
-        Args:
-            cache_dir: Répertoire du cache. Si None, utilise le répertoire par défaut.
-        """
-        from ..utils.path_utils import get_default_data_dir
+        # Structure du cache
+        self.packages_path = self.cache_path / "packages"
+        self.metadata_path = self.cache_path / "metadata"
+        self.index_path = self.cache_path / "index.json"
+        self.stats_path = self.cache_path / "stats.json"
         
-        self.cache_dir = cache_dir or (get_default_data_dir() / "cache")
-        self.metadata_dir = self.cache_dir / "metadata"
-        self.packages_dir = self.cache_dir / "packages"
-        self.requirements_dir = self.cache_dir / "requirements"
+        # Index et stats en mémoire
+        self._cache_index = self._load_cache_index()
+        self._stats = self._load_cache_stats()
         
-        # Créer les répertoires s'ils n'existent pas
         self._ensure_cache_structure()
-        
-        # Charger l'index
-        self.index = self._load_index()
     
-    def _ensure_cache_structure(self) -> None:
-        """Crée la structure de répertoires du cache si elle n'existe pas."""
-        self.metadata_dir.mkdir(parents=True, exist_ok=True)
-        self.packages_dir.mkdir(parents=True, exist_ok=True)
-        self.requirements_dir.mkdir(parents=True, exist_ok=True)
-    
-    def _load_index(self) -> Dict[str, Dict[str, Any]]:
-        """
-        Charge l'index des packages du cache.
-        
-        Returns:
-            Dict: Index des packages cachés
-        """
-        index_path = self.metadata_dir / "index.json"
-        
-        if index_path.exists():
-            try:
-                with open(index_path, 'r', encoding='utf-8') as f:
-                    return cast(Dict[str, Dict[str, Any]], json.load(f))
-            except Exception as e:
-                logger.error(f"Erreur lors du chargement de l'index du cache: {e}")
-                # Créer une sauvegarde de l'index corrompu
-                if index_path.exists():
-                    backup_path = index_path.with_suffix('.json.bak')
-                    shutil.copy2(index_path, backup_path)
-                    logger.warning(f"Sauvegarde de l'index corrompu créée: {backup_path}")
-        
-        # Si l'index n'existe pas ou est corrompu, créer un nouvel index vide
-        return {}
-    
-    def _save_index(self) -> bool:
-        """
-        Sauvegarde l'index des packages du cache.
-        
-        Returns:
-            bool: True si la sauvegarde a réussi, False sinon
-        """
-        index_path = self.metadata_dir / "index.json"
+    def cache_package(
+        self, 
+        package: str, 
+        version: str, 
+        platform: str, 
+        data: bytes,
+        backend: str = "pip"
+    ) -> bool:
+        """Met en cache un package téléchargé"""
+        if not self.enabled:
+            return False
         
         try:
-            # Créer une sauvegarde de l'index existant si nécessaire
-            if index_path.exists():
-                backup_path = index_path.with_suffix('.json.bak')
-                shutil.copy2(index_path, backup_path)
+            cache_key = self._generate_cache_key(package, version, platform)
             
-            # Sauvegarder le nouvel index
-            with open(index_path, 'w', encoding='utf-8') as f:
-                json.dump(self.index, f, indent=2, ensure_ascii=False)
+            # Vérification taille avant ajout
+            if self._would_exceed_cache_limit(len(data)):
+                self._make_space_for(len(data))
+            
+            # Chemins
+            backend_dir = self.packages_path / backend
+            backend_dir.mkdir(parents=True, exist_ok=True)
+            
+            cache_file = backend_dir / f"{cache_key}.whl"
+            metadata_file = self.metadata_path / f"{cache_key}.json"
+            
+            # Compression si activée
+            if self.compression:
+                data = self._compress_data(data)
+            
+            # Sauvegarde fichier
+            cache_file.write_bytes(data)
+            
+            # Métadonnées
+            metadata = {
+                "package": package,
+                "version": version,
+                "platform": platform,
+                "backend": backend,
+                "cached_at": datetime.now().isoformat(),
+                "file_size": len(data),
+                "compressed": self.compression,
+                "checksum": self._calculate_checksum(data),
+                "last_used": datetime.now().isoformat()
+            }
+            
+            self.metadata_path.mkdir(parents=True, exist_ok=True)
+            with open(metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(metadata, f, indent=2)
+            
+            # Mise à jour index
+            self._update_cache_index(cache_key, metadata)
+            
+            # Statistiques
+            self._update_stats("cache_add", package, len(data))
+            
+            logger.debug(f"Package {package}=={version} mis en cache")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erreur mise en cache {package}: {e}")
+            return False
+    
+    def get_cached_package(
+        self, 
+        package: str, 
+        version: str = None, 
+        platform: str = None
+    ) -> Optional[bytes]:
+        """Récupère un package du cache"""
+        try:
+            platform = platform or self._get_current_platform()
+            
+            # Recherche exacte si version spécifiée
+            if version:
+                cache_key = self._generate_cache_key(package, version, platform)
+                if cache_key in self._cache_index:
+                    return self._load_cached_package(cache_key)
+            else:
+                # Recherche dernière version disponible
+                matching_keys = [
+                    key for key in self._cache_index.keys()
+                    if (self._cache_index[key]["package"] == package and
+                        self._cache_index[key]["platform"] == platform)
+                ]
+                
+                if matching_keys:
+                    # Tri par version (dernière en premier)
+                    from packaging import version as pkg_version
+                    latest_key = max(
+                        matching_keys,
+                        key=lambda k: pkg_version.parse(self._cache_index[k]["version"])
+                    )
+                    return self._load_cached_package(latest_key)
+            
+            return None
+            
+        except Exception as e:
+            logger.error(f"Erreur récupération cache {package}: {e}")
+            return None
+    
+    def is_package_cached(
+        self, 
+        package: str, 
+        version: str = None, 
+        platform: str = None
+    ) -> bool:
+        """Vérifie si un package est en cache"""
+        platform = platform or self._get_current_platform()
+        
+        if version:
+            cache_key = self._generate_cache_key(package, version, platform)
+            return cache_key in self._cache_index
+        else:
+            # Recherche toute version
+            return any(
+                self._cache_index[key]["package"] == package and
+                self._cache_index[key]["platform"] == platform
+                for key in self._cache_index.keys()
+            )
+    
+    def install_from_cache(self, env: EnvironmentInfo, package: str) -> InstallResult:
+        """Installe un package depuis le cache"""
+        try:
+            platform = self._get_current_platform()
+            cached_data = self.get_cached_package(package, platform=platform)
+            
+            if not cached_data:
+                return InstallResult(
+                    success=False,
+                    message=f"Package {package} non trouvé en cache"
+                )
+            
+            # Installation directe du wheel
+            temp_wheel = self._create_temp_wheel(package, cached_data)
+            python_exe = self._get_python_executable(env.path)
+            
+            cmd = [str(python_exe), "-m", "pip", "install", str(temp_wheel)]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            # Nettoyage
+            if temp_wheel.exists():
+                temp_wheel.unlink()
+            
+            if result.returncode == 0:
+                self._update_stats("cache_install", package, 0)
+                return InstallResult(
+                    success=True,
+                    message=f"Package {package} installé depuis le cache",
+                    packages_installed=[package],
+                    backend_used="cache"
+                )
+            else:
+                return InstallResult(
+                    success=False,
+                    message=f"Erreur installation depuis cache: {result.stderr}"
+                )
+                
+        except Exception as e:
+            return InstallResult(
+                success=False,
+                message=f"Erreur installation cache: {e}"
+            )
+    
+    def cache_installed_package(self, env: EnvironmentInfo, package: str) -> bool:
+        """Met en cache un package après installation"""
+        try:
+            # Recherche du wheel dans site-packages
+            site_packages = env.path / "lib" / f"python{env.python_version[:3]}" / "site-packages"
+            
+            # Recherche fichier wheel ou info du package
+            package_files = list(site_packages.glob(f"{package}*"))
+            
+            if package_files:
+                # Création wheel temporaire depuis installation
+                wheel_data = self._create_wheel_from_installation(package, site_packages)
+                if wheel_data:
+                    version = self._extract_package_version(package, site_packages)
+                    platform = self._get_current_platform()
+                    return self.cache_package(package, version, platform, wheel_data)
+            
+            return False
+            
+        except Exception as e:
+            logger.error(f"Erreur mise en cache package installé {package}: {e}")
+            return False
+    
+    def clear_cache(self, selective: bool = False) -> bool:
+        """Nettoie le cache"""
+        try:
+            if selective:
+                # Nettoyage sélectif (LRU)
+                return self._cleanup_lru()
+            else:
+                # Nettoyage complet
+                if self.cache_path.exists():
+                    shutil.rmtree(self.cache_path)
+                self._ensure_cache_structure()
+                self._cache_index = {}
+                self._stats = self._init_stats()
+                return True
+        except Exception as e:
+            logger.error(f"Erreur nettoyage cache: {e}")
+            return False
+    
+    def get_cache_size(self) -> int:
+        """Taille du cache en bytes"""
+        try:
+            if not self.cache_path.exists():
+                return 0
+            
+            total_size = 0
+            for file_path in self.cache_path.rglob('*'):
+                if file_path.is_file():
+                    total_size += file_path.stat().st_size
+            
+            return total_size
+        except Exception:
+            return 0
+    
+    def get_cache_stats(self) -> Dict[str, Any]:
+        """Statistiques du cache"""
+        stats = self._stats.copy()
+        stats.update({
+            "cache_size_mb": self.get_cache_size() / (1024 * 1024),
+            "total_packages": len(self._cache_index),
+            "cache_enabled": self.enabled,
+            "offline_mode": self.offline_mode,
+            "compression": self.compression
+        })
+        return stats
+    
+    def optimize_cache(self) -> bool:
+        """Optimise le cache"""
+        try:
+            # Nettoyage LRU
+            current_size = self.get_cache_size()
+            max_size = self.max_size_mb * 1024 * 1024
+            
+            if current_size > max_size:
+                self._cleanup_lru()
+            
+            # Déduplication
+            self._deduplicate_packages()
+            
+            # Nettoyage métadonnées orphelines
+            self._cleanup_orphaned_metadata()
             
             return True
         except Exception as e:
-            logger.error(f"Erreur lors de la sauvegarde de l'index du cache: {e}")
+            logger.error(f"Erreur optimisation cache: {e}")
             return False
     
-    def download_and_cache_packages_from_string(self, packages_str: str) -> Tuple[int, List[str]]:
-        """
-        Télécharge et met en cache des packages depuis une chaîne.
-        
-        Args:
-            packages_str: Chaîne de packages séparés par des virgules
-            
-        Returns:
-            Tuple[int, List[str]]: (nombre de packages ajoutés, liste des erreurs)
-        """
-        # Parser la chaîne de packages
-        packages = [pkg.strip() for pkg in packages_str.split(',') if pkg.strip()]
-        return self.download_and_cache_packages(packages)
-    
-    def download_and_cache_packages(self, packages: List[str]) -> Tuple[int, List[str]]:
-        """
-        Télécharge et met en cache une liste de packages.
-        MÉTHODE CORRIGÉE pour gérer l'encodage et les erreurs.
-        
-        Args:
-            packages: Liste des packages à télécharger
-            
-        Returns:
-            Tuple[int, List[str]]: (nombre de packages ajoutés, liste des erreurs)
-        """
-        added_count = 0
-        errors = []
-        
-        if not packages:
-            return 0, ["Aucun package spécifié"]
-        
-        # Créer un répertoire temporaire pour le téléchargement
-        with tempfile.TemporaryDirectory() as temp_dir:
-            try:
-                # Commande pip download avec gestion d'encodage
-                cmd = ["pip", "download", "--dest", temp_dir] + packages
-                logger.info(f"Exécution: {' '.join(cmd)}")
-                
-                # CORRECTION PRINCIPALE : Gestion encodage UTF-8
-                result = subprocess.run(
-                    cmd,
-                    capture_output=True,
-                    text=True,
-                    shell=False,
-                    check=False,
-                    encoding='utf-8',
-                    errors='replace',  # Remplace caractères non-décodables
-                    timeout=300  # Timeout 5 minutes
-                )
-                
-                if result.returncode != 0:
-                    error_msg = result.stderr or "Erreur de téléchargement inconnue"
-                    logger.error(f"Échec téléchargement: {error_msg}")
-                    return 0, [f"Échec téléchargement: {error_msg}"]
-                
-                # Traiter les fichiers téléchargés
-                try:
-                    for file_name in os.listdir(temp_dir):
-                        file_path = Path(temp_dir) / file_name
-                        
-                        if self._is_package_file(file_path):
-                            try:
-                                # Extraction sécurisée des informations
-                                package_info = self._extract_package_info_safe(file_name)
-                                
-                                if package_info:
-                                    # Obtenir dépendances de manière sécurisée
-                                    dependencies = self._get_dependencies_safe(package_info['name'])
-                                    
-                                    # Ajouter au cache
-                                    success = self.add_package(
-                                        file_path,
-                                        package_info['name'],
-                                        package_info['version'],
-                                        dependencies
-                                    )
-                                    
-                                    if success:
-                                        logger.info(f"Package mis en cache: {package_info['name']}-{package_info['version']}")
-                                        added_count += 1
-                                    else:
-                                        error_msg = f"Échec mise en cache: {package_info['name']}"
-                                        errors.append(error_msg)
-                                else:
-                                    errors.append(f"Impossible d'extraire les infos de: {file_name}")
-                                    
-                            except Exception as e:
-                                error_msg = f"Erreur traitement {file_name}: {str(e)}"
-                                logger.error(error_msg)
-                                errors.append(error_msg)
-                                
-                except Exception as e:
-                    error_msg = f"Erreur listage fichiers: {str(e)}"
-                    logger.error(error_msg)
-                    errors.append(error_msg)
-                    
-            except subprocess.TimeoutExpired:
-                error_msg = "Timeout: téléchargement trop long"
-                logger.error(error_msg)
-                errors.append(error_msg)
-                
-            except Exception as e:
-                error_msg = f"Erreur générale téléchargement: {str(e)}"
-                logger.error(error_msg)
-                errors.append(error_msg)
-        
-        return added_count, errors
-    
-    def _is_package_file(self, file_path: Path) -> bool:
-        """Vérifie si un fichier est un package Python."""
-        return file_path.suffix.lower() in ['.whl', '.tar.gz', '.zip']
-    
-    def _extract_package_info_safe(self, filename: str) -> Optional[Dict[str, str]]:
-        """
-        Extraction sécurisée des informations de package.
-        CORRECTION pour éviter les erreurs d'index.
-        
-        Args:
-            filename: Nom du fichier package
-            
-        Returns:
-            Dict avec name, version, filename ou None si échec
-        """
+    def export_cache(self, output_path: Path) -> ExportResult:
+        """Exporte le cache pour partage"""
         try:
-            # Supprimer l'extension
-            name_without_ext = filename
-            for ext in ['.whl', '.tar.gz', '.zip']:
-                if filename.endswith(ext):
-                    name_without_ext = filename[:-len(ext)]
-                    break
+            import tarfile
             
-            # Cas spécial pour .tar.gz
-            if filename.endswith('.tar.gz'):
-                name_without_ext = filename[:-7]
+            with tarfile.open(output_path, 'w:gz') as tar:
+                tar.add(self.packages_path, arcname="packages")
+                tar.add(self.metadata_path, arcname="metadata")
+                tar.add(self.index_path, arcname="index.json")
+                tar.add(self.stats_path, arcname="stats.json")
             
-            # Parser le nom avec méthode robuste
-            parts = name_without_ext.split('-')
-            
-            if len(parts) >= 2:
-                # Méthode robuste pour séparer nom et version
-                package_name = parts[0]
-                version = "unknown"
-                
-                # Chercher le premier élément qui ressemble à une version
-                for i, part in enumerate(parts[1:], 1):
-                    if self._looks_like_version(part):
-                        package_name = '-'.join(parts[:i])
-                        version = part
-                        break
-                
-                # Si pas de version trouvée, prendre le deuxième élément
-                if version == "unknown" and len(parts) >= 2:
-                    package_name = parts[0]
-                    version = parts[1]
-                
-                return {
-                    'name': package_name,
-                    'version': version,
-                    'filename': filename
-                }
-            
-            # Fallback si moins de 2 parties
-            base_name = parts[0] if parts else filename.split('.')[0]
-            return {
-                'name': base_name,
-                'version': 'unknown',
-                'filename': filename
-            }
-            
-        except Exception as e:
-            logger.warning(f"Erreur extraction info {filename}: {e}")
-            # Fallback ultra-sécurisé
-            base_name = filename.split('.')[0] if '.' in filename else filename
-            return {
-                'name': base_name,
-                'version': 'unknown',
-                'filename': filename
-            }
-    
-    def _looks_like_version(self, text: str) -> bool:
-        """
-        Vérifie si une chaîne ressemble à un numéro de version.
-        
-        Args:
-            text: Texte à vérifier
-            
-        Returns:
-            bool: True si ressemble à une version
-        """
-        if not text:
-            return False
-            
-        # Pattern pour détecter une version (ex: 1.2.3, 2.0.1a1, 1.0.0rc1)
-        version_pattern = r'^\d+(\.\d+)*([a-zA-Z]\d*)?(\.\w+)*$'
-        return bool(re.match(version_pattern, text))
-    
-    def _get_dependencies_safe(self, package_name: str) -> List[str]:
-        """
-        Récupère les dépendances d'un package de manière sécurisée.
-        
-        Args:
-            package_name: Nom du package
-            
-        Returns:
-            List[str]: Liste des dépendances (vide si erreur)
-        """
-        try:
-            cmd = ["pip", "show", package_name]
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                shell=False,
-                check=False,
-                encoding='utf-8',
-                errors='replace',
-                timeout=30
+            return ExportResult(
+                success=True,
+                message=f"Cache exporté vers {output_path}",
+                output_path=output_path,
+                format="tar.gz",
+                items_exported=len(self._cache_index)
             )
             
-            if result.returncode == 0:
-                # Parser la sortie pour extraire les dépendances
-                for line in result.stdout.splitlines():
-                    if line.startswith('Requires:'):
-                        deps_str = line.split(':', 1)[1].strip()
-                        if deps_str and deps_str.lower() != 'none':
-                            return [dep.strip() for dep in deps_str.split(',') if dep.strip()]
-                        break
-            
         except Exception as e:
-            logger.debug(f"Impossible de récupérer les dépendances de {package_name}: {e}")
-        
-        return []  # Retourne liste vide en cas d'erreur
+            return ExportResult(
+                success=False,
+                message=f"Erreur export cache: {e}",
+                output_path=Path(),
+                format="tar.gz",
+                items_exported=0
+            )
     
-    def add_package(self, package_path: Path, package_name: str, 
-                   version: str, dependencies: List[str]) -> bool:
-        """
-        Ajoute un package au cache.
-        
-        Args:
-            package_path: Chemin vers le fichier wheel du package
-            package_name: Nom du package
-            version: Version du package
-            dependencies: Liste des dépendances du package
-            
-        Returns:
-            bool: True si l'ajout a réussi, False sinon
-        """
+    def import_cache(self, cache_archive: Path, merge: bool = True) -> bool:
+        """Importe un cache depuis archive"""
         try:
-            # Vérifier que le fichier existe
-            if not package_path.exists():
-                logger.error(f"Fichier package inexistant: {package_path}")
-                return False
+            import tarfile
             
-            # Calculer le hash du fichier pour vérification d'intégrité
-            file_hash = self._calculate_file_hash(package_path)
+            # Sauvegarde cache actuel si merge
+            if merge and self.cache_path.exists():
+                backup_path = self.cache_path.with_suffix('.backup')
+                if backup_path.exists():
+                    shutil.rmtree(backup_path)
+                shutil.copytree(self.cache_path, backup_path)
             
-            # Créer le répertoire pour ce package s'il n'existe pas
-            package_dir = self.packages_dir / package_name
-            package_dir.mkdir(exist_ok=True)
+            # Extraction
+            with tarfile.open(cache_archive, 'r:gz') as tar:
+                tar.extractall(self.cache_path.parent)
             
-            # Destination dans le cache - conserver l'extension originale
-            original_ext = ''.join(package_path.suffixes)
-            dest_path = package_dir / f"{package_name}-{version}{original_ext}"
+            # Rechargement
+            self._cache_index = self._load_cache_index()
+            self._stats = self._load_cache_stats()
             
-            # Copier le fichier dans le cache
-            shutil.copy2(package_path, dest_path)
-            
-            # Mettre à jour les métadonnées du package
-            package_info = {
-                "name": package_name,
-                "version": version,
-                "path": str(dest_path.relative_to(self.cache_dir)),
-                "added_at": datetime.now().isoformat(),
-                "last_used": datetime.now().isoformat(),
-                "hash": file_hash,
-                "dependencies": dependencies,
-                "size": os.path.getsize(dest_path),
-                "usage_count": 1,
-                "original_filename": package_path.name
-            }
-            
-            # Mettre à jour l'index
-            if package_name not in self.index:
-                self.index[package_name] = {"versions": {}}
-            
-            self.index[package_name]["versions"][version] = package_info
-            
-            # Sauvegarder l'index
-            return self._save_index()
+            return True
             
         except Exception as e:
-            logger.error(f"Erreur lors de l'ajout du package {package_name} au cache: {e}")
+            logger.error(f"Erreur import cache: {e}")
             return False
     
-    def get_package(self, package_name: str, version: Optional[str] = None) -> Optional[Path]:
-        """
-        Récupère un package du cache.
+    def set_offline_mode(self, enabled: bool) -> None:
+        """Active/désactive le mode hors ligne"""
+        self.offline_mode = enabled
+        self.config.cache_settings["offline_mode"] = enabled
+    
+    def is_offline_mode_enabled(self) -> bool:
+        """Vérifie si le mode hors ligne est activé"""
+        return self.offline_mode
+    
+    # Méthodes privées
+    
+    def _ensure_cache_structure(self) -> None:
+        """Assure la structure du cache"""
+        self.cache_path.mkdir(parents=True, exist_ok=True)
+        self.packages_path.mkdir(exist_ok=True)
+        self.metadata_path.mkdir(exist_ok=True)
         
-        Args:
-            package_name: Nom du package
-            version: Version spécifique à récupérer (si None, utilise la dernière version)
-            
-        Returns:
-            Path ou None: Chemin vers le fichier wheel ou None si non trouvé
-        """
-        # Vérifier si le package existe dans l'index
-        if package_name not in self.index:
-            return None
+        if not self.index_path.exists():
+            self._save_cache_index()
         
-        # Si aucune version spécifiée, utiliser la dernière version
-        if version is None:
-            versions = self.index[package_name]["versions"]
-            if not versions:
-                return None
-            
-            # Trouver la dernière version avec tri sémantique sécurisé
-            try:
-                version = sorted(
-                    versions.keys(), 
-                    key=lambda v: [int(x) for x in v.split('.') if x.isdigit()],
-                    reverse=True
-                )[0]
-            except (ValueError, IndexError):
-                # Fallback: prendre la première version disponible
-                version = list(versions.keys())[0]
+        if not self.stats_path.exists():
+            self._save_cache_stats()
+    
+    def _generate_cache_key(self, package: str, version: str, platform: str) -> str:
+        """Génère clé de cache"""
+        key_string = f"{package}-{version}-{platform}"
+        return hashlib.md5(key_string.encode()).hexdigest()
+    
+    def _get_current_platform(self) -> str:
+        """Plateforme actuelle"""
+        import platform
+        system = platform.system().lower()
+        machine = platform.machine().lower()
         
-        # Vérifier si la version spécifiée existe
-        if version not in self.index[package_name]["versions"]:
-            return None
-        
-        # Récupérer le chemin du package
-        package_info = self.index[package_name]["versions"][version]
-        package_path = self.cache_dir / package_info["path"]
-        
-        # Vérifier si le fichier existe réellement
-        if not package_path.exists():
-            logger.warning(f"Fichier manquant dans le cache: {package_path}")
-            return None
-        
-        # Vérifier l'intégrité du fichier
+        if system == "windows":
+            return f"win_{machine}"
+        elif system == "darwin":
+            return f"macosx_{machine}"
+        else:
+            return f"linux_{machine}"
+    
+    def _compress_data(self, data: bytes) -> bytes:
+        """Compresse les données"""
+        return gzip.compress(data)
+    
+    def _decompress_data(self, data: bytes) -> bytes:
+        """Décompresse les données"""
+        return gzip.decompress(data)
+    
+    def _calculate_checksum(self, data: bytes) -> str:
+        """Calcule le checksum"""
+        return hashlib.sha256(data).hexdigest()
+    
+    def _load_cache_index(self) -> Dict[str, Any]:
+        """Charge l'index du cache"""
         try:
-            file_hash = self._calculate_file_hash(package_path)
-            if file_hash != package_info["hash"]:
-                logger.warning(f"Intégrité du package compromise: {package_name}-{version}")
-                return None
+            if self.index_path.exists():
+                with open(self.index_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return {}
+    
+    def _save_cache_index(self) -> None:
+        """Sauvegarde l'index du cache"""
+        try:
+            with open(self.index_path, 'w', encoding='utf-8') as f:
+                json.dump(self._cache_index, f, indent=2)
         except Exception as e:
-            logger.warning(f"Impossible de vérifier l'intégrité de {package_name}-{version}: {e}")
-        
-        # Mettre à jour les statistiques d'utilisation
+            logger.error(f"Erreur sauvegarde index cache: {e}")
+    
+    def _load_cache_stats(self) -> Dict[str, Any]:
+        """Charge les statistiques du cache"""
         try:
-            package_info["last_used"] = datetime.now().isoformat()
-            package_info["usage_count"] = package_info.get("usage_count", 0) + 1
-            self._save_index()
+            if self.stats_path.exists():
+                with open(self.stats_path, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+        except Exception:
+            pass
+        return self._init_stats()
+    
+    def _init_stats(self) -> Dict[str, Any]:
+        """Initialise les statistiques"""
+        return {
+            "cache_hits": 0,
+            "cache_misses": 0,
+            "packages_cached": 0,
+            "total_downloads": 0,
+            "space_saved_mb": 0.0,
+            "created_at": datetime.now().isoformat()
+        }
+    
+    def _save_cache_stats(self) -> None:
+        """Sauvegarde les statistiques"""
+        try:
+            with open(self.stats_path, 'w', encoding='utf-8') as f:
+                json.dump(self._stats, f, indent=2)
         except Exception as e:
-            logger.debug(f"Erreur mise à jour stats d'usage: {e}")
-        
-        return Path(package_path)
+            logger.error(f"Erreur sauvegarde stats cache: {e}")
     
-    def has_package(self, package_name: str, version: Optional[str] = None) -> bool:
-        """
-        Vérifie si un package est disponible dans le cache.
-        
-        Args:
-            package_name: Nom du package
-            version: Version spécifique à vérifier (si None, vérifie si n'importe quelle version est disponible)
-            
-        Returns:
-            bool: True si le package est disponible, False sinon
-        """
-        if package_name not in self.index:
-            return False
-        
-        if version is None:
-            # Vérifier si au moins une version est disponible
-            return len(self.index[package_name]["versions"]) > 0
-        
-        # Vérifier si la version spécifiée est disponible
-        return version in self.index[package_name]["versions"]
+    def _update_cache_index(self, cache_key: str, metadata: Dict[str, Any]) -> None:
+        """Met à jour l'index du cache"""
+        self._cache_index[cache_key] = metadata
+        self._save_cache_index()
     
-    def get_available_packages(self) -> Dict[str, List[str]]:
-        """
-        Retourne la liste des packages disponibles dans le cache.
+    def _update_stats(self, operation: str, package: str, size: int) -> None:
+        """Met à jour les statistiques"""
+        if operation == "cache_add":
+            self._stats["packages_cached"] += 1
+            self._stats["space_saved_mb"] += size / (1024 * 1024)
+        elif operation == "cache_hit":
+            self._stats["cache_hits"] += 1
+        elif operation == "cache_miss":
+            self._stats["cache_misses"] += 1
+        elif operation == "cache_install":
+            self._stats["cache_hits"] += 1
         
-        Returns:
-            Dict: Dictionnaire des packages avec leurs versions disponibles
-        """
-        available = {}
-        for package_name, package_data in self.index.items():
-            available[package_name] = list(package_data["versions"].keys())
-        
-        return available
+        self._save_cache_stats()
     
-    def clean_cache(self, max_age_days: int = 90, 
-                   max_size_mb: int = 5000, 
-                   keep_min_versions: int = 1) -> Tuple[int, int]:
-        """
-        Nettoie le cache en supprimant les packages obsolètes ou rarement utilisés.
-        
-        Args:
-            max_age_days: Âge maximum en jours pour les packages rarement utilisés
-            max_size_mb: Taille maximale du cache en Mo
-            keep_min_versions: Nombre minimum de versions à conserver par package
-            
-        Returns:
-            Tuple[int, int]: (nombre de packages supprimés, espace libéré en octets)
-        """
-        removed_count = 0
-        freed_space = 0
-        
+    def _would_exceed_cache_limit(self, additional_size: int) -> bool:
+        """Vérifie si l'ajout dépasserait la limite"""
+        current_size = self.get_cache_size()
+        max_size = self.max_size_mb * 1024 * 1024
+        return (current_size + additional_size) > max_size
+    
+    def _make_space_for(self, required_size: int) -> None:
+        """Libère de l'espace pour un ajout"""
+        self._cleanup_lru(required_size)
+    
+    def _cleanup_lru(self, required_space: int = None) -> bool:
+        """Nettoyage LRU"""
         try:
-            # Calculer la taille actuelle du cache
-            current_size = sum(
-                package_info.get("size", 0)
-                for package_data in self.index.values()
-                for package_info in package_data["versions"].values()
+            current_size = self.get_cache_size()
+            max_size = self.max_size_mb * 1024 * 1024
+            
+            if required_space:
+                target_size = current_size - required_space
+            else:
+                target_size = max_size * 0.8  # 80% de la limite
+            
+            if current_size <= target_size:
+                return True
+            
+            # Tri par dernière utilisation
+            items_by_usage = sorted(
+                self._cache_index.items(),
+                key=lambda x: x[1].get("last_used", x[1]["cached_at"])
             )
             
-            # Convertir max_size_mb en octets
-            max_size = max_size_mb * 1024 * 1024
-            
-            # Si le cache est déjà sous la limite, pas besoin de nettoyage
-            if current_size <= max_size:
-                return 0, 0
-            
-            # Date actuelle pour calcul de l'âge
-            now = datetime.now()
-            
-            # Collecter les packages candidats pour suppression
-            candidates = []
-            for package_name, package_data in self.index.items():
-                versions = package_data["versions"]
-                
-                # Ne pas supprimer si on n'a que le minimum de versions
-                if len(versions) <= keep_min_versions:
-                    continue
-                
-                for version, info in versions.items():
-                    try:
-                        # Calculer l'âge du package en jours
-                        last_used = datetime.fromisoformat(info.get("last_used", info.get("added_at", "")))
-                        age_days = (now - last_used).days
-                        
-                        # Ajouter à la liste des candidats si obsolète
-                        if age_days > max_age_days:
-                            usage_count = info.get("usage_count", 1)
-                            candidates.append({
-                                "package_name": package_name,
-                                "version": version,
-                                "size": info.get("size", 0),
-                                "age_days": age_days,
-                                "usage_count": usage_count,
-                                "score": age_days / max(usage_count, 1)  # Score pour priorisation
-                            })
-                    except Exception as e:
-                        logger.debug(f"Erreur calcul âge package {package_name}-{version}: {e}")
-            
-            # Trier les candidats par score décroissant (priorité de suppression)
-            candidates.sort(key=lambda x: x["score"], reverse=True)
-            
-            # Supprimer les packages jusqu'à atteindre la taille cible
-            for candidate in candidates:
-                if current_size <= max_size:
+            space_freed = 0
+            for cache_key, metadata in items_by_usage:
+                if current_size - space_freed <= target_size:
                     break
                 
-                package_name = candidate["package_name"]
-                version = candidate["version"]
-                
-                # Vérifier qu'on ne va pas sous le minimum de versions
-                remaining_versions = len(self.index[package_name]["versions"])
-                if remaining_versions <= keep_min_versions:
-                    continue
-                
-                try:
-                    # Récupérer le chemin du package
-                    package_info = self.index[package_name]["versions"][version]
-                    package_path = self.cache_dir / package_info["path"]
-                    
-                    # Supprimer le fichier
-                    if package_path.exists():
-                        package_path.unlink()
-                    
-                    # Mettre à jour le compteur d'espace libéré
-                    freed_space += package_info.get("size", 0)
-                    current_size -= package_info.get("size", 0)
-                    
-                    # Supprimer les métadonnées
-                    del self.index[package_name]["versions"][version]
-                    
-                    # Si c'était la dernière version, supprimer complètement le package
-                    if not self.index[package_name]["versions"]:
-                        del self.index[package_name]
-                    
-                    removed_count += 1
-                    
-                except Exception as e:
-                    logger.error(f"Erreur suppression {package_name}-{version}: {e}")
+                file_size = self._remove_cache_entry(cache_key)
+                space_freed += file_size
             
-            # Sauvegarder l'index mis à jour
-            self._save_index()
-            
-            return removed_count, freed_space
+            return True
             
         except Exception as e:
-            logger.error(f"Erreur lors du nettoyage du cache: {e}")
-            return 0, 0
+            logger.error(f"Erreur nettoyage LRU: {e}")
+            return False
     
-    def cache_requirements(self, requirements_content: str) -> str:
-        """
-        Met en cache un fichier requirements.txt et retourne son identifiant.
-        
-        Args:
-            requirements_content: Contenu du fichier requirements.txt
-            
-        Returns:
-            str: Identifiant unique du fichier requirements
-        """
+    def _remove_cache_entry(self, cache_key: str) -> int:
+        """Supprime une entrée du cache"""
         try:
-            # Générer un hash du contenu comme identifiant
-            content_hash = hashlib.sha256(requirements_content.encode('utf-8')).hexdigest()
+            metadata = self._cache_index.get(cache_key)
+            if not metadata:
+                return 0
             
-            # Chemin du fichier dans le cache
-            requirements_path = self.requirements_dir / f"{content_hash}.txt"
+            # Suppression fichiers
+            backend = metadata.get("backend", "pip")
+            cache_file = self.packages_path / backend / f"{cache_key}.whl"
+            metadata_file = self.metadata_path / f"{cache_key}.json"
             
-            # Sauvegarder le contenu si le fichier n'existe pas déjà
-            if not requirements_path.exists():
-                with open(requirements_path, 'w', encoding='utf-8') as f:
-                    f.write(requirements_content)
+            file_size = 0
+            if cache_file.exists():
+                file_size = cache_file.stat().st_size
+                cache_file.unlink()
             
-            return content_hash
+            if metadata_file.exists():
+                metadata_file.unlink()
+            
+            # Suppression de l'index
+            del self._cache_index[cache_key]
+            self._save_cache_index()
+            
+            return file_size
+            
         except Exception as e:
-            logger.error(f"Erreur mise en cache requirements: {e}")
-            return ""
+            logger.error(f"Erreur suppression entrée cache {cache_key}: {e}")
+            return 0
     
-    def get_cached_requirements(self, requirements_id: str) -> Optional[str]:
-        """
-        Récupère un fichier requirements.txt du cache.
-        
-        Args:
-            requirements_id: Identifiant du fichier requirements
-            
-        Returns:
-            str ou None: Contenu du fichier requirements ou None si non trouvé
-        """
-        requirements_path = self.requirements_dir / f"{requirements_id}.txt"
-        
-        if not requirements_path.exists():
-            return None
-        
+    def _load_cached_package(self, cache_key: str) -> Optional[bytes]:
+        """Charge un package depuis le cache"""
         try:
-            with open(requirements_path, 'r', encoding='utf-8') as f:
-                return f.read()
+            metadata = self._cache_index.get(cache_key)
+            if not metadata:
+                return None
+            
+            backend = metadata.get("backend", "pip")
+            cache_file = self.packages_path / backend / f"{cache_key}.whl"
+            
+            if not cache_file.exists():
+                return None
+            
+            data = cache_file.read_bytes()
+            
+            # Décompression si nécessaire
+            if metadata.get("compressed", False):
+                data = self._decompress_data(data)
+            
+            # Mise à jour dernière utilisation
+            metadata["last_used"] = datetime.now().isoformat()
+            self._update_cache_index(cache_key, metadata)
+            
+            return data
+            
         except Exception as e:
-            logger.error(f"Erreur lors de la lecture du fichier requirements: {e}")
+            logger.error(f"Erreur chargement package cache {cache_key}: {e}")
             return None
     
-    def get_cache_stats(self) -> Dict[str, Any]:
-        """
-        Retourne des statistiques sur le cache.
+    def _create_temp_wheel(self, package: str, data: bytes) -> Path:
+        """Crée un wheel temporaire"""
+        import tempfile
         
-        Returns:
-            Dict: Statistiques sur le cache
-        """
-        try:
-            package_count = len(self.index)
-            version_count = sum(len(pkg_data["versions"]) for pkg_data in self.index.values())
-            
-            # Calculer la taille totale
-            total_size = sum(
-                pkg_info.get("size", 0)
-                for pkg_data in self.index.values()
-                for pkg_info in pkg_data["versions"].values()
-            )
-            
-            # Trouver le package le plus récent
-            latest_package = {"name": None, "added_at": "1970-01-01T00:00:00"}
-            for pkg_name, pkg_data in self.index.items():
-                for version, info in pkg_data["versions"].items():
-                    added_at = info.get("added_at", "1970-01-01T00:00:00")
-                    if added_at > latest_package["added_at"]:
-                        latest_package = {"name": f"{pkg_name}-{version}", "added_at": added_at}
-            
-            return {
-                "package_count": package_count,
-                "version_count": version_count,
-                "total_size_bytes": total_size,
-                "latest_package": latest_package["name"],
-                "latest_added_at": latest_package["added_at"],
-                "cache_dir": str(self.cache_dir)
-            }
-        except Exception as e:
-            logger.error(f"Erreur calcul statistiques cache: {e}")
-            return {
-                "package_count": 0,
-                "version_count": 0,
-                "total_size_bytes": 0,
-                "latest_package": None,
-                "latest_added_at": None,
-                "cache_dir": str(self.cache_dir)
-            }
+        temp_dir = Path(tempfile.gettempdir())
+        temp_wheel = temp_dir / f"{package}_temp.whl"
+        temp_wheel.write_bytes(data)
+        return temp_wheel
     
-    def remove_package(self, package_name: str, version: Optional[str] = None) -> Tuple[bool, str]:
-        """
-        Supprime un package ou une version spécifique du cache.
-        
-        Args:
-            package_name: Nom du package à supprimer
-            version: Version spécifique (si None, supprime toutes les versions)
-            
-        Returns:
-            Tuple[bool, str]: (succès, message)
-        """
-        try:
-            if package_name not in self.index:
-                return False, f"Package '{package_name}' non trouvé dans le cache"
-            
-            removed_count = 0
-            freed_space = 0
-            
-            if version:
-                # Supprimer une version spécifique
-                if version not in self.index[package_name]["versions"]:
-                    return False, f"Version '{version}' du package '{package_name}' non trouvée"
-                
-                # Récupérer les informations du package
-                package_info = self.index[package_name]["versions"][version]
-                package_path = self.cache_dir / package_info["path"]
-                
-                # Supprimer le fichier physique
-                if package_path.exists():
-                    try:
-                        package_path.unlink()
-                        freed_space += package_info.get("size", 0)
-                    except Exception as e:
-                        logger.error(f"Erreur suppression fichier {package_path}: {e}")
-                        return False, f"Erreur lors de la suppression du fichier: {str(e)}"
-                
-                # Supprimer de l'index
-                del self.index[package_name]["versions"][version]
-                removed_count = 1
-                
-                # Si c'était la dernière version, supprimer complètement le package
-                if not self.index[package_name]["versions"]:
-                    del self.index[package_name]
-                    
-            else:
-                # Supprimer toutes les versions du package
-                versions = list(self.index[package_name]["versions"].keys())
-                
-                for ver in versions:
-                    package_info = self.index[package_name]["versions"][ver]
-                    package_path = self.cache_dir / package_info["path"]
-                    
-                    # Supprimer le fichier physique
-                    if package_path.exists():
-                        try:
-                            package_path.unlink()
-                            freed_space += package_info.get("size", 0)
-                        except Exception as e:
-                            logger.warning(f"Erreur suppression {package_path}: {e}")
-                    
-                    removed_count += 1
-                
-                # Supprimer complètement le package de l'index
-                del self.index[package_name]
-            
-            # Sauvegarder l'index modifié
-            if self._save_index():
-                freed_mb = freed_space / (1024 * 1024)
-                if version:
-                    return True, f"Version {version} du package {package_name} supprimée ({freed_mb:.1f} MB libérés)"
-                else:
-                    return True, f"Package {package_name} supprimé ({removed_count} version(s), {freed_mb:.1f} MB libérés)"
-            else:
-                return False, "Erreur lors de la sauvegarde de l'index"
-                
-        except Exception as e:
-            logger.error(f"Erreur suppression package {package_name}: {e}")
-            return False, f"Erreur lors de la suppression: {str(e)}"
+    def _get_python_executable(self, env_path: Path) -> Path:
+        """Exécutable Python de l'environnement"""
+        if os.name == 'nt':
+            return env_path / "Scripts" / "python.exe"
+        else:
+            return env_path / "bin" / "python"
     
-    def _calculate_file_hash(self, file_path: Path) -> str:
-        """
-        Calcule le hash SHA-256 d'un fichier.
-        
-        Args:
-            file_path: Chemin vers le fichier
-            
-        Returns:
-            str: Hash SHA-256 du fichier
-        """
+    def _create_wheel_from_installation(self, package: str, site_packages: Path) -> Optional[bytes]:
+        """Crée un wheel depuis une installation"""
+        # Implémentation simplifiée
+        # Dans une vraie implémentation, utiliser wheel ou pip wheel
+        return None
+    
+    def _extract_package_version(self, package: str, site_packages: Path) -> str:
+        """Extrait la version d'un package installé"""
         try:
-            sha256_hash = hashlib.sha256()
+            # Recherche fichier METADATA ou PKG-INFO
+            for dist_info in site_packages.glob(f"{package}*.dist-info"):
+                metadata_file = dist_info / "METADATA"
+                if metadata_file.exists():
+                    content = metadata_file.read_text(encoding='utf-8')
+                    for line in content.split('\n'):
+                        if line.startswith('Version:'):
+                            return line.split(':', 1)[1].strip()
             
-            with open(file_path, "rb") as f:
-                for byte_block in iter(lambda: f.read(4096), b""):
-                    sha256_hash.update(byte_block)
-            
-            return sha256_hash.hexdigest()
-        except Exception as e:
-            logger.error(f"Erreur calcul hash {file_path}: {e}")
             return "unknown"
+        except Exception:
+            return "unknown"
+    
+    def _deduplicate_packages(self) -> None:
+        """Déduplication des packages"""
+        # Implémentation simplifiée
+        # Peut être améliorée avec vérification checksum
+        pass
+    
+    def _cleanup_orphaned_metadata(self) -> None:
+        """Nettoie les métadonnées orphelines"""
+        try:
+            for metadata_file in self.metadata_path.glob("*.json"):
+                cache_key = metadata_file.stem
+                if cache_key not in self._cache_index:
+                    metadata_file.unlink()
+        except Exception as e:
+            logger.error(f"Erreur nettoyage métadonnées orphelines: {e}")
