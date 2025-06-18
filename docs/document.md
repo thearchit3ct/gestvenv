@@ -38,6 +38,7 @@
 ### Création d'environnements
 
 #### Création basique
+
 ```bash
 # Environnement simple
 gestvenv create monapp
@@ -50,6 +51,7 @@ gestvenv create monapp --backend uv
 ```
 
 #### Création depuis fichiers de configuration
+
 ```bash
 # Depuis pyproject.toml
 gestvenv create-from-pyproject ./pyproject.toml monenv
@@ -59,6 +61,7 @@ gestvenv create-from-requirements ./requirements.txt monenv
 ```
 
 #### Création depuis templates
+
 ```bash
 # Projet web avec FastAPI
 gestvenv create-from-template web monwebapp
@@ -73,6 +76,7 @@ gestvenv create-from-template cli moncli
 ### Gestion des environnements
 
 #### Listing et information
+
 ```bash
 # Liste tous les environnements
 gestvenv list
@@ -88,6 +92,7 @@ gestvenv info monapp
 ```
 
 #### Activation et utilisation
+
 ```bash
 # Activation d'environnement
 gestvenv activate monapp
@@ -101,6 +106,7 @@ gestvenv run monapp pytest
 ```
 
 #### Suppression et nettoyage
+
 ```bash
 # Suppression simple
 gestvenv delete monapp
@@ -118,6 +124,7 @@ gestvenv cleanup --all
 ### Fonctionnalités avancées
 
 #### Clonage d'environnements
+
 ```bash
 # Clone avec même configuration
 gestvenv clone monapp monapp-dev
@@ -127,6 +134,7 @@ gestvenv clone monapp monapp-test --python 3.12
 ```
 
 #### Sauvegarde et restauration
+
 ```bash
 # Export complet
 gestvenv export monapp backup.json
@@ -145,6 +153,7 @@ gestvenv export monapp --packages-only packages.json
 ### Backends disponibles
 
 #### Backend uv (recommandé)
+
 - **Performance** : 10x plus rapide que pip
 - **Compatibilité** : 100% compatible pip
 - **Installation** : Gestion automatique des dépendances
@@ -159,6 +168,7 @@ gestvenv install requests --backend uv
 ```
 
 #### Backend pip (par défaut)
+
 - **Universalité** : Disponible partout
 - **Stabilité** : Backend de référence
 - **Compatibilité** : Support maximal
@@ -172,6 +182,7 @@ gestvenv install requests --backend pip
 ```
 
 #### Backends futurs (poetry, pdm)
+
 - **Poetry** : Gestion avancée des dépendances
 - **PDM** : Support PEP 582 et workflows modernes
 
@@ -184,6 +195,7 @@ gestvenv backend install poetry
 ### Gestion des backends
 
 #### Configuration globale
+
 ```bash
 # Liste des backends disponibles
 gestvenv backend list
@@ -199,6 +211,7 @@ gestvenv backend set auto
 ```
 
 #### Configuration par environnement
+
 ```bash
 # Backend spécifique pour un environnement
 gestvenv config set-env monapp backend uv
@@ -208,7 +221,9 @@ gestvenv config show-env monapp
 ```
 
 #### Fallback automatique
+
 GestVenv gère automatiquement les fallbacks :
+
 - uv → pip si uv indisponible
 - poetry → pip si pyproject.toml incompatible
 - Détection automatique du meilleur backend
@@ -220,22 +235,30 @@ GestVenv gère automatiquement les fallbacks :
 ### Templates intégrés
 
 #### Template Basic
+
 **Usage** : Projets Python simples
+
 ```bash
 gestvenv create-from-template basic monprojet
 ```
+
 **Contenu** :
+
 - Structure basique src/
 - Configuration pytest
 - .gitignore Python
 - README.md minimal
 
 #### Template Web
+
 **Usage** : Applications web modernes
+
 ```bash
 gestvenv create-from-template web monwebapp --framework fastapi
 ```
+
 **Contenu** :
+
 - FastAPI/Flask/Django préconfigurés
 - Structure API RESTful
 - Tests automatisés
@@ -243,33 +266,45 @@ gestvenv create-from-template web monwebapp --framework fastapi
 - Variables d'environnement
 
 #### Template Data Science
+
 **Usage** : Projets d'analyse de données
+
 ```bash
 gestvenv create-from-template data-science monanalyse
 ```
+
 **Contenu** :
+
 - Jupyter notebooks
 - Stack data science (pandas, numpy, matplotlib)
 - Structure données/notebooks/scripts
 - Configuration DVC optionnelle
 
 #### Template CLI
+
 **Usage** : Outils en ligne de commande
+
 ```bash
 gestvenv create-from-template cli moncli
 ```
+
 **Contenu** :
+
 - Click/Typer configuration
 - Interface riche (Rich)
 - Tests CLI
 - Packaging pour distribution
 
 #### Template FastAPI
+
 **Usage** : APIs web haute performance
+
 ```bash
 gestvenv create-from-template fastapi monapi
 ```
+
 **Contenu** :
+
 - FastAPI optimisé
 - Documentation OpenAPI
 - Tests asynchrones
@@ -277,22 +312,30 @@ gestvenv create-from-template fastapi monapi
 - Authentification JWT
 
 #### Template Flask
+
 **Usage** : Applications web traditionnelles
+
 ```bash
 gestvenv create-from-template flask monflask
 ```
+
 **Contenu** :
+
 - Flask avec blueprints
 - Base de données Flask-SQLAlchemy
 - Migrations Alembic
 - Templates Jinja2
 
 #### Template Django
+
 **Usage** : Applications web complètes
+
 ```bash
 gestvenv create-from-template django mondjango
 ```
+
 **Contenu** :
+
 - Projet Django configuré
 - Applications modulaires
 - Administration Django
@@ -301,6 +344,7 @@ gestvenv create-from-template django mondjango
 ### Personnalisation des templates
 
 #### Paramètres de création
+
 ```bash
 # Avec paramètres personnalisés
 gestvenv create-from-template web monapp \
@@ -311,6 +355,7 @@ gestvenv create-from-template web monapp \
 ```
 
 #### Templates utilisateur
+
 ```bash
 # Création template personnalisé
 gestvenv template create mon-template \
@@ -325,7 +370,9 @@ gestvenv template info mon-template
 ```
 
 #### Variables de template
+
 Les templates supportent la substitution de variables :
+
 - `{{project_name}}` : Nom du projet
 - `{{package_name}}` : Nom du package Python
 - `{{author}}` : Auteur
@@ -340,6 +387,7 @@ Les templates supportent la substitution de variables :
 ### Système de cache
 
 #### Configuration du cache
+
 ```bash
 # Activation cache
 gestvenv config set cache-enabled true
@@ -352,6 +400,7 @@ gestvenv config set cache-path ~/.gestvenv/cache
 ```
 
 #### Gestion du cache
+
 ```bash
 # Information sur le cache
 gestvenv cache info
@@ -369,6 +418,7 @@ gestvenv cache clean --older-than 30
 ### Mode hors ligne
 
 #### Pré-téléchargement
+
 ```bash
 # Cache packages populaires
 gestvenv cache add numpy pandas matplotlib requests flask
@@ -381,6 +431,7 @@ gestvenv cache add numpy --platforms win_amd64,linux_x86_64,macosx_arm64
 ```
 
 #### Utilisation hors ligne
+
 ```bash
 # Installation hors ligne
 gestvenv --offline install requests
@@ -395,11 +446,13 @@ gestvenv cache check numpy pandas
 ### Optimisations avancées
 
 #### Compression adaptative
+
 - **Petits fichiers** (< 1KB) : Pas de compression
 - **Fichiers moyens** (< 1MB) : Compression LZ4 (rapide)
 - **Gros fichiers** (> 1MB) : Compression ZSTD (optimal)
 
 #### Cache distribué
+
 ```bash
 # Export du cache
 gestvenv cache export backup_cache.tar.gz
@@ -412,7 +465,9 @@ gestvenv cache sync --from team-cache-server
 ```
 
 #### Pré-téléchargement intelligent
+
 Analyse des patterns d'utilisation pour prédire les packages nécessaires :
+
 - Packages fréquemment installés ensemble
 - Dépendances transitives populaires
 - Suggestions basées sur l'historique
@@ -426,6 +481,7 @@ Analyse des patterns d'utilisation pour prédire les packages nécessaires :
 GestVenv supporte intégralement le standard PEP 621 pour la configuration de projets Python modernes.
 
 #### Structure pyproject.toml complète
+
 ```toml
 [build-system]
 requires = ["hatchling"]
@@ -505,6 +561,7 @@ python_files = ["test_*.py", "*_test.py"]
 ### Opérations avec pyproject.toml
 
 #### Création depuis pyproject.toml
+
 ```bash
 # Création automatique avec toutes les dépendances
 gestvenv create-from-pyproject ./pyproject.toml monenv
@@ -517,6 +574,7 @@ gestvenv create-from-pyproject ./pyproject.toml monenv --lock
 ```
 
 #### Synchronisation
+
 ```bash
 # Synchronisation complète
 gestvenv sync monenv
@@ -529,6 +587,7 @@ gestvenv sync monenv --clean
 ```
 
 #### Gestion des groupes de dépendances
+
 ```bash
 # Installation groupe dev
 gestvenv install --group dev --env monenv
@@ -543,6 +602,7 @@ gestvenv groups list --env monenv
 ### Validation et linting
 
 #### Validation pyproject.toml
+
 ```bash
 # Validation syntaxe et conformité PEP 621
 gestvenv validate pyproject.toml
@@ -555,6 +615,7 @@ gestvenv validate pyproject.toml --strict
 ```
 
 #### Génération pyproject.toml
+
 ```bash
 # Génération depuis requirements.txt
 gestvenv generate pyproject.toml --from requirements.txt
@@ -573,6 +634,7 @@ gestvenv update pyproject.toml --add-missing
 ### Migration depuis v1.0
 
 #### Migration automatique
+
 ```bash
 # La migration s'effectue automatiquement au premier lancement v1.1
 gestvenv list  # Déclenche la migration si nécessaire
@@ -585,6 +647,7 @@ gestvenv migrate --from-v1.0 --backup
 ```
 
 #### Analyse des opportunités de migration
+
 ```bash
 # Analyse des améliorations possibles
 gestvenv migrate --analyze
@@ -599,6 +662,7 @@ gestvenv migrate --suggest-optimizations
 ### Conversion de formats
 
 #### Requirements.txt vers pyproject.toml
+
 ```bash
 # Conversion basique
 gestvenv convert requirements.txt --to pyproject.toml
@@ -611,6 +675,7 @@ gestvenv convert requirements.txt --to pyproject.toml --interactive
 ```
 
 #### Pipfile vers pyproject.toml
+
 ```bash
 # Conversion depuis Pipenv
 gestvenv convert Pipfile --to pyproject.toml
@@ -622,6 +687,7 @@ gestvenv convert Pipfile --to pyproject.toml --preserve-scripts
 ### Migration entre backends
 
 #### Changement de backend d'environnement
+
 ```bash
 # Migration vers uv
 gestvenv migrate-backend monenv --to uv
@@ -634,6 +700,7 @@ gestvenv migrate-backend monenv --to uv --validate
 ```
 
 #### Migration par lot
+
 ```bash
 # Migration tous les environnements
 gestvenv migrate-backend --all --to uv
@@ -653,6 +720,7 @@ L'interface CLI de GestVenv v1.1 est organisée en sous-commandes logiques avec 
 #### Commandes principales
 
 ##### Gestion des environnements
+
 ```bash
 # Création
 gestvenv create <nom> [OPTIONS]
@@ -672,6 +740,7 @@ gestvenv rename <ancien> <nouveau>
 ```
 
 ##### Gestion des packages
+
 ```bash
 # Installation
 gestvenv install <packages> [OPTIONS]
@@ -690,6 +759,7 @@ gestvenv sync <environnement> [OPTIONS]
 ```
 
 ##### Cache et performance
+
 ```bash
 # Cache
 gestvenv cache info
@@ -704,6 +774,7 @@ gestvenv profile <commande> [OPTIONS]
 ```
 
 ##### Backend et configuration
+
 ```bash
 # Backends
 gestvenv backend list
@@ -719,6 +790,7 @@ gestvenv config unset <clé>
 ### Options globales
 
 #### Modes de fonctionnement
+
 ```bash
 # Mode verbeux
 gestvenv --verbose <commande>
@@ -738,6 +810,7 @@ gestvenv --format table <commande>
 ```
 
 #### Configuration par environnement
+
 ```bash
 # Variables d'environnement
 export GESTVENV_BACKEND=uv
@@ -751,6 +824,7 @@ echo "backend = 'uv'" > .gestvenv.toml
 ### Interface riche
 
 #### Affichage coloré et émojis
+
 - **✅ Succès** : Opérations réussies
 - **❌ Erreur** : Problèmes rencontrés
 - **⚠️ Avertissement** : Situations à attention
@@ -758,6 +832,7 @@ echo "backend = 'uv'" > .gestvenv.toml
 - **📊 Statistiques** : Informations quantitatives
 
 #### Barres de progression
+
 ```bash
 # Installation avec progression
 gestvenv install numpy pandas matplotlib
@@ -769,6 +844,7 @@ gestvenv cache add requests flask django
 ```
 
 #### Tables et layouts
+
 ```bash
 # Liste formatée
 gestvenv list --format table
@@ -784,6 +860,7 @@ gestvenv list --format table
 ### Autocomplétion
 
 #### Installation bash
+
 ```bash
 # Génération script
 gestvenv completion bash > ~/.gestvenv-completion.bash
@@ -793,6 +870,7 @@ echo 'source ~/.gestvenv-completion.bash' >> ~/.bashrc
 ```
 
 #### Installation zsh
+
 ```bash
 # Génération script
 gestvenv completion zsh > ~/.gestvenv-completion.zsh
@@ -802,6 +880,7 @@ echo 'source ~/.gestvenv-completion.zsh' >> ~/.zshrc
 ```
 
 #### Installation fish
+
 ```bash
 # Génération script
 gestvenv completion fish > ~/.config/fish/completions/gestvenv.fish
@@ -814,6 +893,7 @@ gestvenv completion fish > ~/.config/fish/completions/gestvenv.fish
 ### Système de diagnostic
 
 #### Diagnostic global
+
 ```bash
 # Diagnostic complet du système
 gestvenv doctor
@@ -829,6 +909,7 @@ gestvenv doctor --export diagnostic.json
 ```
 
 #### Diagnostic spécifique
+
 ```bash
 # Diagnostic d'un environnement
 gestvenv doctor monenv
@@ -846,17 +927,20 @@ gestvenv doctor --config
 ### Types de problèmes détectés
 
 #### Problèmes d'environnements
+
 - **Environnements corrompus** : Détection et réparation automatique
 - **Dépendances manquantes** : Identification et installation
 - **Versions incompatibles** : Résolution de conflits
 - **Permissions incorrectes** : Correction automatique
 
 #### Problèmes de configuration
+
 - **Backends manquants** : Installation automatique
 - **Chemins invalides** : Correction et mise à jour
 - **Configuration obsolète** : Migration automatique
 
 #### Problèmes de performance
+
 - **Cache sous-utilisé** : Suggestions d'optimisation
 - **Backend sous-optimal** : Recommandations de migration
 - **Espace disque insuffisant** : Nettoyage automatique
@@ -864,6 +948,7 @@ gestvenv doctor --config
 ### Système de réparation
 
 #### Réparation automatique
+
 ```bash
 # Réparation automatique complète
 gestvenv repair --auto
@@ -876,6 +961,7 @@ gestvenv repair monenv --interactive
 ```
 
 #### Réparation manuelle
+
 ```bash
 # Liste des réparations possibles
 gestvenv repair --list monenv
@@ -890,6 +976,7 @@ gestvenv repair monenv --step-by-step
 ### Monitoring continu
 
 #### Vérification santé
+
 ```bash
 # Vérification périodique
 gestvenv health-check --schedule daily
@@ -902,6 +989,7 @@ gestvenv monitor start
 ```
 
 #### Logs et audit
+
 ```bash
 # Consultation logs
 gestvenv logs show
@@ -920,12 +1008,14 @@ gestvenv audit --since 2024-01-01
 ### Métriques collectées
 
 #### Performance des opérations
+
 - **Temps d'installation** : Par package et par backend
 - **Taux de hit du cache** : Efficacité du cache
 - **Utilisation réseau** : Bande passante et latence
 - **Utilisation disque** : Espace cache et environnements
 
 #### Statistiques d'utilisation
+
 - **Commandes fréquentes** : Analyse d'usage
 - **Packages populaires** : Optimisation cache
 - **Backends préférés** : Tendances d'adoption
@@ -933,6 +1023,7 @@ gestvenv audit --since 2024-01-01
 ### Outils de monitoring
 
 #### Tableau de bord
+
 ```bash
 # Vue d'ensemble performance
 gestvenv stats dashboard
@@ -945,6 +1036,7 @@ gestvenv stats --trend --period 30d
 ```
 
 #### Profiling en temps réel
+
 ```bash
 # Profiling d'une commande
 gestvenv profile install numpy pandas
@@ -959,6 +1051,7 @@ gestvenv profile cache add requests
 ### Benchmarks
 
 #### Benchmarks intégrés
+
 ```bash
 # Benchmark création d'environnement
 gestvenv benchmark create --iterations 10
@@ -974,6 +1067,7 @@ gestvenv benchmark cache --packages-file popular.txt
 ```
 
 #### Comparaisons
+
 ```bash
 # Comparaison backends
 gestvenv compare backends pip uv --operation install
@@ -988,12 +1082,15 @@ gestvenv compare --export comparison.json
 ### Optimisations automatiques
 
 #### Suggestions intelligentes
+
 Le système analyse automatiquement les performances et propose :
+
 - **Migration backend** : Passage vers uv pour +10x performance
 - **Optimisation cache** : Taille et stratégies optimales
 - **Nettoyage automatique** : Suppression des éléments inutiles
 
 #### Auto-tuning
+
 ```bash
 # Optimisation automatique
 gestvenv optimize --auto
@@ -1012,6 +1109,7 @@ gestvenv optimize cache --target-size 2GB
 ### Validation des packages
 
 #### Vérification des sources
+
 ```bash
 # Vérification signature packages
 gestvenv verify packages requests flask
@@ -1024,6 +1122,7 @@ gestvenv security scan --env monenv
 ```
 
 #### Détection de vulnérabilités
+
 ```bash
 # Audit sécurité
 gestvenv audit security
@@ -1038,11 +1137,13 @@ gestvenv security update --auto-fix
 ### Isolation et sandboxing
 
 #### Environnements isolés
+
 - **Isolation réseau** : Contrôle des accès externes
 - **Isolation filesystem** : Permissions restreintes
 - **Isolation processus** : Limitation des ressources
 
 #### Configuration sécurité
+
 ```bash
 # Mode sécurisé strict
 gestvenv config set security-mode strict
@@ -1057,6 +1158,7 @@ gestvenv config set allowed-sources "pypi.org,conda-forge"
 ### Audit et compliance
 
 #### Logs de sécurité
+
 ```bash
 # Audit des installations
 gestvenv audit installations --since 30d
@@ -1069,6 +1171,7 @@ gestvenv audit export --format compliance.json
 ```
 
 #### Politiques de sécurité
+
 ```bash
 # Application politique d'équipe
 gestvenv policy apply team-security.json
@@ -1087,6 +1190,7 @@ gestvenv policy report violations
 ### Structure de configuration
 
 #### Fichiers de configuration
+
 ```
 ~/.gestvenv/
 ├── config.toml              # Configuration globale
@@ -1097,6 +1201,7 @@ gestvenv policy report violations
 ```
 
 #### Configuration globale (config.toml)
+
 ```toml
 [general]
 preferred_backend = "uv"
@@ -1129,6 +1234,7 @@ progress_style = "bar"
 ### Configuration par projet
 
 #### Fichier .gestvenv.toml
+
 ```toml
 [project]
 name = "mon-projet"
@@ -1152,6 +1258,7 @@ lint = "flake8 . && mypy ."
 ### Variables d'environnement
 
 #### Variables système
+
 ```bash
 # Configuration backend
 export GESTVENV_BACKEND=uv
@@ -1173,6 +1280,7 @@ export GESTVENV_NO_EMOJI=false
 ### Profils de configuration
 
 #### Profils prédéfinis
+
 ```bash
 # Profil développement
 gestvenv profile activate dev
@@ -1188,6 +1296,7 @@ gestvenv profile activate fast
 ```
 
 #### Création profils personnalisés
+
 ```bash
 # Création profil équipe
 gestvenv profile create team --from-config team.toml
@@ -1206,6 +1315,7 @@ gestvenv profile export team team-config.json
 ### Intégration CI/CD
 
 #### GitHub Actions
+
 ```yaml
 name: Tests avec GestVenv
 on: [push, pull_request]
@@ -1232,6 +1342,7 @@ jobs:
 ```
 
 #### GitLab CI
+
 ```yaml
 stages:
   - test
@@ -1251,6 +1362,7 @@ test:
 ### Scripts d'automatisation
 
 #### Script de développement
+
 ```bash
 #!/bin/bash
 # dev-setup.sh
@@ -1278,6 +1390,7 @@ echo "💡 Activez avec: gestvenv shell dev"
 ```
 
 #### Script de déploiement
+
 ```bash
 #!/bin/bash
 # deploy.sh
@@ -1305,6 +1418,7 @@ echo "✅ Prêt pour déploiement!"
 ### Hooks et événements
 
 #### Hooks d'environnement
+
 ```bash
 # Hook post-création
 gestvenv hook add post-create ./scripts/setup-env.sh
@@ -1319,6 +1433,7 @@ gestvenv hook add post-sync ./scripts/update-docs.sh
 #### Intégration IDE
 
 ##### VS Code
+
 ```json
 {
     "python.venvPath": "~/.gestvenv/environments",
@@ -1329,11 +1444,13 @@ gestvenv hook add post-sync ./scripts/update-docs.sh
 ```
 
 ##### PyCharm
+
 Configuration automatique des interpréteurs Python depuis les environnements GestVenv.
 
 ### Monitoring et alertes
 
 #### Monitoring système
+
 ```bash
 # Démon monitoring
 gestvenv monitor start --interval 1h
@@ -1349,6 +1466,7 @@ gestvenv monitor export prometheus --port 9090
 ```
 
 #### Rapports automatiques
+
 ```bash
 # Rapport quotidien
 gestvenv report daily --email team@company.com
@@ -1367,6 +1485,7 @@ gestvenv dashboard serve --port 8080
 ### Référence complète des commandes
 
 #### Commandes principales
+
 - `gestvenv create` - Création d'environnements
 - `gestvenv list` - Liste des environnements  
 - `gestvenv install` - Installation de packages
@@ -1377,6 +1496,7 @@ gestvenv dashboard serve --port 8080
 - `gestvenv config` - Configuration
 
 #### Options globales
+
 - `--verbose, -v` - Mode verbeux
 - `--quiet, -q` - Mode silencieux
 - `--offline` - Mode hors ligne
@@ -1398,18 +1518,21 @@ gestvenv dashboard serve --port 8080
 ### Support et ressources
 
 #### Documentation
-- **Site officiel** : https://gestvenv.dev
-- **Documentation API** : https://docs.gestvenv.dev
-- **Exemples** : https://github.com/gestvenv/examples
+
+- **Site officiel** : <https://gestvenv.dev>
+- **Documentation API** : <https://docs.gestvenv.dev>
+- **Exemples** : <https://github.com/gestvenv/examples>
 
 #### Communauté
-- **GitHub** : https://github.com/gestvenv/gestvenv
-- **Discord** : https://discord.gg/gestvenv
-- **Forum** : https://forum.gestvenv.dev
+
+- **GitHub** : <https://github.com/gestvenv/gestvenv>
+- **Discord** : <https://discord.gg/gestvenv>
+- **Forum** : <https://forum.gestvenv.dev>
 
 #### Support professionnel
-- **Email** : support@gestvenv.com
-- **Enterprise** : enterprise@gestvenv.com
+
+- **Email** : <support@gestvenv.com>
+- **Enterprise** : <enterprise@gestvenv.com>
 
 ---
 
