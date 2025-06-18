@@ -1,254 +1,308 @@
 """
-Utilitaires de gestion des chemins pour GestVenv.
-
-Ce module fournit des fonctions pour manipuler les chemins de fichiers
-de manière indépendante du système d'exploitation.
+Utilitaires de gestion des chemins pour GestVenv v1.1
 """
 
 import os
-import sys
-import platform
-import logging
+import shutil
+from datetime import datetime
 from pathlib import Path
-from typing import Optional, Union, List, Tuple
+from typing import List, Optional
 
-# Configuration du logger
+import logging
 logger = logging.getLogger(__name__)
 
-def get_os_name() -> str:
-    """
-    Retourne le nom du système d'exploitation en minuscules.
-    
-    Returns:
-        str: Nom du système ('windows', 'linux', 'darwin', etc.)
-    """
-    return platform.system().lower()
 
-def expand_user_path(path_str: str) -> Path:
-    """
-    Expande un chemin utilisateur (commençant par ~).
+class PathUtils:
+    """Utilitaires de gestion des chemins et fichiers"""
     
-    Args:
-        path_str: Chaîne représentant un chemin potentiellement relatif à l'utilisateur
+    @staticmethod
+    def ensure_directory(path: Path) -> bool:
+        """Assure qu'un répertoire existe"""
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            return True
+        except (OSError, PermissionError) as e:
+            logger.error(f"Impossible de créer {path}: {e}")
+            return False
+    
+    @staticmethod
+    def safe_remove_directory(path: Path) -> bool:
+        """Supprime un répertoire en sécurité"""
+        if not path.exists():
+            return True
         
-    Returns:
-        Path: Chemin expandé
-    """
-    return Path(os.path.expanduser(path_str))
-
-def resolve_path(path_str: Union[str, Path]) -> Path:
-    """
-    Résout un chemin en absolu, en gérant les chemins utilisateur et relatifs.
-    
-    Args:
-        path_str: Chaîne ou objet Path représentant un chemin
+        if not path.is_dir():
+            logger.error(f"{path} n'est pas un répertoire")
+            return False
         
-    Returns:
-        Path: Chemin absolu résolu
-    """
-    # Convertir en Path si c'est une chaîne
-    if isinstance(path_str, str):
-        path = Path(path_str)
-    else:
-        path = path_str
+        try:
+            # Vérification sécurité
+            if not PathUtils._is_safe_to_remove(path):
+                logger.error(f"Suppression refusée pour raisons de sécurité: {path}")
+                return False
+            
+            shutil.rmtree(path)
+            return True
+        except (OSError, PermissionError) as e:
+            logger.error(f"Erreur suppression {path}: {e}")
+            return False
     
-    # Résoudre les chemins relatifs aux utilisateurs (~)
-    if isinstance(path_str, str) and path_str.startswith("~"):
-        path = expand_user_path(path_str)
+    @staticmethod
+    def get_environment_path(name: str, base_path: Path) -> Path:
+        """Chemin d'environnement sécurisé"""
+        # Nettoyage nom
+        safe_name = PathUtils._sanitize_filename(name)
+        return base_path / safe_name
     
-    # Rendre absolu si relatif
-    if not path.is_absolute():
-        path = Path.cwd() / path
-    
-    return path.resolve()
-
-def ensure_dir_exists(path: Union[str, Path]) -> Path:
-    """
-    S'assure qu'un répertoire existe, le crée si nécessaire.
-    
-    Args:
-        path: Chemin du répertoire
+    @staticmethod
+    def find_pyproject_files(directory: Path) -> List[Path]:
+        """Trouve tous les fichiers pyproject.toml"""
+        pyproject_files = []
         
-    Returns:
-        Path: Chemin du répertoire
+        if not directory.exists() or not directory.is_dir():
+            return pyproject_files
         
-    Raises:
-        OSError: Si le répertoire ne peut pas être créé
-    """
-    path = resolve_path(path)
-    path.mkdir(parents=True, exist_ok=True)
-    return path
-
-def get_default_data_dir() -> Path:
-    """
-    Retourne le répertoire par défaut pour stocker les données de l'application
-    selon les conventions du système d'exploitation.
-    
-    Returns:
-        Path: Chemin du répertoire de données par défaut
-    """
-    os_name = get_os_name()
-    
-    if os_name == "windows":
-        # Windows: %APPDATA%\GestVenv
-        base_dir = Path(os.environ.get("APPDATA", "")) / "GestVenv"
-    elif os_name == "darwin":
-        # macOS: ~/Library/Application Support/GestVenv
-        base_dir = Path.home() / "Library" / "Application Support" / "GestVenv"
-    else:
-        # Linux et autres Unix: ~/.config/gestvenv
-        xdg_config_home = os.environ.get("XDG_CONFIG_HOME")
-        if xdg_config_home:
-            base_dir = Path(xdg_config_home) / "gestvenv"
-        else:
-            base_dir = Path.home() / ".config" / "gestvenv"
-    
-    # Créer le répertoire s'il n'existe pas
-    try:
-        base_dir.mkdir(parents=True, exist_ok=True)
-    except Exception as e:
-        logger.error(f"Impossible de créer le répertoire de données: {e}")
-        # Fallback au répertoire courant
-        base_dir = Path.cwd() / ".gestvenv"
-        base_dir.mkdir(exist_ok=True)
-    
-    return base_dir
-
-def get_normalized_path(path: Union[str, Path]) -> str:
-    """
-    Normalise un chemin et le retourne sous forme de chaîne,
-    indépendamment du système d'exploitation.
-    
-    Args:
-        path: Chemin à normaliser
+        try:
+            # Recherche récursive limitée (3 niveaux max)
+            for root in [directory] + list(directory.iterdir())[:10]:
+                if root.is_dir():
+                    pyproject_path = root / "pyproject.toml"
+                    if pyproject_path.exists():
+                        pyproject_files.append(pyproject_path)
+        except (OSError, PermissionError):
+            pass
         
-    Returns:
-        str: Chemin normalisé sous forme de chaîne
-    """
-    if isinstance(path, str):
-        # Si c'est un chemin relatif simple, le garder tel quel mais normaliser les séparateurs
-        if not os.path.isabs(path) and not path.startswith('~'):
-            return path.replace("\\", "/")
+        return pyproject_files
     
-    # Pour les autres cas, utiliser resolve_path
-    resolved = resolve_path(path)
-    return str(resolved).replace("\\", "/")
-
-def get_relative_path(path: Union[str, Path], base: Union[str, Path]) -> Path:
-    """
-    Calcule le chemin relatif d'un chemin par rapport à une base.
-    
-    Args:
-        path: Chemin à rendre relatif
-        base: Chemin de base
+    @staticmethod
+    def backup_file(source: Path, backup_dir: Path) -> Optional[Path]:
+        """Sauvegarde un fichier avec timestamp"""
+        if not source.exists():
+            return None
         
-    Returns:
-        Path: Chemin relatif
-    """
-    path = resolve_path(path)
-    base = resolve_path(base)
+        try:
+            PathUtils.ensure_directory(backup_dir)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            backup_name = f"{source.name}.{timestamp}.backup"
+            backup_path = backup_dir / backup_name
+            
+            shutil.copy2(source, backup_path)
+            return backup_path
+        except (OSError, PermissionError) as e:
+            logger.error(f"Erreur sauvegarde {source}: {e}")
+            return None
     
-    try:
-        return path.relative_to(base)
-    except ValueError:
-        # Si les chemins n'ont pas de base commune, retourner le chemin absolu
-        return path
-
-def is_subpath(parent: Union[str, Path], child: Union[str, Path]) -> bool:
-    """
-    Vérifie si un chemin est un sous-chemin d'un autre.
-    
-    Args:
-        parent: Chemin parent potentiel
-        child: Chemin enfant potentiel
+    @staticmethod
+    def find_project_root(start_path: Path) -> Optional[Path]:
+        """Trouve la racine d'un projet Python"""
+        current = start_path.resolve()
         
-    Returns:
-        bool: True si child est un sous-chemin de parent
-    """
-    parent_path = resolve_path(parent)
-    child_path = resolve_path(child)
-    
-    # Convertir en chaîne avec séparateurs normalisés pour la comparaison
-    parent_str = str(parent_path).replace("\\", "/")
-    child_str = str(child_path).replace("\\", "/")
-    
-    return child_str.startswith(parent_str + "/")
-
-def find_file_in_parents(filename: str, start_dir: Optional[Union[str, Path]] = None) -> Optional[Path]:
-    """
-    Cherche un fichier dans le répertoire courant ou spécifié et ses parents.
-    
-    Args:
-        filename: Nom du fichier à chercher
-        start_dir: Répertoire de départ (par défaut: répertoire courant)
+        project_markers = [
+            "pyproject.toml",
+            "setup.py",
+            "setup.cfg",
+            "requirements.txt",
+            ".git",
+            ".gitignore"
+        ]
         
-    Returns:
-        Path ou None: Chemin du fichier s'il est trouvé, None sinon
-    """
-    if start_dir is None:
-        start_dir = Path.cwd()
-    else:
-        start_dir = resolve_path(start_dir)
-    
-    current_dir = start_dir
-    
-    # Remonter les répertoires parents
-    while True:
-        file_path = current_dir / filename
-        if file_path.exists():
-            return file_path
+        # Remonte jusqu'à 5 niveaux
+        for _ in range(5):
+            for marker in project_markers:
+                if (current / marker).exists():
+                    return current
+            
+            parent = current.parent
+            if parent == current:  # Racine système
+                break
+            current = parent
         
-        # Arrêter à la racine
-        if current_dir.parent == current_dir:
-            break
+        return None
+    
+    @staticmethod
+    def resolve_relative_path(base: Path, relative: str) -> Path:
+        """Résout un chemin relatif de manière sécurisée"""
+        try:
+            resolved = (base / relative).resolve()
+            
+            # Vérification que le chemin reste dans base
+            if not str(resolved).startswith(str(base.resolve())):
+                raise ValueError("Path traversal détecté")
+            
+            return resolved
+        except (OSError, ValueError) as e:
+            logger.error(f"Erreur résolution chemin: {e}")
+            raise
+    
+    @staticmethod
+    def copy_directory_tree(source: Path, target: Path) -> bool:
+        """Copie un arbre de répertoires"""
+        if not source.exists() or not source.is_dir():
+            return False
         
-        current_dir = current_dir.parent
+        try:
+            # Vérifications sécurité
+            if not PathUtils._is_safe_copy_operation(source, target):
+                return False
+            
+            # Suppression cible si existe
+            if target.exists():
+                PathUtils.safe_remove_directory(target)
+            
+            shutil.copytree(source, target)
+            return True
+        except (OSError, PermissionError) as e:
+            logger.error(f"Erreur copie {source} → {target}: {e}")
+            return False
     
-    return None
-
-def get_file_extension(path: Union[str, Path]) -> str:
-    """
-    Retourne l'extension d'un fichier (sans le point).
-    
-    Args:
-        path: Chemin du fichier
+    @staticmethod
+    def get_size_mb(path: Path) -> float:
+        """Taille d'un fichier/répertoire en MB"""
+        if not path.exists():
+            return 0.0
         
-    Returns:
-        str: Extension du fichier (en minuscules)
-    """
-    if isinstance(path, str):
-        path = Path(path)
-    
-    return path.suffix.lower().lstrip('.')
-
-def get_file_name_without_extension(path: Union[str, Path]) -> str:
-    """
-    Retourne le nom d'un fichier sans son extension.
-    
-    Args:
-        path: Chemin du fichier
+        try:
+            if path.is_file():
+                return path.stat().st_size / (1024 * 1024)
+            elif path.is_dir():
+                total_size = 0
+                for file_path in path.rglob('*'):
+                    if file_path.is_file():
+                        total_size += file_path.stat().st_size
+                return total_size / (1024 * 1024)
+        except (OSError, PermissionError):
+            pass
         
-    Returns:
-        str: Nom du fichier sans extension
-    """
-    if isinstance(path, str):
-        path = Path(path)
+        return 0.0
     
-    return path.stem
-
-def split_path(path: Union[str, Path]) -> Tuple[str, str, str]:
-    """
-    Divise un chemin en répertoire, nom de fichier sans extension et extension.
-    
-    Args:
-        path: Chemin à diviser
+    @staticmethod
+    def is_empty_directory(path: Path) -> bool:
+        """Vérifie si un répertoire est vide"""
+        if not path.exists() or not path.is_dir():
+            return False
         
-    Returns:
-        Tuple[str, str, str]: (répertoire, nom sans extension, extension)
-    """
-    path_obj = resolve_path(path)
-    directory = str(path_obj.parent)
-    filename = path_obj.stem
-    extension = path_obj.suffix.lstrip('.')
+        try:
+            return not any(path.iterdir())
+        except (OSError, PermissionError):
+            return False
     
-    return directory, filename, extension
+    @staticmethod
+    def clean_empty_directories(root_path: Path) -> int:
+        """Nettoie les répertoires vides récursivement"""
+        if not root_path.exists() or not root_path.is_dir():
+            return 0
+        
+        cleaned_count = 0
+        
+        try:
+            # Parcours en profondeur d'abord
+            for path in sorted(root_path.rglob('*'), key=lambda x: -len(x.parts)):
+                if path.is_dir() and PathUtils.is_empty_directory(path):
+                    try:
+                        path.rmdir()
+                        cleaned_count += 1
+                    except OSError:
+                        pass
+        except (OSError, PermissionError):
+            pass
+        
+        return cleaned_count
+    
+    @staticmethod
+    def find_files_by_pattern(directory: Path, pattern: str, max_depth: int = 3) -> List[Path]:
+        """Trouve fichiers par pattern avec limitation profondeur"""
+        files = []
+        
+        if not directory.exists() or not directory.is_dir():
+            return files
+        
+        try:
+            current_depth = 0
+            to_process = [(directory, 0)]
+            
+            while to_process and current_depth <= max_depth:
+                current_dir, depth = to_process.pop(0)
+                
+                if depth > max_depth:
+                    continue
+                
+                for item in current_dir.iterdir():
+                    if item.is_file() and item.match(pattern):
+                        files.append(item)
+                    elif item.is_dir() and depth < max_depth:
+                        to_process.append((item, depth + 1))
+                        
+                current_depth = max(current_depth, depth)
+                
+        except (OSError, PermissionError):
+            pass
+        
+        return files
+    
+    # Méthodes privées
+    
+    @staticmethod
+    def _sanitize_filename(filename: str) -> str:
+        """Assainit un nom de fichier"""
+        # Caractères interdits
+        forbidden_chars = '<>:"/\\|?*'
+        sanitized = ''.join('_' if c in forbidden_chars else c for c in filename)
+        
+        # Longueur maximum
+        if len(sanitized) > 255:
+            sanitized = sanitized[:255]
+        
+        # Pas de points à la fin
+        sanitized = sanitized.rstrip('.')
+        
+        return sanitized or "default"
+    
+    @staticmethod
+    def _is_safe_to_remove(path: Path) -> bool:
+        """Vérifie si un chemin peut être supprimé en sécurité"""
+        path_str = str(path.resolve())
+        
+        # Répertoires système protégés
+        protected_paths = [
+            '/etc', '/bin', '/usr', '/var', '/root', '/home',
+            'C:\\Windows', 'C:\\Program Files', 'C:\\Users'
+        ]
+        
+        for protected in protected_paths:
+            if path_str.startswith(protected):
+                return False
+        
+        # Vérification ownership (Unix)
+        if hasattr(os, 'getuid'):
+            try:
+                stat = path.stat()
+                if stat.st_uid != os.getuid():
+                    return False
+            except OSError:
+                return False
+        
+        return True
+    
+    @staticmethod
+    def _is_safe_copy_operation(source: Path, target: Path) -> bool:
+        """Vérifie si une opération de copie est sécurisée"""
+        try:
+            source_resolved = source.resolve()
+            target_resolved = target.resolve()
+            
+            # Éviter copie récursive
+            if str(target_resolved).startswith(str(source_resolved)):
+                return False
+            
+            # Vérifier permissions source
+            if not os.access(source, os.R_OK):
+                return False
+            
+            # Vérifier permissions cible
+            target_parent = target_resolved.parent
+            if not os.access(target_parent, os.W_OK):
+                return False
+            
+            return True
+        except (OSError, ValueError):
+            return False

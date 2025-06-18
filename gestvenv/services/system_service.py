@@ -1,309 +1,334 @@
 """
-Service pour les interactions avec le système d'exploitation.
-
-Ce module fournit les fonctionnalités pour interagir avec le système d'exploitation,
-exécuter des commandes et récupérer des informations système.
+Service système pour GestVenv v1.1
 """
 
 import os
 import platform
+import re
+import shutil
 import subprocess
-import logging
+import sys
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple, Any, Union
+from typing import Dict, List, Optional, Any
 
-# Configuration du logger
+from ..core.models import CommandResult
+from ..core.exceptions import ValidationError
+
+import logging
 logger = logging.getLogger(__name__)
 
+
 class SystemService:
-    """Service pour les interactions avec le système d'exploitation."""
+    """Service d'intégration système et commandes"""
     
-    def __init__(self) -> None:
-        """Initialise le service système."""
-        self.system = platform.system().lower()  # 'windows', 'linux', 'darwin' (macOS)
+    def detect_python_versions(self) -> List[str]:
+        """Détecte les versions Python disponibles"""
+        versions = []
         
-        # Initialiser le service d'environnement sans créer d'imports circulaires
-        from .environment_service import EnvironmentService
-        self.env_service = EnvironmentService()
+        # Commandes à tester
+        commands = [
+            'python3.13', 'python3.12', 'python3.11', 'python3.10', 'python3.9',
+            'python3', 'python'
+        ]
+        
+        for cmd in commands:
+            try:
+                result = subprocess.run(
+                    [cmd, '--version'], 
+                    capture_output=True, 
+                    text=True, 
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    version_output = result.stdout.strip()
+                    match = re.search(r'Python (\d+\.\d+\.\d+)', version_output)
+                    if match:
+                        full_version = match.group(1)
+                        short_version = '.'.join(full_version.split('.')[:2])
+                        if short_version not in versions:
+                            versions.append(short_version)
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+        
+        return sorted(versions, reverse=True)
     
-    def run_command(self, cmd: List[str], cwd: Optional[Path] = None,
-                  capture_output: bool = True, check: bool = False) -> Dict[str, Any]:
-        """
-        Exécute une commande système.
+    def validate_python_version(self, version: str) -> bool:
+        """Valide une version Python"""
+        if not re.match(r'^\d+\.\d+', version):
+            return False
         
-        Args:
-            cmd: Liste des éléments de la commande à exécuter.
-            cwd: Répertoire de travail pour l'exécution.
-            capture_output: Si True, capture les sorties standard et d'erreur.
-            check: Si True, lève une exception en cas d'erreur.
-            
-        Returns:
-            Dictionnaire contenant le code de retour et les sorties.
-        """
         try:
-            logger.debug(f"Exécution de la commande: {' '.join(cmd)}")
-            
-            # Configuration de l'environnement pour subprocess
-            env = os.environ.copy()
-            
-            # Exécuter la commande
-            result = subprocess.run(
-                cmd,
-                cwd=cwd,
-                capture_output=capture_output,
-                text=True,
-                check=check,
-                env=env
-            )
-            
-            # Préparer le résultat
-            output = {
-                'returncode': result.returncode,
-                'stdout': result.stdout if capture_output else "",
-                'stderr': result.stderr if capture_output else ""
-            }
-            
-            # Journaliser le résultat
-            if result.returncode != 0:
-                logger.warning(f"Commande terminée avec code de retour non nul: {result.returncode}")
-                if result.stderr and capture_output:
-                    logger.warning(f"Erreur: {result.stderr}")
-            else:
-                logger.debug("Commande exécutée avec succès")
-            
-            return output
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de l'exécution de la commande: {str(e)}")
-            return {
-                'returncode': 1,
-                'stdout': "",
-                'stderr': str(e)
-            }
+            major, minor = map(int, version.split('.')[:2])
+            return major >= 3 and (major > 3 or minor >= 9)
+        except ValueError:
+            return False
     
-    def get_activation_command(self, env_name: str, env_path: Path) -> Optional[str]:
-        """
-        Obtient la commande d'activation d'un environnement virtuel.
-        
-        Args:
-            env_name: Nom de l'environnement virtuel.
-            env_path: Chemin vers l'environnement virtuel.
-            
-        Returns:
-            Commande d'activation ou None si non disponible.
-        """
-        # Obtenir le chemin du script d'activation
-        activation_script = self.env_service.get_activation_script_path(env_name, env_path)
-        
-        if not activation_script:
-            return None
-        
-        # Générer la commande selon le système d'exploitation
-        if self.system == "windows":
-            # Sous Windows, on peut exécuter directement le script batch
-            return f'"{activation_script}"'
-        else:
-            # Sous Unix (Linux, macOS), il faut sourcer le script
-            return f'source "{activation_script}"'
-    
-    def run_in_environment(self, env_name: str, env_path: Path, 
-                         command: List[str]) -> Tuple[int, str, str]:
-        """
-        Exécute une commande dans un environnement virtuel spécifique.
-        
-        Args:
-            env_name: Nom de l'environnement virtuel.
-            env_path: Chemin vers l'environnement virtuel.
-            command: Commande à exécuter.
-            
-        Returns:
-            Tuple contenant (code de retour, sortie standard, sortie d'erreur).
-        """
-        # Obtenir l'exécutable Python de l'environnement
-        python_exe = self.env_service.get_python_executable(env_name, env_path)
-        
-        if not python_exe:
-            logger.error(f"Impossible de trouver l'exécutable Python pour l'environnement '{env_name}'")
-            return 1, "", f"Environnement '{env_name}' introuvable ou corrompu"
-        
-        # Préparer la commande avec l'exécutable Python de l'environnement
-        cmd = [str(python_exe)] + command
-        
-        # Exécuter la commande
-        result = self.run_command(cmd)
-        
-        return result['returncode'], result['stdout'], result['stderr']
-    
-    def check_python_version(self, python_cmd: str) -> Optional[str]:
-        """
-        Vérifie la version de Python pour une commande donnée.
-        
-        Args:
-            python_cmd: Commande Python à vérifier (ex: 'python', 'python3.9').
-            
-        Returns:
-            Version de Python ou None si non disponible.
-        """
-        try:
-            # Exécuter la commande pour obtenir la version Python
-            cmd = [python_cmd, "--version"]
-            result = self.run_command(cmd)
-            
-            if result['returncode'] != 0:
-                logger.warning(f"La commande '{python_cmd}' n'est pas disponible: {result['stderr']}")
-                return None
-            
-            # Extraire la version du format "Python X.Y.Z"
-            version_output = result['stdout'].strip()
-            
-            # Si la sortie est vide (ancien comportement de Python 2.x), vérifier stderr
-            if not version_output and result['stderr']:
-                version_output = result['stderr'].strip()
-            
-            # Extraire la version
-            import re
-            match = re.search(r'Python (\d+\.\d+\.\d+)', version_output)
-            if match:
-                version = match.group(1)
-                logger.debug(f"Version de Python pour '{python_cmd}': {version}")
-                return version
-            
-            return None
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la vérification de la version Python: {str(e)}")
-            return None
-    
-    def get_available_python_versions(self) -> List[Dict[str, str]]:
-        """
-        Récupère les versions Python disponibles sur le système.
-        
-        Returns:
-            Liste des versions Python disponibles avec commande et version.
-        """
-        python_commands = ["python", "python3"]
-        
-        # Ajouter des versions spécifiques à vérifier
-        for minor in range(9, 14):  # Python 3.9 à 3.13
-            python_commands.append(f"python3.{minor}")
-        
-        # Sous Windows, vérifier aussi 'py' avec différents sélecteurs
-        if self.system == "windows":
-            python_commands.extend(["py", "py -3"])
-            for minor in range(7, 14):
-                python_commands.append(f"py -3.{minor}")
-        
-        available_versions = []
-        
-        for cmd in python_commands:
-            version = self.check_python_version(cmd)
-            if version:
-                available_versions.append({
-                    "command": cmd,
-                    "version": version
-                })
-        
-        return available_versions
-    
-    def get_system_info(self) -> Dict[str, str]:
-        """
-        Récupère des informations sur le système d'exploitation.
-        
-        Returns:
-            Dictionnaire d'informations système.
-        """
-        system_info = {
+    def get_system_info(self) -> Dict[str, Any]:
+        """Informations système"""
+        return {
+            "platform": platform.platform(),
             "system": platform.system(),
             "release": platform.release(),
             "version": platform.version(),
             "machine": platform.machine(),
             "processor": platform.processor(),
-            "python_version": platform.python_version(),
+            "python_version": sys.version,
+            "python_executable": sys.executable,
+            "home_directory": str(Path.home()),
+            "current_directory": str(Path.cwd())
         }
-        
-        return system_info
     
-    def check_command_exists(self, command: str) -> bool:
-        """
-        Vérifie si une commande existe dans le système.
+    def check_backend_availability(self) -> Dict[str, bool]:
+        """Vérifie la disponibilité des backends"""
+        backends = {}
         
-        Args:
-            command: Nom de la commande à vérifier.
-            
-        Returns:
-            True si la commande existe, False sinon.
-        """
+        # pip (toujours disponible avec Python)
+        backends['pip'] = self._check_command_availability('pip')
+        
+        # uv
+        backends['uv'] = self._check_command_availability('uv')
+        
+        # poetry
+        backends['poetry'] = self._check_command_availability('poetry')
+        
+        # pdm
+        backends['pdm'] = self._check_command_availability('pdm')
+        
+        return backends
+    
+    def get_activation_script(self, env_path: Path) -> Path:
+        """Script d'activation pour un environnement"""
+        if os.name == 'nt':  # Windows
+            return env_path / "Scripts" / "activate.bat"
+        else:  # Unix/Linux/macOS
+            return env_path / "bin" / "activate"
+    
+    def detect_python_version(self, env_path: Path) -> str:
+        """Détecte la version Python d'un environnement"""
         try:
-            # Utiliser 'where' sous Windows et 'which' sous Unix
-            if self.system == "windows":
-                result = self.run_command(["where", command])
+            # Lecture pyvenv.cfg
+            pyvenv_cfg = env_path / "pyvenv.cfg"
+            if pyvenv_cfg.exists():
+                content = pyvenv_cfg.read_text(encoding='utf-8')
+                for line in content.split('\n'):
+                    if line.startswith('version'):
+                        version = line.split('=')[1].strip()
+                        parts = version.split('.')
+                        if len(parts) >= 2:
+                            return f"{parts[0]}.{parts[1]}"
+            
+            # Fallback: exécution directe
+            python_exe = self._get_python_executable(env_path)
+            if python_exe.exists():
+                result = subprocess.run(
+                    [str(python_exe), '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=10
+                )
+                if result.returncode == 0:
+                    match = re.search(r'Python (\d+\.\d+)', result.stdout)
+                    if match:
+                        return match.group(1)
+            
+            return "3.11"  # Défaut
+            
+        except Exception as e:
+            logger.error(f"Erreur détection version Python: {e}")
+            return "3.11"
+    
+    def execute_command(
+        self, 
+        cmd: List[str], 
+        env_path: Optional[Path] = None, 
+        **kwargs
+    ) -> CommandResult:
+        """Exécute une commande avec sécurisation"""
+        start_time = time.time()
+        
+        try:
+            # Validation commande
+            if not cmd or not cmd[0]:
+                return CommandResult(
+                    return_code=1,
+                    stdout="",
+                    stderr="Commande vide",
+                    execution_time=0.0,
+                    success=False
+                )
+            
+            # Environnement sécurisé
+            env = self._create_secure_environment(env_path) if env_path else None
+            
+            # Exécution avec timeout
+            timeout = kwargs.get('timeout', 300)  # 5 minutes par défaut
+            
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+                cwd=env_path or Path.cwd(),
+                **{k: v for k, v in kwargs.items() if k != 'timeout'}
+            )
+            
+            execution_time = time.time() - start_time
+            
+            return CommandResult(
+                return_code=result.returncode,
+                stdout=result.stdout,
+                stderr=result.stderr,
+                execution_time=execution_time,
+                success=result.returncode == 0
+            )
+            
+        except subprocess.TimeoutExpired:
+            return CommandResult(
+                return_code=124,
+                stdout="",
+                stderr="Timeout de la commande",
+                execution_time=time.time() - start_time,
+                success=False
+            )
+        except Exception as e:
+            return CommandResult(
+                return_code=1,
+                stdout="",
+                stderr=str(e),
+                execution_time=time.time() - start_time,
+                success=False,
+                error=e
+            )
+    
+    def get_platform_info(self) -> Dict[str, str]:
+        """Informations plateforme"""
+        system = platform.system().lower()
+        machine = platform.machine().lower()
+        
+        if system == "windows":
+            platform_tag = f"win_{machine}"
+        elif system == "darwin":
+            platform_tag = f"macosx_{machine}"
+        else:
+            platform_tag = f"linux_{machine}"
+        
+        return {
+            "system": system,
+            "machine": machine,
+            "platform_tag": platform_tag,
+            "is_windows": system == "windows",
+            "is_macos": system == "darwin",
+            "is_linux": system == "linux"
+        }
+    
+    def check_permissions(self, path: Path) -> bool:
+        """Vérifie les permissions sur un chemin"""
+        try:
+            if not path.exists():
+                # Vérifier le parent
+                return self.check_permissions(path.parent) if path.parent != path else False
+            
+            # Test lecture/écriture
+            return os.access(path, os.R_OK | os.W_OK)
+        except Exception:
+            return False
+    
+    def create_virtual_environment(self, path: Path, python_version: str) -> bool:
+        """Crée un environnement virtuel avec venv"""
+        try:
+            # Recherche exécutable Python
+            python_cmd = self._find_python_executable(python_version)
+            if not python_cmd:
+                return False
+            
+            # Création avec venv
+            result = subprocess.run(
+                [python_cmd, '-m', 'venv', str(path)],
+                capture_output=True,
+                text=True,
+                timeout=120
+            )
+            
+            return result.returncode == 0
+            
+        except Exception as e:
+            logger.error(f"Erreur création environnement virtuel: {e}")
+            return False
+    
+    # Méthodes privées
+    
+    def _check_command_availability(self, command: str) -> bool:
+        """Vérifie la disponibilité d'une commande"""
+        try:
+            result = subprocess.run(
+                [command, '--version'],
+                capture_output=True,
+                text=True,
+                timeout=10
+            )
+            return result.returncode == 0
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return False
+    
+    def _get_python_executable(self, env_path: Path) -> Path:
+        """Exécutable Python d'un environnement"""
+        if os.name == 'nt':
+            return env_path / "Scripts" / "python.exe"
+        else:
+            return env_path / "bin" / "python"
+    
+    def _find_python_executable(self, version: str) -> Optional[str]:
+        """Trouve l'exécutable Python pour une version"""
+        # Commandes possibles
+        candidates = [
+            f'python{version}',
+            f'python{version.split(".")[0]}.{version.split(".")[1]}',
+            'python3',
+            'python'
+        ]
+        
+        for cmd in candidates:
+            try:
+                result = subprocess.run(
+                    [cmd, '--version'],
+                    capture_output=True,
+                    text=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    # Vérifier que la version correspond
+                    if version in result.stdout:
+                        return cmd
+            except (subprocess.TimeoutExpired, FileNotFoundError):
+                continue
+        
+        return None
+    
+    def _create_secure_environment(self, env_path: Path) -> Dict[str, str]:
+        """Crée un environnement sécurisé pour l'exécution"""
+        # Variables de base
+        secure_env = {}
+        
+        # Variables système essentielles
+        essential_vars = ['HOME', 'USER', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR', 'TEMP']
+        for var in essential_vars:
+            if var in os.environ:
+                secure_env[var] = os.environ[var]
+        
+        # Configuration environnement virtuel
+        if env_path:
+            if os.name == 'nt':
+                scripts_dir = env_path / "Scripts"
+                secure_env['PATH'] = f"{scripts_dir};{os.environ.get('PATH', '')}"
             else:
-                result = self.run_command(["which", command])
+                bin_dir = env_path / "bin"
+                secure_env['PATH'] = f"{bin_dir}:{os.environ.get('PATH', '')}"
             
-            return result['returncode'] == 0
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la vérification de la commande '{command}': {str(e)}")
-            return False
-    
-    def create_directory(self, path: Path) -> bool:
-        """
-        Crée un répertoire si nécessaire.
+            secure_env['VIRTUAL_ENV'] = str(env_path)
+            secure_env['PYTHONHOME'] = ''
+            secure_env['PYTHONPATH'] = ''
+        else:
+            secure_env['PATH'] = os.environ.get('PATH', '')
         
-        Args:
-            path: Chemin du répertoire à créer.
-            
-        Returns:
-            True si le répertoire existe ou a été créé, False sinon.
-        """
-        try:
-            # Créer le répertoire et ses parents si nécessaire
-            path.mkdir(parents=True, exist_ok=True)
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la création du répertoire '{path}': {str(e)}")
-            return False
-    
-    def file_exists(self, path: Path) -> bool:
-        """
-        Vérifie si un fichier existe.
-        
-        Args:
-            path: Chemin du fichier à vérifier.
-            
-        Returns:
-            True si le fichier existe, False sinon.
-        """
-        return path.exists() and path.is_file()
-    
-    def directory_exists(self, path: Path) -> bool:
-        """
-        Vérifie si un répertoire existe.
-        
-        Args:
-            path: Chemin du répertoire à vérifier.
-            
-        Returns:
-            True si le répertoire existe, False sinon.
-        """
-        return path.exists() and path.is_dir()
-    
-    def delete_file(self, path: Path) -> bool:
-        """
-        Supprime un fichier.
-        
-        Args:
-            path: Chemin du fichier à supprimer.
-            
-        Returns:
-            True si le fichier a été supprimé ou n'existait pas, False sinon.
-        """
-        try:
-            if path.exists() and path.is_file():
-                path.unlink()
-            return True
-            
-        except Exception as e:
-            logger.error(f"Erreur lors de la suppression du fichier '{path}': {str(e)}")
-            return False
+        return secure_env
