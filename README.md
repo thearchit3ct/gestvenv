@@ -14,13 +14,29 @@
 
 ## 🚀 Fonctionnalités
 
+### 🏗️ Création d'Environnements
 - **🔥 Performance** : 10x plus rapide avec le backend uv
-- **📦 Support pyproject.toml** : Conformité complète PEP 621
-- **🎯 Backends modulaires** : pip, uv, poetry, pdm
-- **💾 Cache intelligent** : Mode hors ligne efficace
-- **🔧 Diagnostic automatique** : Détection et réparation des problèmes
-- **📋 Templates intégrés** : Démarrage rapide pour tous projets
-- **🔄 Migration transparente** : Compatible 100% avec v1.0
+- **📋 Templates avancés** : Django, FastAPI, Data Science, CLI
+- **🔄 Import multi-format** : pyproject.toml, conda, Pipfile, requirements.txt
+- **🎯 Auto-détection** : Backend optimal selon le projet
+
+### 📦 Gestion des Packages
+- **📊 Groupes de dépendances** : Support PEP 621 complet
+- **💾 Cache intelligent** : Mode hors ligne avec compression
+- **🔄 Synchronisation** : Sync automatique pyproject.toml
+- **⚡ Téléchargements parallèles** : Installation optimisée
+
+### 🔧 Outils Avancés
+- **🩺 Diagnostic complet** : Détection et réparation auto
+- **🐚 Intégration shell** : Commandes run/shell intégrées
+- **⚙️ Configuration flexible** : Locale + variables d'environnement
+- **📊 Monitoring santé** : État détaillé des environnements
+
+### 🌉 Migration
+- **🔄 Import Pipenv** : Migration transparente depuis Pipfile
+- **🐍 Support Conda** : Import environment.yml
+- **📋 Export multi-format** : JSON, requirements, pyproject.toml
+- **🔗 Compatibilité totale** : Avec v1.0 et autres outils
 
 ## ⚡ Installation
 
@@ -35,7 +51,7 @@ pip install gestvenv[performance]
 pip install gestvenv[full]
 ```
 
-## 🎯 Utilisation
+## 🎯 Utilisation Rapide
 
 ### Création d'environnements
 
@@ -43,53 +59,113 @@ pip install gestvenv[full]
 # Environnement basique
 gestvenv create monapp
 
-# Depuis pyproject.toml
+# Depuis templates intégrés
+gestvenv create-from-template django monwebapp
+gestvenv create-from-template data-science monanalyse
+gestvenv create-from-template fastapi monapi
+
+# Import depuis projets existants
 gestvenv create-from-pyproject ./pyproject.toml monapp
+gestvenv create-from-conda ./environment.yml monapp
+gestvenv import-from-pipfile ./Pipfile monapp
 
-# Avec template
-gestvenv create-from-template web monwebapp
+# Auto-détection et création
+gestvenv import ./mon-projet/pyproject.toml  # Détecte le format automatiquement
 ```
 
-### Gestion des packages
+### Gestion avancée des packages
 
 ```bash
-# Installation
-gestvenv install requests flask --env monapp
+# Installation avec groupes de dépendances
+gestvenv install requests flask --env monapp --group web
+gestvenv install pytest black --env monapp --group dev
 
-# Installation avec groupes
-gestvenv install --group dev --env monapp
+# Listage par groupes
+gestvenv list-packages --env monapp --group dev
 
-# Synchronisation
-gestvenv sync monapp
+# Synchronisation automatique
+gestvenv sync monapp --groups dev,test --clean
+
+# Mise à jour intelligente
+gestvenv update --env monapp --all
 ```
 
-### Cache et mode hors ligne
+### Cache intelligent et mode hors ligne
 
 ```bash
-# Pré-téléchargement
-gestvenv cache add numpy pandas matplotlib
+# Pré-téléchargement depuis requirements
+gestvenv cache add -r requirements.txt --python-version 3.11
 
-# Installation hors ligne
-gestvenv --offline install requests
+# Export/import de cache
+gestvenv cache export /backup/cache.tar.gz --compress
+gestvenv cache import /backup/cache.tar.gz --verify
+
+# Mode hors ligne complet
+gestvenv --offline create monapp
+gestvenv --offline install requests --env monapp
 ```
 
-### Backends disponibles
+### Diagnostic et réparation
 
 ```bash
-# Backend automatique (recommandé)
-gestvenv config set-backend auto
+# Diagnostic complet
+gestvenv doctor --full --performance
 
-# Backend spécifique
-gestvenv config set-backend uv  # ou pip, poetry, pdm
+# Réparation automatique
+gestvenv doctor --auto-fix
+gestvenv repair monapp --all
+
+# Nettoyage du système
+gestvenv cleanup --orphaned --cache
 ```
 
-## 📊 Performance
+### Configuration avancée
 
-| Backend | Installation | Résolution | Cache |
-|---------|-------------|------------|-------|
-| **uv**  | 🔥🔥🔥      | 🔥🔥🔥     | 🔥🔥🔥 |
-| pip     | 🔥          | 🔥         | 🔥    |
-| poetry  | 🔥🔥        | 🔥🔥       | 🔥🔥  |
+```bash
+# Configuration globale
+gestvenv config set preferred_backend uv
+gestvenv config set cache_size_mb 2000
+
+# Configuration locale du projet
+gestvenv config set --local preferred_backend poetry
+
+# Variables d'environnement
+export GESTVENV_BACKEND=uv
+export GESTVENV_CACHE_ENABLED=true
+```
+
+### Intégration shell
+
+```bash
+# Exécution dans l'environnement
+gestvenv run --env monapp python mon_script.py
+gestvenv run --env monapp pytest tests/
+
+# Shell interactif
+gestvenv shell --env monapp
+
+# Activation classique
+gestvenv activate monapp
+```
+
+## 📊 Performance et Backends
+
+| Backend | Installation | Résolution | Cache | Groupes | Lock Files | Auto-détection |
+|---------|-------------|------------|-------|---------|------------|----------------|
+| **uv**  | 🔥🔥🔥      | 🔥🔥🔥     | 🔥🔥🔥 | ✅       | ✅         | ✅             |
+| **PDM** | 🔥🔥🔥      | 🔥🔥🔥     | 🔥🔥🔥 | ✅       | ✅         | ✅             |
+| poetry  | 🔥🔥        | 🔥🔥       | 🔥🔥  | ✅       | ✅         | ✅             |
+| pip     | 🔥          | 🔥         | 🔥    | ✅       | ❌         | ✅             |
+
+### Templates Intégrés
+
+| Template | Description | Dépendances | Structure |
+|----------|-------------|-------------|-----------|
+| **django** | Projet Django moderne | Django 4.2+, environ, psycopg2 | Apps, settings, URLs |
+| **fastapi** | API REST performante | FastAPI, SQLAlchemy, Alembic | Modèles, routeurs, DB |
+| **data-science** | Analyse de données | Pandas, NumPy, Jupyter, Scikit-learn | Notebooks, pipelines ML |
+| **cli** | Outil en ligne de commande | Click, Rich, Typer | Commands, utils |
+| **basic** | Projet Python standard | Minimal | Structure basique |
 
 ## 🗂️ Structure de projet supportée
 

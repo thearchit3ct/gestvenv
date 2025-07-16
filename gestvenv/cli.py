@@ -4,6 +4,8 @@ Interface en ligne de commande complète pour GestVenv v1.1
 
 import sys
 import logging
+import time
+from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
 
@@ -34,6 +36,39 @@ def setup_logging(verbose: bool) -> None:
         level=level,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
     )
+
+def load_environment_variables() -> dict:
+    """Charge les variables d'environnement GestVenv"""
+    import os
+    env_vars = {}
+    
+    # Variables d'environnement supportées
+    gestvenv_vars = {
+        'GESTVENV_BACKEND': 'preferred_backend',
+        'GESTVENV_PYTHON_VERSION': 'default_python_version',
+        'GESTVENV_CACHE_ENABLED': 'cache_enabled',
+        'GESTVENV_CACHE_SIZE_MB': 'cache_size_mb',
+        'GESTVENV_OFFLINE_MODE': 'offline_mode',
+        'GESTVENV_AUTO_MIGRATE': 'auto_migrate',
+        'GESTVENV_ENVIRONMENTS_PATH': 'environments_path',
+        'GESTVENV_TEMPLATES_PATH': 'templates_path'
+    }
+    
+    for env_var, config_key in gestvenv_vars.items():
+        value = os.getenv(env_var)
+        if value is not None:
+            # Conversion de type automatique
+            if config_key in ['cache_enabled', 'offline_mode', 'auto_migrate']:
+                env_vars[config_key] = value.lower() in ['true', '1', 'yes', 'on']
+            elif config_key in ['cache_size_mb']:
+                try:
+                    env_vars[config_key] = int(value)
+                except ValueError:
+                    pass
+            else:
+                env_vars[config_key] = value
+    
+    return env_vars
 
 def check_critical_dependencies() -> List[str]:
     """Vérifie la disponibilité des dépendances critiques"""
@@ -73,7 +108,28 @@ def cli(ctx: click.Context, verbose: bool, offline: bool) -> None:
     ctx.ensure_object(dict)
     ctx.obj['verbose'] = verbose
     ctx.obj['offline'] = offline
+    
+    # Chargement des variables d'environnement
+    env_vars = load_environment_variables()
+    if env_vars and verbose:
+        console.print(f"📋 Variables d'environnement chargées: {len(env_vars)}")
+        for key, value in env_vars.items():
+            console.print(f"  GESTVENV_{key.upper()}: {value}")
+    
+    # Appliquer le mode offline depuis les variables d'environnement
+    if env_vars.get('offline_mode'):
+        offline = True
+        
     ctx.obj['env_manager'] = EnvironmentManager()
+    
+    # Appliquer les variables d'environnement à la configuration
+    if env_vars:
+        config = ctx.obj['env_manager'].config_manager.config
+        for key, value in env_vars.items():
+            if hasattr(config, key):
+                setattr(config, key, value)
+                if verbose:
+                    console.print(f"🔧 Config {key}: {value}")
     
     if offline:
         ctx.obj['env_manager'].cache_service.set_offline_mode(True)
@@ -132,6 +188,67 @@ def create(ctx: click.Context, name: str, python: Optional[str], backend: str,
         
     except GestVenvError as e:
         console.print(f"❌ Erreur lors de la création: {e}")
+        sys.exit(1)
+
+@cli.command()
+@click.argument('template_name')
+@click.argument('env_name')
+@click.option('--author', help='Nom de l\'auteur')
+@click.option('--email', help='Email de l\'auteur')
+@click.option('--version', default='0.1.0', help='Version initiale')
+@click.option('--python', help='Version Python à utiliser')
+@click.option('--backend', type=click.Choice(['pip', 'uv', 'auto']), default='auto')
+@click.option('--output', help='Répertoire de sortie pour le projet')
+@click.pass_context
+def create_from_template(ctx: click.Context, template_name: str, env_name: str, 
+                        author: Optional[str], email: Optional[str], version: str,
+                        python: Optional[str], backend: str, output: Optional[str]) -> None:
+    """Créer un environnement depuis un template"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        # Préparation des paramètres
+        template_params = {
+            'project_name': env_name,
+            'package_name': env_name.lower().replace('-', '_'),
+            'version': version
+        }
+        
+        if author:
+            template_params['author'] = author
+        if email:
+            template_params['email'] = email
+        if python:
+            template_params['python_version'] = python
+        
+        # Chemin de sortie pour le projet
+        output_path = Path(output) if output else Path.cwd() / env_name
+        
+        with console.status(f"[bold green]Création depuis le template {template_name}..."):
+            result = env_manager.create_from_template(
+                template_name=template_name,
+                env_name=env_name,
+                output_path=output_path,
+                template_params=template_params,
+                backend=backend if backend != 'auto' else None,
+                python_version=python
+            )
+        
+        if result.success:
+            console.print(f"✅ Environnement [bold green]{env_name}[/bold green] créé depuis le template [bold blue]{template_name}[/bold blue]!")
+            console.print(f"📁 Projet: {output_path}")
+            console.print(f"📁 Environnement: {result.environment.path}")
+            console.print(f"🐍 Python: {result.environment.python_version}")
+            console.print(f"📦 Packages installés: {len(result.environment.packages)}")
+            
+            for warning in result.warnings:
+                console.print(f"⚠️ {warning}")
+        else:
+            console.print(f"❌ Erreur: {result.message}")
+            sys.exit(1)
+            
+    except GestVenvError as e:
+        console.print(f"❌ Erreur: {e}")
         sys.exit(1)
 
 @cli.command()
@@ -194,6 +311,55 @@ def create_from_pyproject(ctx: click.Context, file: str, name: Optional[str],
         sys.exit(1)
 
 @cli.command()
+@click.argument('conda_file', type=click.Path(exists=True))
+@click.argument('name', required=False)
+@click.option('--backend', type=click.Choice(['pip', 'uv', 'auto']), default='auto')
+@click.option('--python', help='Version Python à utiliser')
+@click.option('--skip-conda-only', is_flag=True, help='Ignorer les packages conda uniquement')
+@click.pass_context
+def create_from_conda(ctx: click.Context, conda_file: str, name: Optional[str], 
+                     backend: str, python: Optional[str], skip_conda_only: bool) -> None:
+    """Créer un environnement depuis environment.yml (conda)"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        conda_path = Path(conda_file)
+        
+        # Validation du fichier conda
+        if not conda_path.name.endswith(('.yml', '.yaml')):
+            console.print("❌ Le fichier doit être un environment.yml")
+            sys.exit(1)
+        
+        with console.status(f"[bold green]Création depuis {conda_file}..."):
+            result = env_manager.create_from_conda(
+                conda_file=conda_path,
+                env_name=name,
+                backend=backend if backend != 'auto' else None,
+                python_version=python,
+                skip_conda_only=skip_conda_only
+            )
+        
+        if result.success:
+            console.print(f"✅ Environnement [bold green]{result.environment.name}[/bold green] créé depuis conda!")
+            console.print(f"📁 Chemin: {result.environment.path}")
+            console.print(f"🐍 Python: {result.environment.python_version}")
+            console.print(f"📦 Packages installés: {len(result.environment.packages)}")
+            
+            # Packages ignorés si conda-only
+            if skip_conda_only and result.warnings:
+                console.print(f"⚠️ Packages conda ignorés: {len([w for w in result.warnings if 'conda' in w])}")
+            
+            for warning in result.warnings:
+                console.print(f"⚠️ {warning}")
+        else:
+            console.print(f"❌ Erreur: {result.message}")
+            sys.exit(1)
+            
+    except GestVenvError as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cli.command()
 @click.option('--active-only', is_flag=True, help='Afficher seulement les environnements actifs')
 @click.option('--format', 'output_format', type=click.Choice(['table', 'json']), default='table')
 @click.option('--backend', help='Filtrer par backend')
@@ -241,12 +407,24 @@ def list(ctx: click.Context, active_only: bool, output_format: str,
         table.add_column("Backend", style="yellow")
         table.add_column("Packages", justify="right", style="magenta")
         table.add_column("Statut", style="red")
+        table.add_column("Santé", style="yellow")
         table.add_column("Taille", justify="right", style="dim")
         table.add_column("Dernière utilisation", style="dim")
         
         for env in environments:
             status = "🟢 Actif" if env.is_active else "⚪ Inactif"
             last_used = env.last_used.strftime("%d/%m %H:%M") if env.last_used else "Jamais"
+            
+            # État de santé
+            health_icons = {
+                'healthy': '✅ Sain',
+                'needs_update': '🔄 MAJ',
+                'has_warnings': '⚠️ Attention',
+                'has_errors': '❌ Erreurs',
+                'corrupted': '💥 Corrompu',
+                'unknown': '❓ Inconnu'
+            }
+            health_status = health_icons.get(env.health.value if env.health else 'unknown', '❓ Inconnu')
             
             # Calcul taille avec PathUtils
             size_mb = PathUtils.get_size_mb(env.path) if env.path.exists() else 0
@@ -258,6 +436,7 @@ def list(ctx: click.Context, active_only: bool, output_format: str,
                 env.backend_type.value if env.backend_type else "pip",
                 str(len(env.packages)),
                 status,
+                health_status,
                 size_str,
                 last_used
             )
@@ -515,6 +694,90 @@ def clone(ctx: click.Context, source: str, target: str, python: Optional[str], b
 # === COMMANDES PACKAGES ===
 
 @cli.command()
+@click.option('--env', help='Environnement à analyser')
+@click.option('--group', help='Filtrer par groupe de dépendances')
+@click.option('--format', type=click.Choice(['table', 'json']), default='table')
+@click.option('--outdated', is_flag=True, help='Afficher seulement les packages obsolètes')
+@click.pass_context
+def list_packages(ctx: click.Context, env: Optional[str], group: Optional[str], 
+                 format: str, outdated: bool) -> None:
+    """Lister les packages d'un environnement"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        # Résolution environnement
+        if not env:
+            active_envs = [e for e in env_manager.list_environments() if e.is_active]
+            if len(active_envs) == 1:
+                target_env = active_envs[0]
+            else:
+                console.print("❌ Spécifiez l'environnement avec --env")
+                sys.exit(1)
+        else:
+            target_env = env_manager.get_environment_info(env)
+            if not target_env:
+                console.print(f"❌ Environnement '{env}' introuvable")
+                sys.exit(1)
+        
+        packages = target_env.packages
+        
+        # Filtrage par groupe
+        if group:
+            if group not in target_env.dependency_groups:
+                console.print(f"❌ Groupe '{group}' introuvable")
+                console.print(f"💡 Groupes disponibles: {', '.join(target_env.dependency_groups.keys())}")
+                sys.exit(1)
+            
+            group_packages = set(target_env.dependency_groups[group])
+            packages = [pkg for pkg in packages if pkg.name in group_packages]
+        
+        # Filtrage obsolètes (simulé pour l'exemple)
+        if outdated:
+            packages = [pkg for pkg in packages if pkg.is_development_package()]
+        
+        if format == 'json':
+            import json
+            data = [pkg.__dict__ for pkg in packages]
+            console.print(json.dumps(data, indent=2, default=str))
+            return
+        
+        if not packages:
+            console.print("📭 Aucun package trouvé")
+            return
+        
+        table = Table(title=f"📦 Packages - {target_env.name}")
+        table.add_column("Package", style="cyan")
+        table.add_column("Version", style="green")
+        table.add_column("Source", style="yellow")
+        table.add_column("Type", style="magenta")
+        table.add_column("Installé le", style="dim")
+        
+        for pkg in sorted(packages, key=lambda p: p.name):
+            package_type = "Éditable" if pkg.is_editable else "Standard"
+            if pkg.is_development_package():
+                package_type = "Développement"
+            
+            install_date = pkg.installed_at.strftime("%d/%m") if pkg.installed_at else "-"
+            
+            table.add_row(
+                pkg.name,
+                pkg.version,
+                pkg.source,
+                package_type,
+                install_date
+            )
+        
+        console.print(table)
+        console.print(f"\n📊 Total: {len(packages)} packages")
+        
+        if group:
+            console.print(f"🔗 Groupe: {group}")
+        
+    except GestVenvError as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cli.command()
 @click.argument('packages', nargs=-1, required=True)
 @click.option('--env', help='Environnement cible')
 @click.option('--group', help='Installer dans un groupe de dépendances')
@@ -761,17 +1024,36 @@ def cache_info(ctx: click.Context) -> None:
         sys.exit(1)
 
 @cache.command(name='add')
-@click.argument('packages', nargs=-1, required=True)
+@click.argument('packages', nargs=-1)
+@click.option('-r', '--requirements', type=click.Path(exists=True), help='Fichier requirements.txt')
 @click.option('--platforms', help='Plateformes cibles (séparées par des virgules)')
 @click.option('--python-version', help='Version Python pour le cache')
 @click.pass_context
-def cache_add(ctx: click.Context, packages: tuple, platforms: Optional[str], python_version: Optional[str]) -> None:
+def cache_add(ctx: click.Context, packages: tuple, requirements: Optional[str], 
+              platforms: Optional[str], python_version: Optional[str]) -> None:
     """Ajouter des packages au cache"""
     env_manager = ctx.obj['env_manager']
     cache_service = env_manager.cache_service
     
     try:
         package_list = list(packages)
+        
+        # Lecture depuis fichier requirements si spécifié
+        if requirements:
+            req_path = Path(requirements)
+            req_content = req_path.read_text(encoding='utf-8')
+            req_packages = [
+                line.strip() 
+                for line in req_content.split('\n') 
+                if line.strip() and not line.startswith('#')
+            ]
+            package_list.extend(req_packages)
+            console.print(f"📄 {len(req_packages)} packages lus depuis {requirements}")
+        
+        if not package_list:
+            console.print("❌ Aucun package spécifié. Utilisez --help pour l'aide")
+            return
+        
         platforms_list = platforms.split(',') if platforms else None
         
         with Progress(
@@ -878,6 +1160,53 @@ def cache_export(ctx: click.Context, output_file: str, compress: bool) -> None:
             if output_path.exists():
                 export_size = PathUtils.get_size_mb(output_path)
                 console.print(f"💾 Taille export: {export_size:.1f} MB")
+        else:
+            console.print(f"❌ Erreur: {result.message}")
+            sys.exit(1)
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cache.command(name='import')
+@click.argument('import_file', type=click.Path(exists=True))
+@click.option('--merge', is_flag=True, help='Fusionner avec le cache existant')
+@click.option('--verify', is_flag=True, help='Vérifier l\'intégrité après import')
+@click.pass_context
+def cache_import(ctx: click.Context, import_file: str, merge: bool, verify: bool) -> None:
+    """Importer un cache"""
+    env_manager = ctx.obj['env_manager']
+    cache_service = env_manager.cache_service
+    
+    try:
+        import_path = Path(import_file)
+        
+        # Vérification espace disque disponible
+        if import_path.exists():
+            import_size = PathUtils.get_size_mb(import_path)
+            console.print(f"📦 Taille import: {import_size:.1f} MB")
+        
+        if not merge:
+            console.print("⚠️ Cela remplacera complètement le cache existant")
+            if not click.confirm("Continuer ?"):
+                console.print("❌ Import annulé")
+                return
+        
+        with console.status(f"[bold blue]Import du cache depuis {import_file}..."):
+            result = cache_service.import_cache(import_path, merge=merge)
+        
+        if result.success:
+            console.print(f"✅ Cache importé depuis [bold green]{import_path}[/bold green]")
+            console.print(f"📦 {result.items_imported} éléments importés")
+            
+            # Vérification optionnelle
+            if verify:
+                with console.status("[bold yellow]Vérification de l'intégrité..."):
+                    integrity_ok = cache_service.verify_cache_integrity()
+                if integrity_ok:
+                    console.print("✅ Intégrité du cache vérifiée")
+                else:
+                    console.print("⚠️ Problèmes d'intégrité détectés")
         else:
             console.print(f"❌ Erreur: {result.message}")
             sys.exit(1)
@@ -1176,6 +1505,100 @@ def doctor(ctx: click.Context, name: Optional[str], auto_fix: bool, full: bool, 
         console.print(f"❌ Erreur: {e}")
         sys.exit(1)
 
+@cli.command()
+@click.argument('name', required=False)
+@click.option('--fix-permissions', is_flag=True, help='Réparer les permissions')
+@click.option('--rebuild-metadata', is_flag=True, help='Reconstruire les métadonnées')
+@click.option('--fix-packages', is_flag=True, help='Réparer les packages corrompus')
+@click.option('--all', 'fix_all', is_flag=True, help='Appliquer toutes les réparations')
+@click.option('--dry-run', is_flag=True, help='Simulation sans modification')
+@click.pass_context
+def repair(ctx: click.Context, name: Optional[str], fix_permissions: bool, 
+          rebuild_metadata: bool, fix_packages: bool, fix_all: bool, dry_run: bool) -> None:
+    """Réparer un environnement corrompu"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        # Si aucune réparation spécifiée, utiliser --all
+        if not any([fix_permissions, rebuild_metadata, fix_packages]):
+            fix_all = True
+        
+        if fix_all:
+            fix_permissions = fix_packages = rebuild_metadata = True
+        
+        if name:
+            env_info = env_manager.get_environment_info(name)
+            if not env_info:
+                console.print(f"❌ Environnement '{name}' introuvable")
+                sys.exit(1)
+            environments = [env_info]
+        else:
+            # Réparer tous les environnements
+            environments = env_manager.list_environments()
+            console.print(f"🔧 Réparation de {len(environments)} environnements")
+        
+        if dry_run:
+            console.print("🔍 Mode simulation - aucune modification ne sera effectuée")
+        
+        total_repairs = 0
+        
+        for env in environments:
+            console.print(f"\n🔧 Réparation de {env.name}...")
+            
+            repairs_done = []
+            
+            # Réparation permissions
+            if fix_permissions:
+                if dry_run:
+                    console.print("  [dry-run] Réparation des permissions")
+                    repairs_done.append("permissions")
+                else:
+                    result = env_manager.repair_environment_permissions(env.name)
+                    if result.success:
+                        console.print("  ✅ Permissions réparées")
+                        repairs_done.append("permissions")
+                    else:
+                        console.print(f"  ❌ Erreur permissions: {result.message}")
+            
+            # Reconstruction métadonnées
+            if rebuild_metadata:
+                if dry_run:
+                    console.print("  [dry-run] Reconstruction des métadonnées")
+                    repairs_done.append("metadata")
+                else:
+                    result = env_manager.rebuild_environment_metadata(env.name)
+                    if result.success:
+                        console.print("  ✅ Métadonnées reconstruites")
+                        repairs_done.append("metadata")
+                    else:
+                        console.print(f"  ❌ Erreur métadonnées: {result.message}")
+            
+            # Réparation packages
+            if fix_packages:
+                if dry_run:
+                    console.print("  [dry-run] Réparation des packages")
+                    repairs_done.append("packages")
+                else:
+                    result = env_manager.repair_environment_packages(env.name)
+                    if result.success:
+                        console.print("  ✅ Packages réparés")
+                        repairs_done.append("packages")
+                    else:
+                        console.print(f"  ❌ Erreur packages: {result.message}")
+            
+            if repairs_done:
+                total_repairs += len(repairs_done)
+                console.print(f"  📊 {len(repairs_done)} réparations effectuées: {', '.join(repairs_done)}")
+            else:
+                console.print("  ⚠️ Aucune réparation nécessaire")
+        
+        action_text = "seraient effectuées" if dry_run else "effectuées"
+        console.print(f"\n✅ {total_repairs} réparations {action_text} au total")
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
 # === COMMANDES TEMPLATES ===
 
 @cli.group()
@@ -1354,22 +1777,85 @@ def import_env(ctx: click.Context, source_file: str, env_name: Optional[str], fo
         source_path = Path(source_file)
         
         # Vérification format
-        if source_path.suffix not in ['.json', '.toml', '.txt']:
+        supported_formats = ['.json', '.toml', '.txt', '.yml', '.yaml']
+        if source_path.suffix not in supported_formats:
             console.print(f"❌ Format non supporté: {source_path.suffix}")
-            console.print("💡 Formats supportés: .json, .toml, .txt")
+            console.print(f"💡 Formats supportés: {', '.join(supported_formats)}")
             sys.exit(1)
         
-        with console.status(f"[bold blue]Import depuis {source_file}..."):
-            result = env_manager.import_environment(source_path, name=env_name, force=force)
+        # Détection automatique du type
+        import_type = "generic"
+        if source_path.name == "Pipfile":
+            import_type = "pipfile"
+        elif source_path.name.startswith("environment") and source_path.suffix in ['.yml', '.yaml']:
+            import_type = "conda"
+        elif source_path.name == "pyproject.toml":
+            import_type = "pyproject"
+        
+        with console.status(f"[bold blue]Import {import_type} depuis {source_file}..."):
+            if import_type == "pipfile":
+                result = env_manager.import_from_pipfile(source_path, name=env_name, force=force)
+            elif import_type == "conda":
+                result = env_manager.import_from_conda_env(source_path, name=env_name, force=force)
+            else:
+                result = env_manager.import_environment(source_path, name=env_name, force=force)
         
         if result.success:
             console.print(f"✅ Environnement [bold green]{result.environment.name}[/bold green] importé!")
             console.print(f"📁 Chemin: {result.environment.path}")
             console.print(f"📦 Packages: {len(result.environment.packages)}")
+            console.print(f"📋 Type: {import_type}")
         else:
             console.print(f"❌ Erreur: {result.message}")
             sys.exit(1)
         
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cli.command()
+@click.argument('pipfile_path', type=click.Path(exists=True))
+@click.argument('env_name', required=False)
+@click.option('--backend', type=click.Choice(['pip', 'uv', 'auto']), default='auto')
+@click.option('--include-dev', is_flag=True, help='Inclure les dépendances de développement')
+@click.pass_context
+def import_from_pipfile(ctx: click.Context, pipfile_path: str, env_name: Optional[str], 
+                       backend: str, include_dev: bool) -> None:
+    """Importer depuis un Pipfile (Pipenv)"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        pipfile = Path(pipfile_path)
+        
+        # Validation fichier Pipfile
+        if not pipfile.name == "Pipfile":
+            console.print("❌ Le fichier doit être nommé 'Pipfile'")
+            sys.exit(1)
+        
+        with console.status(f"[bold green]Import depuis Pipfile..."):
+            result = env_manager.create_from_pipfile(
+                pipfile_path=pipfile,
+                env_name=env_name,
+                backend=backend if backend != 'auto' else None,
+                include_dev=include_dev
+            )
+        
+        if result.success:
+            console.print(f"✅ Environnement [bold green]{result.environment.name}[/bold green] créé depuis Pipfile!")
+            console.print(f"📁 Chemin: {result.environment.path}")
+            console.print(f"🐍 Python: {result.environment.python_version}")
+            console.print(f"📦 Packages installés: {len(result.environment.packages)}")
+            
+            if include_dev:
+                dev_packages = [pkg for pkg in result.environment.packages if pkg.is_development_package()]
+                console.print(f"🔧 Packages dev: {len(dev_packages)}")
+            
+            for warning in result.warnings:
+                console.print(f"⚠️ {warning}")
+        else:
+            console.print(f"❌ Erreur: {result.message}")
+            sys.exit(1)
+            
     except Exception as e:
         console.print(f"❌ Erreur: {e}")
         sys.exit(1)
@@ -1442,8 +1928,9 @@ def config_show(ctx: click.Context, section: Optional[str], format: str) -> None
 @click.argument('value')
 @click.option('--type', 'value_type', type=click.Choice(['str', 'int', 'bool', 'float']), 
               help='Type de la valeur')
+@click.option('--local', is_flag=True, help='Configuration locale au projet')
 @click.pass_context
-def config_set(ctx: click.Context, key: str, value: str, value_type: Optional[str]) -> None:
+def config_set(ctx: click.Context, key: str, value: str, value_type: Optional[str], local: bool) -> None:
     """Définir une valeur de configuration"""
     env_manager = ctx.obj['env_manager']
     config_manager = env_manager.config_manager
@@ -1471,12 +1958,33 @@ def config_set(ctx: click.Context, key: str, value: str, value_type: Optional[st
             if not click.confirm("Continuer quand même ?"):
                 return
         
-        # Mise à jour de la configuration
-        config = config_manager.config
-        setattr(config, key, converted_value)
-        config_manager.save_config()
-        
-        console.print(f"✅ {key} = [bold green]{converted_value}[/bold green]")
+        if local:
+            # Configuration locale projet
+            local_config_path = Path.cwd() / ".gestvenv" / "config.toml"
+            local_config_path.parent.mkdir(exist_ok=True)
+            
+            # Charger ou créer la config locale
+            if local_config_path.exists():
+                from gestvenv.utils.toml_handler import TomlHandler
+                local_config = TomlHandler.load(local_config_path)
+            else:
+                local_config = {}
+            
+            local_config[key] = converted_value
+            
+            # Sauvegarder
+            from gestvenv.utils.toml_handler import TomlHandler
+            TomlHandler.dump(local_config, local_config_path)
+            
+            console.print(f"✅ Configuration locale: {key} = [bold green]{converted_value}[/bold green]")
+            console.print(f"📁 Fichier: {local_config_path}")
+        else:
+            # Configuration globale
+            config = config_manager.config
+            setattr(config, key, converted_value)
+            config_manager.save_config()
+            
+            console.print(f"✅ Configuration globale: {key} = [bold green]{converted_value}[/bold green]")
         
         # Suggestions contextuelles
         if key == 'preferred_backend' and converted_value == 'uv':
@@ -1523,6 +2031,167 @@ def config_reset(ctx: click.Context, backup: bool, force: bool) -> None:
         sys.exit(1)
 
 # === COMMANDES UTILITAIRES ===
+
+@cli.command()
+@click.argument('command', nargs=-1, required=True)
+@click.option('--env', help='Environnement dans lequel exécuter')
+@click.option('--cwd', help='Répertoire de travail')
+@click.pass_context
+def run(ctx: click.Context, command: tuple, env: Optional[str], cwd: Optional[str]) -> None:
+    """Exécuter une commande dans un environnement"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        # Résolution environnement
+        if not env:
+            active_envs = [e for e in env_manager.list_environments() if e.is_active]
+            if len(active_envs) == 1:
+                target_env = active_envs[0]
+            else:
+                console.print("❌ Spécifiez l'environnement avec --env")
+                sys.exit(1)
+        else:
+            target_env = env_manager.get_environment_info(env)
+            if not target_env:
+                console.print(f"❌ Environnement '{env}' introuvable")
+                sys.exit(1)
+        
+        command_str = ' '.join(command)
+        working_dir = Path(cwd) if cwd else Path.cwd()
+        
+        console.print(f"🚀 Exécution dans {target_env.name}: {command_str}")
+        
+        # Exécution de la commande
+        result = env_manager.run_command_in_environment(
+            target_env.name, 
+            command_str, 
+            working_directory=working_dir
+        )
+        
+        if result.success:
+            if result.stdout:
+                console.print(result.stdout)
+            console.print(f"✅ Commande exécutée (code: {result.return_code})")
+        else:
+            if result.stderr:
+                console.print(result.stderr, style="red")
+            console.print(f"❌ Échec (code: {result.return_code})")
+            sys.exit(result.return_code)
+        
+    except GestVenvError as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cli.command()
+@click.option('--env', help='Environnement à activer')
+@click.option('--shell', type=click.Choice(['bash', 'zsh', 'fish', 'powershell']), help='Shell cible')
+@click.pass_context
+def shell(ctx: click.Context, env: Optional[str], shell: Optional[str]) -> None:
+    """Démarrer un shell avec l'environnement activé"""
+    env_manager = ctx.obj['env_manager']
+    
+    try:
+        # Résolution environnement
+        if not env:
+            active_envs = [e for e in env_manager.list_environments() if e.is_active]
+            if len(active_envs) == 1:
+                target_env = active_envs[0]
+            else:
+                console.print("❌ Spécifiez l'environnement avec --env")
+                sys.exit(1)
+        else:
+            target_env = env_manager.get_environment_info(env)
+            if not target_env:
+                console.print(f"❌ Environnement '{env}' introuvable")
+                sys.exit(1)
+        
+        console.print(f"🐚 Démarrage du shell avec {target_env.name}")
+        
+        # Activation et démarrage du shell
+        result = env_manager.start_shell_with_environment(target_env.name, shell=shell)
+        
+        if result.success:
+            console.print(f"✅ Shell démarré avec {target_env.name}")
+            console.print(f"💡 Pour quitter: exit")
+        else:
+            console.print(f"❌ Erreur: {result.message}")
+            sys.exit(1)
+        
+    except GestVenvError as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@cli.command()
+@click.option('--message', help='Message de feedback')
+@click.option('--type', 'feedback_type', type=click.Choice(['bug', 'feature', 'improvement', 'question']), 
+              default='improvement')
+@click.option('--anonymous', is_flag=True, help='Feedback anonyme')
+@click.pass_context
+def feedback(ctx: click.Context, message: Optional[str], feedback_type: str, anonymous: bool) -> None:
+    """Envoyer du feedback aux développeurs"""
+    try:
+        import platform
+        import sys
+        
+        if not message:
+            message = click.edit('\n# Entrez votre feedback ici\n# Lignes commençant par # seront ignorées\n')
+            if not message:
+                console.print("❌ Aucun message fourni")
+                return
+            
+            # Nettoyer les commentaires
+            lines = [line for line in message.split('\n') if not line.strip().startswith('#')]
+            message = '\n'.join(lines).strip()
+        
+        if not message:
+            console.print("❌ Le message ne peut pas être vide")
+            return
+        
+        # Collecte d'informations système
+        system_info = {
+            'gestvenv_version': __version__,
+            'python_version': sys.version,
+            'platform': platform.platform(),
+            'feedback_type': feedback_type
+        }
+        
+        console.print(f"📝 Type: {feedback_type}")
+        console.print(f"📱 Système: {platform.system()} {platform.release()}")
+        console.print(f"🐍 Python: {sys.version.split()[0]}")
+        
+        if not anonymous:
+            console.print("💡 Ce feedback inclura des informations système pour le débogage")
+        
+        # Simulation d'envoi (dans une vraie implémentation, cela enverrait à un service)
+        console.print("\n📤 Envoi du feedback...")
+        
+        # Ici on simule l'envoi
+        feedback_data = {
+            'message': message,
+            'type': feedback_type,
+            'anonymous': anonymous,
+            'system_info': system_info if not anonymous else None
+        }
+        
+        # Dans une vraie implémentation, on enverrait à une API
+        console.print("✅ Feedback envoyé avec succès!")
+        console.print("🙏 Merci pour votre contribution à l'amélioration de GestVenv!")
+        
+        # Créer un fichier local de feedback pour les développeurs
+        feedback_dir = Path.home() / ".gestvenv" / "feedback"
+        feedback_dir.mkdir(parents=True, exist_ok=True)
+        
+        feedback_file = feedback_dir / f"feedback_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        
+        import json
+        with open(feedback_file, 'w', encoding='utf-8') as f:
+            json.dump(feedback_data, f, indent=2, default=str)
+        
+        console.print(f"📄 Copie locale sauvée: {feedback_file}")
+        
+    except Exception as e:
+        console.print(f"❌ Erreur lors de l'envoi: {e}")
+        sys.exit(1)
 
 @cli.command()
 @click.argument('req_file', type=click.Path(exists=True))

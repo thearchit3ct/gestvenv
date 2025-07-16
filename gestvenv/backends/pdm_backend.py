@@ -66,23 +66,79 @@ class PDMBackend(PackageBackend):
         return None
         
     def create_environment(self, path: Path, python_version: str) -> bool:
-        """Création avec PDM (non implémenté)"""
-        logger.warning("PDM backend: create_environment pas encore implémenté")
-        return False
+        """Création avec PDM"""
+        try:
+            # Créer le projet PDM
+            result = subprocess.run(
+                ["pdm", "init", "--non-interactive", "--backend", "setuptools"],
+                cwd=path.parent,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+            
+            if result.returncode != 0:
+                logger.error(f"Erreur init PDM: {result.stderr}")
+                return False
+            
+            # Configurer Python version si spécifiée
+            if python_version:
+                result = subprocess.run(
+                    ["pdm", "use", python_version],
+                    cwd=path.parent,
+                    capture_output=True,
+                    text=True,
+                    timeout=30
+                )
+                
+                if result.returncode != 0:
+                    logger.warning(f"Impossible de configurer Python {python_version}")
+            
+            return True
+            
+        except Exception as e:
+            logger.error(f"Erreur création environnement PDM: {e}")
+            return False
         
     def install_package(self, env_path: Path, package: str, **kwargs) -> InstallResult:
-        """Installation avec PDM (basique)"""
+        """Installation avec PDM"""
         start_time = time.time()
         
         try:
-            logger.warning("PDM backend: fonctionnalité limitée en v1.1")
+            cmd = ["pdm", "add", package]
             
-            return InstallResult(
-                success=False,
-                message="Backend PDM en cours de développement",
-                backend_used="pdm",
-                execution_time=time.time() - start_time
+            # Options d'installation
+            if kwargs.get('editable'):
+                cmd.append("--editable")
+            
+            if kwargs.get('group'):
+                cmd.extend(["--group", kwargs['group']])
+            
+            # Exécution
+            result = subprocess.run(
+                cmd,
+                cwd=env_path.parent,
+                capture_output=True,
+                text=True,
+                timeout=600
             )
+            
+            if result.returncode == 0:
+                return InstallResult(
+                    success=True,
+                    message=f"Package {package} installé avec PDM",
+                    packages_installed=[package],
+                    backend_used="pdm",
+                    execution_time=time.time() - start_time
+                )
+            else:
+                return InstallResult(
+                    success=False,
+                    message=f"Erreur installation PDM: {result.stderr}",
+                    packages_failed=[package],
+                    backend_used="pdm",
+                    execution_time=time.time() - start_time
+                )
             
         except Exception as e:
             return InstallResult(
