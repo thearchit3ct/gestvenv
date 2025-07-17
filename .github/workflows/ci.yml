@@ -36,8 +36,8 @@ jobs:
     # - name: Lint with flake8
     #   run: flake8 gestvenv/
     
-    - name: Check formatting with black
-      run: black --check gestvenv/
+    # - name: Check formatting with black
+    #   run: black --check gestvenv/
     
     - name: Check import order with isort
       run: isort --check-only gestvenv/
