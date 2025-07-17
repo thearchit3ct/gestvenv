@@ -9,7 +9,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, Optional, List, Any
 
-from ..models import Backend
+from ..models import BackendType as Backend
 
 
 class EphemeralStatus(Enum):

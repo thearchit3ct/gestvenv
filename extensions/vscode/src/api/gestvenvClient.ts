@@ -263,6 +263,82 @@ export class GestVenvAPI {
         return response.data;
     }
 
+    async getSuggestedImports(symbol: string): Promise<any[]> {
+        const activeEnv = await this.getActiveEnvironment();
+        if (!activeEnv) {
+            return [];
+        }
+        
+        const response = await this.client.get('/api/v1/ide/suggest/imports', {
+            params: {
+                symbol,
+                environment_id: activeEnv.id
+            }
+        });
+        return response.data.suggestions || [];
+    }
+
+    async analyzeCodeForRefactoring(params: {
+        code: string;
+        refactoring_type: string;
+        context?: string;
+    }): Promise<any> {
+        const response = await this.client.post('/api/v1/ide/analyze/refactoring', params);
+        return response.data;
+    }
+
+    async deleteEnvironment(envId: string): Promise<{ success: boolean; message?: string }> {
+        try {
+            const response = await this.client.delete(`/api/v1/environments/${envId}`);
+            this.invalidateCache();
+            return { success: true };
+        } catch (error: any) {
+            return { 
+                success: false, 
+                message: error.response?.data?.detail || error.message 
+            };
+        }
+    }
+
+    async uninstallPackages(envId: string, packages: string[]): Promise<{ success: boolean; message?: string }> {
+        try {
+            const response = await this.client.post(
+                `/api/v1/environments/${envId}/uninstall`,
+                { packages }
+            );
+            this.invalidateCache(`packages:${envId}`);
+            return { success: true };
+        } catch (error: any) {
+            return { 
+                success: false, 
+                message: error.response?.data?.detail || error.message 
+            };
+        }
+    }
+
+    async checkPackageExists(packageName: string): Promise<boolean> {
+        try {
+            const response = await this.client.get('/api/v1/packages/check', {
+                params: { name: packageName }
+            });
+            return response.data.exists;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    private async getActiveEnvironment(): Promise<Environment | null> {
+        try {
+            const response = await this.client.post('/api/v1/environments/detect', {
+                workspace_path: vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || process.cwd()
+            });
+            return response.data || null;
+        } catch (error) {
+            console.error('Failed to get active environment:', error);
+            return null;
+        }
+    }
+
     private getCached(key: string): any {
         const cached = this.cache.get(key);
         if (cached && Date.now() - cached.timestamp < this.cacheTimeout) {

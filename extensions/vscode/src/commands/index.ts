@@ -72,6 +72,54 @@ export function registerCommands(
             await showEnvironmentActionsCommand(api, env, explorer);
         })
     );
+
+    // Delete Environment
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.deleteEnvironment', async (env?: Environment) => {
+            await deleteEnvironmentCommand(api, env, explorer);
+        })
+    );
+
+    // Activate Environment
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.activateEnvironment', async (env?: Environment) => {
+            if (!env) {
+                await selectEnvironmentCommand(api, statusBar);
+            } else {
+                await statusBar.setActiveEnvironment(env);
+                vscode.window.showInformationMessage(`Activated environment: ${env.name}`);
+            }
+        })
+    );
+
+    // Uninstall Package
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.uninstallPackage', async (env?: Environment) => {
+            await uninstallPackageCommand(api, env, explorer);
+        })
+    );
+
+    // Refresh (alias for refreshEnvironments)
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.refresh', () => {
+            explorer.refresh();
+            statusBar.update();
+        })
+    );
+
+    // Show Settings
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.showSettings', () => {
+            vscode.commands.executeCommand('workbench.action.openSettings', 'gestvenv');
+        })
+    );
+
+    // Show Environment Quick Pick
+    context.subscriptions.push(
+        vscode.commands.registerCommand('gestvenv.showEnvironmentQuickPick', async () => {
+            await selectEnvironmentCommand(api, statusBar);
+        })
+    );
 }
 
 async function createEnvironmentCommand(
@@ -484,6 +532,127 @@ function getEnvironmentDetailsHtml(env: Environment, packages: any[]): string {
 </body>
 </html>
     `;
+}
+
+async function deleteEnvironmentCommand(
+    api: GestVenvAPI,
+    env: Environment | undefined,
+    explorer: EnvironmentExplorer
+) {
+    if (!env) {
+        vscode.window.showErrorMessage('No environment selected');
+        return;
+    }
+
+    const confirm = await vscode.window.showWarningMessage(
+        `Are you sure you want to delete environment '${env.name}'?`,
+        'Yes',
+        'No'
+    );
+
+    if (confirm !== 'Yes') {
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Deleting environment ${env.name}...`,
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ increment: 50, message: 'Removing files...' });
+            
+            const result = await api.deleteEnvironment(env.id);
+            
+            if (result.success) {
+                explorer.refresh();
+                vscode.window.showInformationMessage(
+                    `Environment ${env.name} deleted successfully`
+                );
+            } else {
+                vscode.window.showErrorMessage(
+                    `Failed to delete environment: ${result.message}`
+                );
+            }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(
+                `Failed to delete environment: ${error.message}`
+            );
+        }
+    });
+}
+
+async function uninstallPackageCommand(
+    api: GestVenvAPI,
+    env: Environment | undefined,
+    explorer: EnvironmentExplorer
+) {
+    if (!env) {
+        vscode.window.showErrorMessage('No environment selected');
+        return;
+    }
+
+    const packages = await api.getPackages(env.id);
+    
+    if (packages.length === 0) {
+        vscode.window.showInformationMessage('No packages installed in this environment');
+        return;
+    }
+
+    const items = packages.map(pkg => ({
+        label: pkg.name,
+        description: pkg.version,
+        pkg
+    }));
+
+    const selected = await vscode.window.showQuickPick(items, {
+        placeHolder: 'Select package to uninstall',
+        canPickMany: true
+    });
+
+    if (!selected || selected.length === 0) {
+        return;
+    }
+
+    const packageNames = selected.map(item => item.pkg.name);
+    const packageList = packageNames.join(', ');
+
+    const confirm = await vscode.window.showWarningMessage(
+        `Uninstall ${packageList}?`,
+        'Yes',
+        'No'
+    );
+
+    if (confirm !== 'Yes') {
+        return;
+    }
+
+    await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: `Uninstalling packages...`,
+        cancellable: false
+    }, async (progress) => {
+        try {
+            progress.report({ increment: 50, message: 'Removing packages...' });
+            
+            const result = await api.uninstallPackages(env.id, packageNames);
+            
+            if (result.success) {
+                explorer.refresh();
+                vscode.window.showInformationMessage(
+                    `Successfully uninstalled ${packageList}`
+                );
+            } else {
+                vscode.window.showErrorMessage(
+                    `Failed to uninstall packages: ${result.message}`
+                );
+            }
+        } catch (error: any) {
+            vscode.window.showErrorMessage(
+                `Failed to uninstall packages: ${error.message}`
+            );
+        }
+    });
 }
 
 function getPackageDetailsHtml(pkg: any, env: Environment): string {

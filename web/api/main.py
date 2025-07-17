@@ -10,7 +10,7 @@ import logging
 import os
 from pathlib import Path
 
-from api.routes import environments, packages, cache, system, templates, ide
+from api.routes import environments, packages, cache, system, templates, ide, websocket
 from api.websocket import WebSocketManager
 from api.core.config import settings
 
@@ -49,6 +49,7 @@ app.include_router(cache.router, prefix="/api/v1", tags=["cache"])
 app.include_router(system.router, prefix="/api/v1", tags=["system"])
 app.include_router(templates.router, prefix="/api/v1", tags=["templates"])
 app.include_router(ide.router, tags=["ide"])
+app.include_router(websocket.router, tags=["websocket"])
 
 # WebSocket endpoint pour les opérations en temps réel
 @app.websocket("/ws")

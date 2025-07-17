@@ -7,11 +7,16 @@ import { StatusBarManager } from './views/statusBar';
 import { registerCommands } from './commands';
 import { DiagnosticProvider } from './providers/diagnosticProvider';
 import { GestVenvLanguageClient } from './language/client';
+import { CodeActionProvider } from './providers/codeActionProvider';
+import { WebSocketClient } from './websocket/client';
+import { registerRefactoringCommands } from './commands/refactoring';
 
 let api: GestVenvAPI;
 let statusBar: StatusBarManager;
 let environmentExplorer: EnvironmentExplorer;
 let languageClient: GestVenvLanguageClient;
+let webSocketClient: WebSocketClient;
+let diagnosticCollection: vscode.DiagnosticCollection;
 
 export async function activate(context: vscode.ExtensionContext) {
     console.log('GestVenv extension is activating...');
@@ -50,9 +55,48 @@ export async function activate(context: vscode.ExtensionContext) {
 
         // Register commands
         registerCommands(context, api, environmentExplorer, statusBar);
+        
+        // Register refactoring commands
+        registerRefactoringCommands(context, api);
+
+        // Initialize WebSocket client for real-time updates
+        if (config.get<boolean>('enableWebSocket', true)) {
+            const wsUrl = apiEndpoint.replace('http', 'ws');
+            const clientId = `vscode_${vscode.env.machineId}_${Date.now()}`;
+            webSocketClient = new WebSocketClient(wsUrl, clientId);
+            
+            // Set up WebSocket event handlers
+            webSocketClient.on('environment-change', (message) => {
+                environmentExplorer.refresh();
+                statusBar.update();
+            });
+            
+            webSocketClient.on('package-change', (message) => {
+                environmentExplorer.refresh();
+                if (diagnosticCollection) {
+                    // Re-run diagnostics when packages change
+                    vscode.window.visibleTextEditors.forEach(editor => {
+                        if (editor.document.languageId === 'python') {
+                            vscode.commands.executeCommand('gestvenv.refreshDiagnostics', editor.document);
+                        }
+                    });
+                }
+            });
+            
+            webSocketClient.on('error', (error) => {
+                console.error('WebSocket error:', error);
+            });
+            
+            // Connect WebSocket
+            webSocketClient.connect().catch(error => {
+                console.error('Failed to connect WebSocket:', error);
+            });
+        }
 
         // Initialize Python providers if enabled
         if (config.get<boolean>('enableIntelliSense', true)) {
+            // Create diagnostic collection
+            diagnosticCollection = vscode.languages.createDiagnosticCollection('gestvenv');
             // Register completion provider
             const completionProvider = new PythonCompletionProvider(api);
             context.subscriptions.push(
@@ -74,6 +118,24 @@ export async function activate(context: vscode.ExtensionContext) {
             // Initialize diagnostic provider
             const diagnosticProvider = new DiagnosticProvider(api);
             context.subscriptions.push(diagnosticProvider);
+            
+            // Register code action provider
+            const codeActionProvider = new CodeActionProvider(api, diagnosticCollection);
+            context.subscriptions.push(
+                vscode.languages.registerCodeActionsProvider(
+                    { scheme: 'file', language: 'python' },
+                    codeActionProvider,
+                    {
+                        providedCodeActionKinds: [
+                            vscode.CodeActionKind.QuickFix,
+                            vscode.CodeActionKind.RefactorExtract,
+                            vscode.CodeActionKind.RefactorInline,
+                            vscode.CodeActionKind.RefactorRewrite,
+                            vscode.CodeActionKind.SourceOrganizeImports
+                        ]
+                    }
+                )
+            );
 
             // Start language server
             languageClient = new GestVenvLanguageClient(context, api);
@@ -112,12 +174,20 @@ export async function activate(context: vscode.ExtensionContext) {
 export function deactivate() {
     console.log('GestVenv extension is deactivating...');
     
+    if (webSocketClient) {
+        webSocketClient.disconnect();
+    }
+    
     if (languageClient) {
         languageClient.stop();
     }
     
     if (api) {
         api.dispose();
+    }
+    
+    if (diagnosticCollection) {
+        diagnosticCollection.dispose();
     }
 }
 
@@ -132,6 +202,11 @@ async function detectAndActivateEnvironment() {
         if (environment) {
             await statusBar.setActiveEnvironment(environment);
             environmentExplorer.refresh();
+            
+            // Subscribe to WebSocket updates for this environment
+            if (webSocketClient) {
+                webSocketClient.subscribe(environment.id);
+            }
             
             vscode.window.showInformationMessage(
                 `Activated GestVenv environment: ${environment.name}`

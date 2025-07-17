@@ -7,6 +7,13 @@ export interface CacheEntry<T> {
 export class CompletionCache {
     private cache: Map<string, CacheEntry<any>> = new Map();
     private defaultTTL = 300000; // 5 minutes
+    private maxSize = 100;
+
+    constructor(ttl?: number) {
+        if (ttl !== undefined) {
+            this.defaultTTL = ttl;
+        }
+    }
 
     get<T>(key: string): T | null {
         const entry = this.cache.get(key);
@@ -23,6 +30,15 @@ export class CompletionCache {
     }
 
     set<T>(key: string, value: T, ttl?: number): void {
+        // Check size limit
+        if (this.cache.size >= this.maxSize && !this.cache.has(key)) {
+            // Remove oldest entry
+            const firstKey = this.cache.keys().next().value;
+            if (firstKey) {
+                this.cache.delete(firstKey);
+            }
+        }
+
         this.cache.set(key, {
             value,
             timestamp: Date.now(),

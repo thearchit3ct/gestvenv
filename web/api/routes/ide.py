@@ -10,9 +10,9 @@ import json
 import importlib.metadata
 import ast
 
-from gestvenv.core.environment_manager import EnvironmentManager
-from gestvenv.core.models import Environment
-from ..dependencies import get_environment_manager
+from ..services.environment_service import EnvironmentService
+from ..models.environment import Environment
+from ..core.dependencies import get_environment_service
 
 router = APIRouter(prefix="/api/v1/ide", tags=["IDE Integration"])
 
@@ -65,17 +65,17 @@ class AttributeInfo(BaseModel):
 @router.get("/environments/{env_id}/packages", response_model=List[PackageDetails])
 async def get_packages_with_details(
     env_id: str,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> List[PackageDetails]:
     """Récupère la liste détaillée des packages avec métadonnées"""
-    env = manager.get_environment_info(env_id)
+    env = service.get_environment_info(env_id)
     if not env:
         raise HTTPException(status_code=404, detail="Environment not found")
     
     packages = []
     
     # Utiliser pip pour lister les packages
-    result = manager.run_command_in_environment(
+    result = service.run_command_in_environment(
         env_id,
         "pip list --format=json"
     )
@@ -86,7 +86,7 @@ async def get_packages_with_details(
         for pkg_info in package_list:
             try:
                 # Récupérer les métadonnées détaillées
-                metadata_result = manager.run_command_in_environment(
+                metadata_result = service.run_command_in_environment(
                     env_id,
                     f"pip show {pkg_info['name']} --verbose"
                 )
@@ -139,15 +139,15 @@ async def get_packages_with_details(
 async def get_package_details(
     env_id: str,
     package_name: str,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> PackageDetails:
     """Récupère les détails complets d'un package spécifique"""
-    env = manager.get_environment_info(env_id)
+    env = service.get_environment_info(env_id)
     if not env:
         raise HTTPException(status_code=404, detail="Environment not found")
     
     # Récupérer les infos du package
-    result = manager.run_command_in_environment(
+    result = service.run_command_in_environment(
         env_id,
         f"pip show {package_name} --verbose"
     )
@@ -178,15 +178,15 @@ async def get_package_details(
 @router.get("/environments/{env_id}/python")
 async def get_python_info(
     env_id: str,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> Dict[str, Any]:
     """Récupère les informations sur l'interpréteur Python"""
-    env = manager.get_environment_info(env_id)
+    env = service.get_environment_info(env_id)
     if not env:
         raise HTTPException(status_code=404, detail="Environment not found")
     
     # Récupérer les infos Python
-    result = manager.run_command_in_environment(
+    result = service.run_command_in_environment(
         env_id,
         "python -c \"import sys, json; print(json.dumps({'executable': sys.executable, 'version': sys.version, 'path': sys.path}))\""
     )
@@ -214,10 +214,10 @@ async def get_python_info(
 async def get_completion(
     env_id: str,
     context: CompletionContext,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> Dict[str, List[CompletionItem]]:
     """Fournit des suggestions de complétion contextuelle"""
-    env = manager.get_environment_info(env_id)
+    env = service.get_environment_info(env_id)
     if not env:
         raise HTTPException(status_code=404, detail="Environment not found")
     
@@ -299,10 +299,10 @@ async def get_object_attributes(
     environment_id: str,
     object_path: str,
     context: str,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> Dict[str, List[AttributeInfo]]:
     """Récupère les attributs disponibles pour un objet"""
-    env = manager.get_environment_info(environment_id)
+    env = service.get_environment_info(environment_id)
     if not env:
         raise HTTPException(status_code=404, detail="Environment not found")
     
@@ -342,7 +342,7 @@ async def get_object_attributes(
 @router.get("/diagnostics/check")
 async def check_code(
     file_path: str,
-    manager: EnvironmentManager = Depends(get_environment_manager)
+    service: EnvironmentService = Depends(get_environment_service)
 ) -> Dict[str, Any]:
     """Vérifie le code et retourne des diagnostics"""
     # Pour l'instant, retourner des diagnostics basiques
