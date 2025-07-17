@@ -1,0 +1,40 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6AM
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+    
+    - name: Install dependencies
+      run: |
+        pip install safety bandit pip-audit
+        pip install -e .
+    
+    - name: Run safety check
+      run: safety check
+    
+    - name: Run bandit security check
+      run: bandit -c pyproject.toml -r gestvenv/ -f json -o security-report.json
+    
+    - name: Run pip-audit
+      run: pip-audit --format=json --output=audit-report.json
+    
+    - name: Upload security reports
+      uses: actions/upload-artifact@v3
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          security-report.json
+          audit-report.json

@@ -1,3 +1,0 @@
-# troubleshooting
-
-Documentation en cours de rédaction...

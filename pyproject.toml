@@ -1,93 +1,114 @@
-[build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "gestvenv"
-version = "1.1.1"
-description = "Gestionnaire d'Environnements Virtuels Python"
-readme = "README.md"
+version = "2.0.0"
+description = "Gestionnaire d'environnements virtuels Python moderne"
 authors = [
-    {name = "thearchit3ct", email = "thearchit3ct@outlook.fr"}
+    {name = "GestVenv Team", email = "contact@gestvenv.dev"}
 ]
+readme = "README.md"
+license = "MIT"
 requires-python = ">=3.9"
+keywords = ["python", "virtualenv", "package-manager", "environment", "pyproject"]
 classifiers = [
-    "Development Status :: 4 - Beta",
-    "Environment :: Console",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.10", 
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
-    "Topic :: Utilities",
-]
-keywords = ["virtual environment", "python", "venv", "environment manager"]
-dependencies = [
-    "pathlib",
+    "Topic :: System :: Software Distribution",
+    "Topic :: Software Development :: Build Tools",
 ]
 
-[project.urls]
-"Homepage" = "https://github.com/thearchit3ct/gestvenv"
-"Bug Tracker" = "https://github.com/thearchit3ct/gestvenv/issues"
-"Documentation" = "https://github.com/thearchit3ct/gestvenv/wiki"
+dependencies = [
+    "packaging>=21.0",
+    "tomli>=2.0.0; python_version<'3.11'",
+    "tomlkit>=0.11.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.6",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "isort>=5.10",
+    "mypy>=1.0",
+    "flake8>=6.0",
+    "pre-commit>=3.0",
+]
+docs = [
+    "sphinx>=6.0",
+    "sphinx-rtd-theme>=1.0",
+    "myst-parser>=1.0",
+    "sphinx-click>=4.0",
+]
+performance = [
+    "uv>=0.1.0",
+]
+full = [
+    "uv>=0.1.0",
+    "tomli-w>=1.0.0",
+    "psutil>=5.9.0",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.6",
+    "pytest-asyncio>=0.21",
+    "psutil>=5.9.0",
+]
 
 [project.scripts]
 gestvenv = "gestvenv.cli:main"
+gv = "gestvenv.cli:main"
 
-[tool.setuptools]
-packages = ["gestvenv", "gestvenv.core", "gestvenv.utils", "gestvenv.templates", "gestvenv.services", "gestvenv.tests"]
-package-data = {"gestvenv.templates" = ["*.json"]}
+[project.urls]
+Homepage = "https://github.com/gestvenv/gestvenv"
+Documentation = "https://gestvenv.readthedocs.io"
+Repository = "https://github.com/gestvenv/gestvenv.git"
+Changelog = "https://github.com/gestvenv/gestvenv/blob/main/CHANGELOG.md"
+Issues = "https://github.com/gestvenv/gestvenv/issues"
 
-[tool.setuptools.package-dir]
-gestvenv = "gestvenv"
+[build-system]
+requires = ["setuptools>=68.0", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-python_files = "test_*.py"
-python_functions = "test_*"
-# Ajouter des options pour ignorer les warnings
-filterwarnings = [
-    "ignore::DeprecationWarning",
-    "ignore::PendingDeprecationWarning"
-]
+[tool.setuptools.packages.find]
+include = ["gestvenv*"]
+exclude = ["web*", "tests*", "docs*"]
+
+[tool.setuptools_scm]
+write_to = "gestvenv/__version__.py"
+version_scheme = "no-guess-dev"
+local_scheme = "dirty-tag"
+fallback_version = "2.0.0"
 
 [tool.black]
-line-length = 100
-target-version = ["py39", "py310", "py311", "py312", "py313"]
+line-length = 88
+target-version = ['py39']
 include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
 
 [tool.isort]
 profile = "black"
-line_length = 100
 multi_line_output = 3
-
-[tool.mypy]
-python_version = "3.9"
-warn_return_any = true
-warn_unused_configs = true
-disallow_untyped_defs = true
-disallow_incomplete_defs = true
-
-[[tool.mypy.overrides]]
-module = "tests.*"
-disallow_untyped_defs = false
-disallow_incomplete_defs = false
-
-[tool.coverage.run]
-source = ["gestvenv"]
-omit = ["tests/*"]
-
-[tool.coverage.report]
-exclude_lines = [
-    "pragma: no cover",
-    "def __repr__",
-    "raise NotImplementedError",
-    "if __name__ == .__main__.:",
-    "pass",
-    "raise ImportError",
-]
+line_length = 88

@@ -1,18 +1,30 @@
 """
-Services pour GestVenv.
+Services métier pour GestVenv v1.1
 
-Ce package contient les services responsables des opérations métier de GestVenv:
-- environment_service: Opérations sur les environnements virtuels
-- package_service: Gestion des packages
-- system_service: Interactions avec le système d'exploitation
+Ce module contient tous les services de logique métier :
+- PackageService : Gestion des packages et dépendances
+- CacheService : Cache intelligent et mode hors ligne
+- MigrationService : Migration et conversion de formats
+- SystemService : Intégration système et commandes
+- DiagnosticService : Diagnostic et réparation automatique
+- TemplateService : Gestion des templates de projets
 """
 
-from .environment_service import EnvironmentService
 from .package_service import PackageService
+from .cache_service import CacheService
+from .migration_service import MigrationService
 from .system_service import SystemService
+from .diagnostic_service import DiagnosticService
+from .template_service import TemplateService
 
 __all__ = [
-    'EnvironmentService',
-    'PackageService',
-    'SystemService'
+    "PackageService",
+    "CacheService", 
+    "MigrationService",
+    "SystemService",
+    "DiagnosticService",
+    "TemplateService",
 ]
+
+# Version des services
+__version__ = "1.1.0"

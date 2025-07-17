@@ -1,0 +1,85 @@
+name: VS Code Extension CI
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'extensions/vscode/**'
+      - '.github/workflows/vscode-extension.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'extensions/vscode/**'
+      - '.github/workflows/vscode-extension.yml'
+
+jobs:
+  test:
+    name: Test VS Code Extension
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        node-version: [18.x, 20.x]
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js ${{ matrix.node-version }}
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ matrix.node-version }}
+        cache: 'npm'
+        cache-dependency-path: extensions/vscode/package-lock.json
+
+    - name: Install dependencies
+      working-directory: extensions/vscode
+      run: npm ci
+
+    - name: Compile TypeScript
+      working-directory: extensions/vscode
+      run: npm run compile
+
+    - name: Run linter
+      working-directory: extensions/vscode
+      run: npm run lint
+
+    - name: Run tests (Linux)
+      if: runner.os == 'Linux'
+      working-directory: extensions/vscode
+      run: xvfb-run -a npm test
+      
+    - name: Run tests (Windows/macOS)
+      if: runner.os != 'Linux'
+      working-directory: extensions/vscode
+      run: npm test
+
+  package:
+    name: Package Extension
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20.x
+
+    - name: Install dependencies
+      working-directory: extensions/vscode
+      run: |
+        npm ci
+        npm install -g @vscode/vsce
+
+    - name: Package extension
+      working-directory: extensions/vscode
+      run: vsce package
+
+    - name: Upload VSIX
+      uses: actions/upload-artifact@v3
+      with:
+        name: vscode-extension
+        path: extensions/vscode/*.vsix
