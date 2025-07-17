@@ -13,12 +13,17 @@ from gestvenv.core.exceptions import (
 from gestvenv.backends.backend_manager import BackendManager
 from gestvenv.services.cache_service import CacheService
 from gestvenv.services.diagnostic_service import DiagnosticService
-from gestvenv.core.ephemeral import ephemeral
+from gestvenv.ephemeral import ephemeral, ephemeral_sync
 
 try:
-    from gestvenv.__version__ import __version__
+    # D'abord essayer la version statique
+    from gestvenv._version import __version__
 except ImportError:
-    __version__ = "unknown"
+    try:
+        # Sinon utiliser la version générée par setuptools_scm
+        from gestvenv.__version__ import __version__
+    except ImportError:
+        __version__ = "2.0.0"
 
 __all__ = [
     "__version__",
@@ -27,6 +32,7 @@ __all__ = [
     "CacheService",
     "DiagnosticService",
     "ephemeral",  # Environments éphémères
+    "ephemeral_sync",  # Version synchrone
     "GestVenvError",
     "EnvironmentNotFoundError",
     "BackendError",

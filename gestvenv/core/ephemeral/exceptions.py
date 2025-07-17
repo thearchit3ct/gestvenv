@@ -2,10 +2,10 @@
 Exceptions pour le système d'environnements éphémères
 """
 
-from ..exceptions import GestVenvException
+from ..exceptions import GestVenvError
 
 
-class EphemeralException(GestVenvException):
+class EphemeralException(GestVenvError):
     """Exception de base pour les environnements éphémères"""
     pass
 

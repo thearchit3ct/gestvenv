@@ -25,7 +25,8 @@ from gestvenv.services.migration_service import MigrationService
 from gestvenv.services.cache_service import CacheService
 from gestvenv.utils.toml_handler import TomlHandler
 from gestvenv.utils.path_utils import PathUtils
-from gestvenv.__version__ import __version__
+# Version fixe pour GestVenv 2.0
+__version__ = "2.0.0"
 
 console = Console()
 
