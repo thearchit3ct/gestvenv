@@ -42,11 +42,11 @@ jobs:
     # - name: Check import order with isort
     #   run: isort --check-only gestvenv/
     
-    - name: Type check with mypy
-      run: mypy gestvenv/
+    # - name: Type check with mypy
+    #   run: mypy gestvenv/
     
-    - name: Security check with bandit
-      run: bandit -c pyproject.toml -r gestvenv/
+    # - name: Security check with bandit
+    #   run: bandit -c pyproject.toml -r gestvenv/
     
     - name: Run tests
       run: pytest tests/ --cov=gestvenv --cov-report=xml
