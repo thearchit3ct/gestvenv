@@ -1,4 +1,4 @@
-# 🌟 GestVenv v1.1
+# 🌟 GestVenv v2.0
 
 <div align="center">
   <img src="logo.png" alt="GestVenv Logo" width="200" height="200"/>
@@ -11,6 +11,30 @@
 [![Tests](https://github.com/gestvenv/gestvenv/workflows/Tests/badge.svg)](https://github.com/gestvenv/gestvenv/actions)
 [![Coverage](https://codecov.io/gh/gestvenv/gestvenv/branch/main/graph/badge.svg)](https://codecov.io/gh/gestvenv/gestvenv)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+## 🎉 Nouveautés v2.0
+
+### 🚀 Environnements Éphémères
+- **Context managers Python** : Création et nettoyage automatique
+- **Isolation avancée** : 4 niveaux (process, namespace, container, chroot)
+- **Monitoring temps réel** : CPU, mémoire, disque
+- **Storage optimisé** : tmpfs, memory pour performance maximale
+
+### 🔌 Extension VS Code Native
+- **IntelliSense** pour packages Python installés
+- **Auto-complétion** intelligente et contextuelle
+- **Language Server Protocol** complet
+- **WebSocket** pour synchronisation temps réel
+- **Refactoring** assisté et code actions
+
+### 🌐 Interface Web Moderne
+- **Dashboard Vue 3** avec Tailwind CSS
+- **API REST** complète avec FastAPI
+- **WebSocket** pour updates temps réel
+- **Gestion visuelle** des environnements et packages
+
+### ⚡ Alias de commande
+- Utilisez `gestvenv` ou `gv` indifféremment
 
 ## 🚀 Fonctionnalités
 
@@ -32,7 +56,7 @@
 - **⚙️ Configuration flexible** : Locale + variables d'environnement
 - **📊 Monitoring santé** : État détaillé des environnements
 
-### 🚀 Environnements Éphémères (Nouveau!)
+### 🚀 Environnements Éphémères
 - **⚡ Création ultra-rapide** : < 1 seconde avec uv
 - **🧹 Nettoyage automatique** : Context managers Python
 - **🔒 Isolation sécurisée** : Process, namespace, container, chroot
@@ -43,7 +67,7 @@
 - **🔄 Import Pipenv** : Migration transparente depuis Pipfile
 - **🐍 Support Conda** : Import environment.yml
 - **📋 Export multi-format** : JSON, requirements, pyproject.toml
-- **🔗 Compatibilité totale** : Avec v1.0 et autres outils
+- **🔗 Compatibilité totale** : Avec v1.x et autres outils
 
 ## ⚡ Installation
 
@@ -54,8 +78,11 @@ pip install gestvenv
 # Avec performances optimisées
 pip install gestvenv[performance]
 
-# Installation complète
+# Installation complète (recommandée)
 pip install gestvenv[full]
+
+# Pour développeurs avec extension VS Code
+pip install gestvenv[dev]
 ```
 
 ## 🎯 Utilisation Rapide
@@ -63,116 +90,146 @@ pip install gestvenv[full]
 ### Création d'environnements
 
 ```bash
-# Environnement basique
-gestvenv create monapp
+# Environnement basique (utilise 'gv' ou 'gestvenv')
+gv create monapp
 
 # Depuis templates intégrés
-gestvenv create-from-template django monwebapp
-gestvenv create-from-template data-science monanalyse
-gestvenv create-from-template fastapi monapi
+gv create-from-template django monwebapp
+gv create-from-template data-science monanalyse
+gv create-from-template fastapi monapi
 
 # Import depuis projets existants
-gestvenv create-from-pyproject ./pyproject.toml monapp
-gestvenv create-from-conda ./environment.yml monapp
-gestvenv import-from-pipfile ./Pipfile monapp
+gv create-from-pyproject ./pyproject.toml monapp
+gv create-from-conda ./environment.yml monapp
+gv import-from-pipfile ./Pipfile monapp
 
 # Auto-détection et création
-gestvenv import ./mon-projet/pyproject.toml  # Détecte le format automatiquement
+gv import ./mon-projet/pyproject.toml  # Détecte le format automatiquement
 ```
 
 ### Gestion avancée des packages
 
 ```bash
 # Installation avec groupes de dépendances
-gestvenv install requests flask --env monapp --group web
-gestvenv install pytest black --env monapp --group dev
+gv install requests flask --env monapp --group web
+gv install pytest black --env monapp --group dev
 
 # Listage par groupes
-gestvenv list-packages --env monapp --group dev
+gv list-packages --env monapp --group dev
 
 # Synchronisation automatique
-gestvenv sync monapp --groups dev,test --clean
+gv sync monapp --groups dev,test --clean
 
 # Mise à jour intelligente
-gestvenv update --env monapp --all
+gv update --env monapp --all
 ```
 
 ### Cache intelligent et mode hors ligne
 
 ```bash
 # Pré-téléchargement depuis requirements
-gestvenv cache add -r requirements.txt --python-version 3.11
+gv cache add -r requirements.txt --python-version 3.11
 
 # Export/import de cache
-gestvenv cache export /backup/cache.tar.gz --compress
-gestvenv cache import /backup/cache.tar.gz --verify
+gv cache export /backup/cache.tar.gz --compress
+gv cache import /backup/cache.tar.gz --verify
 
 # Mode hors ligne complet
-gestvenv --offline create monapp
-gestvenv --offline install requests --env monapp
-```
-
-### Diagnostic et réparation
-
-```bash
-# Diagnostic complet
-gestvenv doctor --full --performance
-
-# Réparation automatique
-gestvenv doctor --auto-fix
-gestvenv repair monapp --all
-
-# Nettoyage du système
-gestvenv cleanup --orphaned --cache
-```
-
-### Configuration avancée
-
-```bash
-# Configuration globale
-gestvenv config set preferred_backend uv
-gestvenv config set cache_size_mb 2000
-
-# Configuration locale du projet
-gestvenv config set --local preferred_backend poetry
-
-# Variables d'environnement
-export GESTVENV_BACKEND=uv
-export GESTVENV_CACHE_ENABLED=true
+gv --offline create monapp
+gv --offline install requests --env monapp
 ```
 
 ### Environnements éphémères
 
 ```python
 # API Python avec nettoyage automatique
-import gestvenv
+import asyncio
+from gestvenv import ephemeral
 
-async with gestvenv.ephemeral("test-env") as env:
-    await env.install(["requests", "pandas"])
-    result = await env.execute("python -c 'import requests; print(requests.__version__)'")
-    print(result.stdout)
-    # Cleanup automatique garanti
+async def test_package():
+    async with ephemeral("test-env") as env:
+        await env.install(["requests", "pandas"])
+        result = await env.execute("python -c 'import requests; print(requests.__version__)'")
+        print(result.stdout)
+        # Cleanup automatique garanti
+
+# Exécution
+asyncio.run(test_package())
 ```
 
 ```bash
 # CLI pour tests rapides
-gestvenv ephemeral create test --interactive --packages "requests,pandas"
-gestvenv ephemeral list
-gestvenv ephemeral cleanup --all
+gv ephemeral create test --interactive --packages "requests,pandas"
+gv ephemeral list
+gv ephemeral stats
+gv ephemeral cleanup --all
+```
+
+### Extension VS Code
+
+```bash
+# Installation de l'extension
+cd extensions/vscode
+npm install
+npm run package
+
+# Dans VS Code
+# 1. Ouvrir le gestionnaire d'extensions
+# 2. "Install from VSIX..."
+# 3. Sélectionner gestvenv-vscode-x.x.x.vsix
+```
+
+### Interface Web
+
+```bash
+# Démarrer l'interface web
+cd web
+./start-dev.sh
+
+# Accéder à http://localhost:5173
+```
+
+### Diagnostic et réparation
+
+```bash
+# Diagnostic complet
+gv doctor --full --performance
+
+# Réparation automatique
+gv doctor --auto-fix
+gv repair monapp --all
+
+# Nettoyage du système
+gv cleanup --orphaned --cache
+```
+
+### Configuration avancée
+
+```bash
+# Configuration globale
+gv config set preferred_backend uv
+gv config set cache_size_mb 2000
+
+# Configuration locale du projet
+gv config set --local preferred_backend poetry
+
+# Variables d'environnement
+export GESTVENV_BACKEND=uv
+export GESTVENV_CACHE_ENABLED=true
 ```
 
 ### Intégration shell
 
 ```bash
 # Exécution dans l'environnement
-gestvenv run --env monapp python mon_script.py
-gestvenv run --env monapp pytest tests/
+gv run --env monapp python mon_script.py
+gv run --env monapp pytest tests/
 
 # Shell interactif
-gestvenv shell --env monapp
+gv shell --env monapp
 
 # Activation classique
-gestvenv activate monapp
+gv activate monapp
 ```
 
 ## 📊 Performance et Backends
@@ -202,61 +259,76 @@ mon-projet/
 ├── requirements.txt        # Support legacy
 ├── .gestvenv/             # Cache et configuration
 │   ├── environments/      # Environnements virtuels
-│   └── cache/            # Cache packages
-└── src/                  # Code source
+│   ├── cache/            # Cache packages
+│   └── ephemeral/        # Environnements temporaires
+├── extensions/           # Extensions IDE
+│   └── vscode/          # Extension VS Code
+├── web/                 # Interface web
+│   ├── api/            # API REST/WebSocket
+│   └── web-ui/         # Interface Vue 3
+└── src/                # Code source
 ```
 
 ## 🔧 Configuration
 
-```bash
-# Configuration globale
-gestvenv config list
-gestvenv config set cache-size 2GB
-gestvenv config set auto-cleanup true
+### Configuration globale
 
-# Configuration par projet
-gestvenv config --local set backend uv
-gestvenv config --local set python-version 3.11
+```toml
+# ~/.config/gestvenv/config.toml
+[general]
+preferred_backend = "uv"
+default_python = "3.11"
+auto_cleanup = true
+
+[cache]
+enabled = true
+size_mb = 2000
+compression = "zstd"
+
+[ephemeral]
+default_isolation = "namespace"
+default_storage = "tmpfs"
+auto_cleanup_seconds = 3600
+
+[ide]
+vscode_extension = true
+intellisense_enabled = true
 ```
 
-## 📋 Templates intégrés
+### Configuration projet
 
-```bash
-# Web application
-gestvenv create-from-template web monapp
-# → Flask/FastAPI, gunicorn, pytest
+```toml
+# .gestvenv/config.toml
+[project]
+name = "mon-projet"
+backend = "uv"
+python_version = "3.11"
 
-# Data science
-gestvenv create-from-template datascience analyse
-# → numpy, pandas, jupyter, matplotlib
-
-# CLI tool
-gestvenv create-from-template cli montool
-# → click, rich, typer
+[dependencies]
+groups = ["main", "dev", "test", "docs"]
 ```
 
-## 🔄 Migration depuis v1.0
+## 🔄 Migration depuis v1.x
 
 ```bash
 # Migration automatique
-gestvenv migrate-from-v1
+gv migrate --from-v1
 
-# Migration manuelle
-gestvenv import-v1-environments ~/.gestvenv-v1/
+# Import manuel
+gv import-v1-environments ~/.gestvenv-v1/
 ```
 
 ## 🩺 Diagnostic et maintenance
 
 ```bash
 # Diagnostic complet
-gestvenv doctor
+gv doctor --full --json
 
 # Réparation automatique
-gestvenv repair --env monapp
+gv repair --env monapp --deep
 
-# Nettoyage cache
-gestvenv clean cache
-gestvenv clean environments --unused
+# Nettoyage système
+gv cleanup --all --force
 ```
 
 ## 📚 Documentation
@@ -264,7 +336,10 @@ gestvenv clean environments --unused
 - [Guide d'installation](docs/installation.md)
 - [Démarrage rapide](docs/quickstart.md) 
 - [Guide utilisateur](docs/user_guide/)
-- [Migration v1.0 → v1.1](docs/user_guide/migration.md)
+- [Environnements éphémères](docs/ephemeral-environments.md)
+- [Extension VS Code](docs/vscode-extension.md)
+- [API Web](docs/web-api.md)
+- [Migration v1.x → v2.0](docs/migration-v2.md)
 - [Documentation API](docs/api/)
 
 ## 🔧 Développement
@@ -277,11 +352,19 @@ cd gestvenv
 # Installation développement
 pip install -e .[dev]
 
-# Tests
-pytest
+# Tests complets
+pytest --cov=gestvenv --cov-report=html
 
-# Linting
+# Linting et formatage
 pre-commit run --all-files
+
+# Build extension VS Code
+cd extensions/vscode
+npm run package
+
+# Lancer l'interface web
+cd web
+./start-dev.sh
 ```
 
 ## 🤝 Contribution
@@ -304,10 +387,14 @@ Ce projet est sous licence MIT. Voir [LICENSE](LICENSE) pour les détails.
 
 - Communauté Python pour les standards PEP
 - Équipes uv, poetry, PDM pour l'inspiration
+- Microsoft pour VS Code Extension API
+- Vue.js team pour le framework réactif
 - Tous les contributeurs et utilisateurs
 
 ---
 
 <div align="center">
-  <strong>GestVenv v1.1 - L'avenir de la gestion d'environnements Python</strong>
+  <strong>GestVenv v2.0 - L'avenir de la gestion d'environnements Python</strong>
+  <br>
+  <em>Maintenant avec environnements éphémères, extension VS Code et interface web!</em>
 </div>
