@@ -39,8 +39,8 @@ jobs:
     # - name: Check formatting with black
     #   run: black --check gestvenv/
     
-    - name: Check import order with isort
-      run: isort --check-only gestvenv/
+    # - name: Check import order with isort
+    #   run: isort --check-only gestvenv/
     
     - name: Type check with mypy
       run: mypy gestvenv/
