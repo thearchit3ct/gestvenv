@@ -16,12 +16,12 @@ class TestParsingPerformance:
     
     @pytest.fixture
     def temp_dir(self):
-        """Crée un répertoire temporaire"""
+        """Cree un repertoire temporaire"""
         with tempfile.TemporaryDirectory() as tmpdir:
             yield Path(tmpdir)
     
     def create_simple_toml(self, path: Path) -> Path:
-        """Crée un fichier TOML simple"""
+        """Cree un fichier TOML simple"""
         content = '''
 [project]
 name = "test-project"
@@ -36,7 +36,7 @@ click = ">=8.0"
         return toml_file
     
     def create_simple_requirements(self, path: Path) -> Path:
-        """Crée un fichier requirements.txt simple"""
+        """Cree un fichier requirements.txt simple"""
         content = '''requests==2.28.0
 click>=8.0
 pandas>=1.0.0
@@ -56,7 +56,7 @@ pandas>=1.0.0
         data = handler.load(toml_file)
         duration = time.perf_counter() - start
         
-        # Vérifications
+        # Verifications
         assert data is not None
         assert "project" in data
         assert duration < 0.1, f"Parsing TOML trop lent: {duration}s"
@@ -72,7 +72,7 @@ pandas>=1.0.0
         deps = parser.parse_file(str(req_file))
         duration = time.perf_counter() - start
         
-        # Vérifications
+        # Verifications
         assert len(deps) == 3
         assert duration < 0.1, f"Parsing requirements trop lent: {duration}s"
 
