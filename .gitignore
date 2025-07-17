@@ -168,3 +168,6 @@ Thumbs.db
 *~
 *.swp
 *.swo
+create_gestvenv_structure.sh
+CLAUDE.md
+.mcp.json
