@@ -180,8 +180,8 @@ async def update_environment(
 @router.delete("/{env_name}", response_model=ApiResponse)
 async def delete_environment(
     env_name: str,
-    force: bool = Query(False, description="Forcer la suppression"),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    force: bool = Query(False, description="Forcer la suppression")
 ):
     """
     Supprime un environnement.
@@ -286,9 +286,9 @@ async def list_environment_packages(
 @router.post("/{env_name}/sync", response_model=ApiResponse)
 async def sync_environment(
     env_name: str,
+    background_tasks: BackgroundTasks,
     groups: Optional[str] = Query(None, description="Groupes à synchroniser"),
-    clean: bool = Query(False, description="Nettoyer les packages non listés"),
-    background_tasks: BackgroundTasks
+    clean: bool = Query(False, description="Nettoyer les packages non listés")
 ):
     """
     Synchronise un environnement avec pyproject.toml.

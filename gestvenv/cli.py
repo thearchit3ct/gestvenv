@@ -2030,6 +2030,269 @@ def config_reset(ctx: click.Context, backup: bool, force: bool) -> None:
         console.print(f"❌ Erreur: {e}")
         sys.exit(1)
 
+# === COMMANDES ENVIRONNEMENTS ÉPHÉMÈRES ===
+
+@cli.group()
+def ephemeral() -> None:
+    """Gestion des environnements éphémères"""
+    pass
+
+@ephemeral.command(name='create')
+@click.argument('name', required=False)
+@click.option('--backend', type=click.Choice(['uv', 'pip', 'pdm', 'poetry']), 
+              default='uv', help='Backend à utiliser')
+@click.option('--python', help='Version Python')
+@click.option('--ttl', type=int, help='Durée de vie en secondes')
+@click.option('--packages', help='Packages à installer (séparés par des virgules)')
+@click.option('--requirements', type=click.Path(exists=True), help='Fichier requirements.txt')
+@click.option('--interactive', is_flag=True, help='Mode interactif')
+@click.pass_context
+def ephemeral_create(ctx: click.Context, name: Optional[str], backend: str, python: Optional[str], 
+                    ttl: Optional[int], packages: Optional[str], requirements: Optional[str], 
+                    interactive: bool) -> None:
+    """Créer un environnement éphémère"""
+    try:
+        import asyncio
+        from gestvenv.core.ephemeral import ephemeral
+        from gestvenv.core.models import Backend
+        
+        backend_map = {
+            'uv': Backend.UV,
+            'pip': Backend.PIP,
+            'pdm': Backend.PDM,
+            'poetry': Backend.POETRY
+        }
+        
+        async def create_and_use():
+            console.print(f"🚀 Création de l'environnement éphémère...")
+            
+            async with ephemeral(
+                name=name,
+                backend=backend_map[backend],
+                python_version=python or "3.11",
+                ttl=ttl
+            ) as env:
+                console.print(f"✅ Environnement créé: {env.name} (ID: {env.id[:8]})")
+                console.print(f"📁 Stockage: {env.storage_path}")
+                console.print(f"🐍 Python: {env.python_version}")
+                console.print(f"⚙️ Backend: {env.backend.value}")
+                
+                # Installation de packages
+                if packages:
+                    package_list = [p.strip() for p in packages.split(',')]
+                    console.print(f"📦 Installation de {len(package_list)} packages...")
+                    result = await env.install(package_list)
+                    if result.success:
+                        console.print("✅ Packages installés avec succès")
+                    else:
+                        console.print(f"❌ Erreur installation: {result.stderr}")
+                
+                if requirements:
+                    console.print(f"📦 Installation depuis {requirements}...")
+                    result = await env.execute(f"pip install -r {requirements}")
+                    if result.success:
+                        console.print("✅ Requirements installés avec succès")
+                    else:
+                        console.print(f"❌ Erreur: {result.stderr}")
+                
+                if interactive:
+                    console.print("\n💡 Mode interactif - tapez 'exit' pour quitter")
+                    console.print("Commandes disponibles:")
+                    console.print("  install <package>  - Installer un package")
+                    console.print("  run <command>      - Exécuter une commande") 
+                    console.print("  info               - Informations sur l'environnement")
+                    console.print("  exit               - Quitter")
+                    
+                    while True:
+                        try:
+                            command = input(f"\n{env.name}> ").strip()
+                            if command == 'exit':
+                                break
+                            elif command == 'info':
+                                console.print(f"ID: {env.id}")
+                                console.print(f"Nom: {env.name}")
+                                console.print(f"Status: {env.status.value}")
+                                console.print(f"Packages: {len(env.packages)}")
+                                console.print(f"Âge: {env.age_seconds}s")
+                            elif command.startswith('install '):
+                                package = command[8:].strip()
+                                result = await env.install([package])
+                                if result.success:
+                                    console.print(f"✅ {package} installé")
+                                else:
+                                    console.print(f"❌ Erreur: {result.stderr}")
+                            elif command.startswith('run '):
+                                cmd = command[4:].strip()
+                                result = await env.execute(cmd)
+                                if result.stdout:
+                                    console.print(result.stdout)
+                                if result.stderr:
+                                    console.print(result.stderr, style="red")
+                            else:
+                                console.print("❌ Commande inconnue")
+                        except KeyboardInterrupt:
+                            break
+                        except EOFError:
+                            break
+                
+                console.print("🧹 Nettoyage automatique en cours...")
+            
+            console.print("✅ Environnement éphémère terminé")
+        
+        asyncio.run(create_and_use())
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@ephemeral.command(name='list')
+@click.option('--format', type=click.Choice(['table', 'json']), default='table')
+@click.pass_context
+def ephemeral_list(ctx: click.Context, format: str) -> None:
+    """Lister les environnements éphémères actifs"""
+    try:
+        import asyncio
+        from gestvenv.core.ephemeral import list_active_environments
+        
+        async def list_envs():
+            environments = await list_active_environments()
+            
+            if format == 'json':
+                import json
+                env_data = []
+                for env in environments:
+                    env_data.append({
+                        'id': env.id,
+                        'name': env.name,
+                        'status': env.status.value,
+                        'backend': env.backend.value,
+                        'python_version': env.python_version,
+                        'age_seconds': env.age_seconds,
+                        'packages_count': len(env.packages)
+                    })
+                console.print(json.dumps(env_data, indent=2))
+                return
+            
+            if not environments:
+                console.print("📭 Aucun environnement éphémère actif")
+                return
+            
+            table = Table(title="🚀 Environnements Éphémères Actifs")
+            table.add_column("ID", style="cyan")
+            table.add_column("Nom", style="green")
+            table.add_column("Status", style="yellow")
+            table.add_column("Backend", style="blue")
+            table.add_column("Python", style="magenta")
+            table.add_column("Âge", style="red")
+            table.add_column("Packages", style="white")
+            
+            for env in environments:
+                table.add_row(
+                    env.id[:8],
+                    env.name or "sans-nom",
+                    env.status.value,
+                    env.backend.value,
+                    env.python_version,
+                    f"{env.age_seconds}s",
+                    str(len(env.packages))
+                )
+            
+            console.print(table)
+        
+        asyncio.run(list_envs())
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@ephemeral.command(name='cleanup')
+@click.argument('env_id', required=False)
+@click.option('--all', 'cleanup_all', is_flag=True, help='Nettoyer tous les environnements')
+@click.option('--force', is_flag=True, help='Forcer le nettoyage')
+@click.pass_context
+def ephemeral_cleanup(ctx: click.Context, env_id: Optional[str], cleanup_all: bool, force: bool) -> None:
+    """Nettoyer des environnements éphémères"""
+    try:
+        import asyncio
+        from gestvenv.core.ephemeral import cleanup_environment, list_active_environments
+        
+        async def cleanup():
+            if cleanup_all:
+                environments = await list_active_environments()
+                if not environments:
+                    console.print("📭 Aucun environnement à nettoyer")
+                    return
+                
+                console.print(f"🧹 Nettoyage de {len(environments)} environnements...")
+                success_count = 0
+                
+                for env in environments:
+                    try:
+                        success = await cleanup_environment(env.id, force=force)
+                        if success:
+                            success_count += 1
+                            console.print(f"✅ {env.name} nettoyé")
+                        else:
+                            console.print(f"❌ Échec: {env.name}")
+                    except Exception as e:
+                        console.print(f"❌ Erreur {env.name}: {e}")
+                
+                console.print(f"📊 {success_count}/{len(environments)} environnements nettoyés")
+            
+            elif env_id:
+                console.print(f"🧹 Nettoyage de l'environnement {env_id}...")
+                success = await cleanup_environment(env_id, force=force)
+                if success:
+                    console.print(f"✅ Environnement {env_id} nettoyé")
+                else:
+                    console.print(f"❌ Environnement {env_id} non trouvé")
+            
+            else:
+                console.print("❌ Spécifiez un ID d'environnement ou --all")
+                sys.exit(1)
+        
+        asyncio.run(cleanup())
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
+@ephemeral.command(name='stats')
+@click.option('--format', type=click.Choice(['table', 'json']), default='table')
+@click.pass_context
+def ephemeral_stats(ctx: click.Context, format: str) -> None:
+    """Statistiques des environnements éphémères"""
+    try:
+        import asyncio
+        from gestvenv.core.ephemeral import get_resource_usage
+        
+        async def show_stats():
+            usage = await get_resource_usage()
+            
+            if format == 'json':
+                import json
+                console.print(json.dumps(usage, indent=2))
+                return
+            
+            table = Table(title="📊 Statistiques Environnements Éphémères")
+            table.add_column("Métrique", style="cyan")
+            table.add_column("Valeur", style="green")
+            
+            table.add_row("Environnements actifs", str(usage["active_environments"]))
+            table.add_row("Maximum concurrent", str(usage["max_concurrent"]))
+            table.add_row("Mémoire utilisée", f"{usage['total_memory_mb']:.1f} MB")
+            table.add_row("Mémoire maximum", f"{usage['max_total_memory_mb']:.1f} MB")
+            table.add_row("Disque utilisé", f"{usage['total_disk_mb']:.1f} MB")
+            table.add_row("Disque maximum", f"{usage['max_total_disk_mb']:.1f} MB")
+            
+            console.print(table)
+        
+        asyncio.run(show_stats())
+        
+    except Exception as e:
+        console.print(f"❌ Erreur: {e}")
+        sys.exit(1)
+
 # === COMMANDES UTILITAIRES ===
 
 @cli.command()

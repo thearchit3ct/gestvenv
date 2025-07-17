@@ -38,7 +38,7 @@ class PackageStatus(str, Enum):
 class EnvironmentBase(BaseModel):
     """Base pour les environnements."""
     name: str = Field(..., min_length=1, max_length=100)
-    python_version: Optional[str] = Field(None, regex=r'^\d+\.\d+(\.\d+)?$')
+    python_version: Optional[str] = Field(None, pattern=r'^\d+\.\d+(\.\d+)?$')
     backend: BackendType = BackendType.AUTO
 
 
@@ -55,7 +55,7 @@ class EnvironmentCreate(EnvironmentBase):
 
 class EnvironmentUpdate(BaseModel):
     """Schéma pour mettre à jour un environnement."""
-    python_version: Optional[str] = Field(None, regex=r'^\d+\.\d+(\.\d+)?$')
+    python_version: Optional[str] = Field(None, pattern=r'^\d+\.\d+(\.\d+)?$')
     backend: Optional[BackendType] = None
 
 

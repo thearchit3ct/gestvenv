@@ -78,9 +78,9 @@ async def get_system_health():
 
 @router.post("/doctor", response_model=ApiResponse)
 async def run_doctor(
+    background_tasks: BackgroundTasks,
     env_name: Optional[str] = Query(None, description="Environnement à diagnostiquer"),
-    auto_fix: bool = Query(False, description="Réparation automatique"),
-    background_tasks: BackgroundTasks
+    auto_fix: bool = Query(False, description="Réparation automatique")
 ):
     """
     Exécute le diagnostic du système.
@@ -199,9 +199,9 @@ async def cancel_operation(operation_id: str):
 
 @router.post("/cleanup", response_model=ApiResponse)
 async def cleanup_system(
+    background_tasks: BackgroundTasks,
     orphaned_only: bool = Query(False, description="Nettoyer seulement les environnements orphelins"),
-    clean_cache: bool = Query(False, description="Nettoyer aussi le cache"),
-    background_tasks: BackgroundTasks
+    clean_cache: bool = Query(False, description="Nettoyer aussi le cache")
 ):
     """
     Nettoie le système (environnements orphelins, cache, etc.).

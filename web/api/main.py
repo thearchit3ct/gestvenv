@@ -10,7 +10,7 @@ import logging
 import os
 from pathlib import Path
 
-from api.routes import environments, packages, cache, system, templates
+from api.routes import environments, packages, cache, system, templates, ide
 from api.websocket import WebSocketManager
 from api.core.config import settings
 
@@ -33,7 +33,7 @@ app = FastAPI(
 # Configuration CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
+    allow_origins=settings.cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,6 +48,7 @@ app.include_router(packages.router, prefix="/api/v1", tags=["packages"])
 app.include_router(cache.router, prefix="/api/v1", tags=["cache"])
 app.include_router(system.router, prefix="/api/v1", tags=["system"])
 app.include_router(templates.router, prefix="/api/v1", tags=["templates"])
+app.include_router(ide.router, tags=["ide"])
 
 # WebSocket endpoint pour les opérations en temps réel
 @app.websocket("/ws")

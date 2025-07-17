@@ -13,6 +13,7 @@ from gestvenv.core.exceptions import (
 from gestvenv.backends.backend_manager import BackendManager
 from gestvenv.services.cache_service import CacheService
 from gestvenv.services.diagnostic_service import DiagnosticService
+from gestvenv.core.ephemeral import ephemeral
 
 try:
     from gestvenv.__version__ import __version__
@@ -25,6 +26,7 @@ __all__ = [
     "BackendManager", 
     "CacheService",
     "DiagnosticService",
+    "ephemeral",  # Environments éphémères
     "GestVenvError",
     "EnvironmentNotFoundError",
     "BackendError",

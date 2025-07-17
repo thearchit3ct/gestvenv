@@ -6,13 +6,12 @@ authors = [
     {name = "GestVenv Team", email = "contact@gestvenv.dev"}
 ]
 readme = "README.md"
-license = {text = "MIT"}
+license = "MIT"
 requires-python = ">=3.9"
 keywords = ["python", "virtualenv", "package-manager", "environment", "pyproject"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
@@ -73,6 +72,10 @@ Issues = "https://github.com/gestvenv/gestvenv/issues"
 [build-system]
 requires = ["setuptools>=68.0", "wheel", "setuptools_scm[toml]>=6.2"]
 build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gestvenv*"]
+exclude = ["web*", "tests*", "docs*"]
 
 [tool.setuptools_scm]
 write_to = "gestvenv/__version__.py"

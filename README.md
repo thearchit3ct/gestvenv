@@ -32,6 +32,13 @@
 - **⚙️ Configuration flexible** : Locale + variables d'environnement
 - **📊 Monitoring santé** : État détaillé des environnements
 
+### 🚀 Environnements Éphémères (Nouveau!)
+- **⚡ Création ultra-rapide** : < 1 seconde avec uv
+- **🧹 Nettoyage automatique** : Context managers Python
+- **🔒 Isolation sécurisée** : Process, namespace, container, chroot
+- **📊 Monitoring temps réel** : CPU, mémoire, disque
+- **💾 Stockage optimisé** : tmpfs, mémoire pour performance max
+
 ### 🌉 Migration
 - **🔄 Import Pipenv** : Migration transparente depuis Pipfile
 - **🐍 Support Conda** : Import environment.yml
@@ -132,6 +139,26 @@ gestvenv config set --local preferred_backend poetry
 # Variables d'environnement
 export GESTVENV_BACKEND=uv
 export GESTVENV_CACHE_ENABLED=true
+```
+
+### Environnements éphémères
+
+```python
+# API Python avec nettoyage automatique
+import gestvenv
+
+async with gestvenv.ephemeral("test-env") as env:
+    await env.install(["requests", "pandas"])
+    result = await env.execute("python -c 'import requests; print(requests.__version__)'")
+    print(result.stdout)
+    # Cleanup automatique garanti
+```
+
+```bash
+# CLI pour tests rapides
+gestvenv ephemeral create test --interactive --packages "requests,pandas"
+gestvenv ephemeral list
+gestvenv ephemeral cleanup --all
 ```
 
 ### Intégration shell

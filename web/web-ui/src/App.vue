@@ -6,7 +6,9 @@
         <!-- Logo et titre -->
         <div class="flex h-16 items-center justify-between px-6 border-b border-gray-200">
           <div class="flex items-center">
-            <img src="/logo.png" alt="GestVenv" class="h-8 w-8" />
+            <div class="h-8 w-8 bg-primary-600 rounded-lg flex items-center justify-center">
+              <span class="text-white font-bold text-lg">G</span>
+            </div>
             <h1 class="ml-3 text-xl font-bold text-gray-900">GestVenv</h1>
           </div>
           <button

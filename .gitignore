@@ -141,12 +141,54 @@ cython_debug/
 
 # VS Code
 .vscode/
+*.vsix
 
 # GestVenv specific
 .gestvenv/
 *.gestvenv
 gestvenv.json
 .gestvenv.lock
+
+# Web UI
+web/node_modules/
+web/web-ui/node_modules/
+web/web-ui/dist/
+web/web-ui/.env.local
+web/web-ui/.env.*.local
+web/web-ui/npm-debug.log*
+web/web-ui/yarn-debug.log*
+web/web-ui/yarn-error.log*
+web/web-ui/package-lock.json
+web/web-ui/yarn.lock
+
+# VS Code Extension
+extensions/vscode/out/
+extensions/vscode/dist/
+extensions/vscode/node_modules/
+extensions/vscode/*.vsix
+extensions/vscode/.vscode-test/
+
+# API
+web/api/__pycache__/
+web/api/*.pyc
+web/api/.env
+
+# Test files
+test_*.py
+test_*.sh
+*_test.py
+*/test_*
+web/fix_*.py
+web/diagnose_*.py
+web/final_*.py
+web/*-restart.sh
+web/*-ports.sh
+web/install-*.sh
+
+# Temporary scripts
+web/clean-restart.sh
+web/debug-ports.sh
+web/kill-and-restart.sh
 
 # Benchmarks
 benchmarks/results/*.json
@@ -171,3 +213,24 @@ Thumbs.db
 create_gestvenv_structure.sh
 CLAUDE.md
 .mcp.json
+
+# TypeScript
+*.tsbuildinfo
+*.d.ts.map
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+lerna-debug.log*
+.pnpm-debug.log*
+
+# Editor directories and files
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

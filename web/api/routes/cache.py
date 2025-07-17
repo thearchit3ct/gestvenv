@@ -45,9 +45,9 @@ async def get_cache_info():
 
 @router.post("/clean", response_model=ApiResponse)
 async def clean_cache(
+    background_tasks: BackgroundTasks,
     older_than: Optional[int] = Query(None, description="Nettoyer les éléments plus anciens que X jours"),
-    size_limit: Optional[str] = Query(None, description="Nettoyer pour atteindre cette taille max"),
-    background_tasks: BackgroundTasks
+    size_limit: Optional[str] = Query(None, description="Nettoyer pour atteindre cette taille max")
 ):
     """
     Nettoie le cache selon les critères spécifiés.

@@ -23,8 +23,8 @@ operation_service = OperationService()
 @router.post("/install", response_model=ApiResponse)
 async def install_package(
     package_data: PackageInstall,
-    env_name: str = Query(..., description="Nom de l'environnement"),
-    background_tasks: BackgroundTasks
+    background_tasks: BackgroundTasks,
+    env_name: str = Query(..., description="Nom de l'environnement")
 ):
     """
     Installe un package dans un environnement.
@@ -62,9 +62,9 @@ async def install_package(
 
 @router.delete("/{package_name}", response_model=ApiResponse)
 async def uninstall_package(
+    background_tasks: BackgroundTasks,
     package_name: str = Path(..., description="Nom du package"),
-    env_name: str = Query(..., description="Nom de l'environnement"),
-    background_tasks: BackgroundTasks
+    env_name: str = Query(..., description="Nom de l'environnement")
 ):
     """
     Désinstalle un package d'un environnement.
@@ -102,9 +102,9 @@ async def uninstall_package(
 
 @router.post("/update", response_model=ApiResponse)
 async def update_packages(
+    background_tasks: BackgroundTasks,
     env_name: str = Query(..., description="Nom de l'environnement"),
-    packages: Optional[List[str]] = Query(None, description="Packages à mettre à jour"),
-    background_tasks: BackgroundTasks
+    packages: Optional[List[str]] = Query(None, description="Packages à mettre à jour")
 ):
     """
     Met à jour des packages dans un environnement.

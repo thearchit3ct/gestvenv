@@ -2,7 +2,7 @@
 Configuration de l'application GestVenv Web API.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List
 import os
 
@@ -19,13 +19,13 @@ class Settings(BaseSettings):
     HOST: str = "0.0.0.0"
     PORT: int = 8000
     
-    # Configuration CORS
-    ALLOWED_ORIGINS: List[str] = [
-        "http://localhost:3000",  # Dev frontend
-        "http://localhost:5173",  # Vite dev server
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:5173"
-    ]
+    # Configuration CORS - stored as string in env, parsed to list
+    ALLOWED_ORIGINS: str = "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
+    
+    @property
+    def cors_origins(self) -> List[str]:
+        """Parse ALLOWED_ORIGINS string to list."""
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(',') if origin.strip()]
     
     # Configuration base de données
     DATABASE_URL: str = "sqlite:///./gestvenv_web.db"
@@ -51,9 +51,12 @@ class Settings(BaseSettings):
     # Configuration WebSocket
     WS_MAX_CONNECTIONS: int = 100
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = True
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        case_sensitive=True,
+        # Ne pas essayer de parser automatiquement comme JSON
+        env_parse_none_str="None"
+    )
 
 
 # Instance globale des settings

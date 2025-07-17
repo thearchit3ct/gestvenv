@@ -150,7 +150,7 @@ start_frontend() {
     
     cd web-ui
     
-    print_success "Frontend démarré sur http://localhost:3000"
+    print_success "Frontend démarré sur http://localhost:3001"
     print_status "Le serveur de développement supporte le hot-reload"
     
     # Démarrer le serveur de développement Vite
@@ -161,10 +161,13 @@ start_frontend() {
 start_both() {
     print_status "Démarrage du backend et du frontend..."
     
+    # Obtenir le répertoire actuel
+    CURRENT_DIR=$(pwd)
+    
     # Créer un script temporaire pour le backend
-    cat > /tmp/start-backend.sh << 'EOF'
+    cat > /tmp/start-backend.sh << EOF
 #!/bin/bash
-cd "$(dirname "$0")"
+cd "$CURRENT_DIR"
 source venv/bin/activate
 export DEBUG=true
 export RELOAD=true
@@ -174,16 +177,16 @@ EOF
     chmod +x /tmp/start-backend.sh
     
     # Créer un script temporaire pour le frontend
-    cat > /tmp/start-frontend.sh << 'EOF'
+    cat > /tmp/start-frontend.sh << EOF
 #!/bin/bash
-cd "$(dirname "$0")/web-ui"
+cd "$CURRENT_DIR/web-ui"
 npm run dev
 EOF
     chmod +x /tmp/start-frontend.sh
     
     print_success "Services configurés"
     print_status "Backend: http://localhost:8000"
-    print_status "Frontend: http://localhost:3000"
+    print_status "Frontend: http://localhost:3001"
     print_status "API Docs: http://localhost:8000/api/docs"
     print_warning "Appuyez sur Ctrl+C pour arrêter les services"
     
@@ -255,6 +258,15 @@ main() {
             ;;
         "both")
             check_prerequisites
+            # Auto-setup si nécessaire
+            if [ ! -d "venv" ]; then
+                print_warning "Environnement virtuel non trouvé. Exécution du setup automatique..."
+                setup_backend
+            fi
+            if [ ! -d "web-ui/node_modules" ]; then
+                print_warning "Dépendances frontend non trouvées. Exécution du setup automatique..."
+                setup_frontend
+            fi
             start_both
             ;;
         "help"|"-h"|"--help")
