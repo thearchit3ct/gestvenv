@@ -235,7 +235,9 @@ export class GestVenvAPI {
 
     async checkPackageExists(packageName: string): Promise<boolean> {
         try {
-            const response = await this.client.get(`/api/v1/packages/check/${packageName}`);
+            const response = await this.client.get('/api/v1/packages/check', {
+                params: { name: packageName }
+            });
             return response.data.exists;
         } catch {
             return false;
@@ -316,16 +318,6 @@ export class GestVenvAPI {
         }
     }
 
-    async checkPackageExists(packageName: string): Promise<boolean> {
-        try {
-            const response = await this.client.get('/api/v1/packages/check', {
-                params: { name: packageName }
-            });
-            return response.data.exists;
-        } catch (error) {
-            return false;
-        }
-    }
 
     private async getActiveEnvironment(): Promise<Environment | null> {
         try {

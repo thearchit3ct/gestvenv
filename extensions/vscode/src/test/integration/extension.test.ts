@@ -46,15 +46,28 @@ suite('Extension Integration Tests', () => {
         }
     });
 
-    test('Should have correct configuration defaults', () => {
+    test('Should have correct configuration defaults', async () => {
+        // Reset any workspace-level configurations first
         const config = vscode.workspace.getConfiguration('gestvenv');
+        await config.update('enable', undefined, vscode.ConfigurationTarget.Workspace);
+        await config.update('autoDetect', undefined, vscode.ConfigurationTarget.Workspace);
+        await config.update('showStatusBar', undefined, vscode.ConfigurationTarget.Workspace);
+        await config.update('enableIntelliSense', undefined, vscode.ConfigurationTarget.Workspace);
+        await config.update('apiEndpoint', undefined, vscode.ConfigurationTarget.Workspace);
+        await config.update('enableWebSocket', undefined, vscode.ConfigurationTarget.Workspace);
         
-        assert.strictEqual(config.get('enable'), true);
-        assert.strictEqual(config.get('autoDetect'), true);
-        assert.strictEqual(config.get('showStatusBar'), true);
-        assert.strictEqual(config.get('enableIntelliSense'), true);
-        assert.strictEqual(config.get('apiEndpoint'), 'http://localhost:8000');
-        assert.strictEqual(config.get('enableWebSocket'), true);
+        // Wait for config to reset
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Get fresh config
+        const freshConfig = vscode.workspace.getConfiguration('gestvenv');
+        
+        assert.strictEqual(freshConfig.get('enable'), true);
+        assert.strictEqual(freshConfig.get('autoDetect'), true);
+        assert.strictEqual(freshConfig.get('showStatusBar'), true);
+        assert.strictEqual(freshConfig.get('enableIntelliSense'), true);
+        assert.strictEqual(freshConfig.get('apiEndpoint'), 'http://localhost:8000');
+        assert.strictEqual(freshConfig.get('enableWebSocket'), true);
     });
 
     test('Should register Python language features', async () => {
@@ -138,16 +151,26 @@ if __name__ == "__main__":
     });
 
     test('Should handle configuration changes', async () => {
-        const config = vscode.workspace.getConfiguration('gestvenv');
-        
         // Change a setting
-        await config.update('enableIntelliSense', false, vscode.ConfigurationTarget.Workspace);
+        await vscode.workspace.getConfiguration('gestvenv').update('enableIntelliSense', false, vscode.ConfigurationTarget.Workspace);
+        
+        // Wait a moment for the configuration to update
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Get fresh config reference
+        const config = vscode.workspace.getConfiguration('gestvenv');
         
         // Verify change
         assert.strictEqual(config.get('enableIntelliSense'), false);
         
         // Restore default
         await config.update('enableIntelliSense', undefined, vscode.ConfigurationTarget.Workspace);
-        assert.strictEqual(config.get('enableIntelliSense'), true);
+        
+        // Wait for update
+        await new Promise(resolve => setTimeout(resolve, 100));
+        
+        // Verify restored
+        const restoredConfig = vscode.workspace.getConfiguration('gestvenv');
+        assert.strictEqual(restoredConfig.get('enableIntelliSense'), true);
     });
 });

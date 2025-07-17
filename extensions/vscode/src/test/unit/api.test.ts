@@ -13,7 +13,12 @@ suite('GestVenv API Tests', () => {
             get: sinon.stub().resolves({ data: {} }),
             post: sinon.stub().resolves({ data: {} }),
             put: sinon.stub().resolves({ data: {} }),
-            delete: sinon.stub().resolves({ data: {} })
+            delete: sinon.stub().resolves({ data: {} }),
+            interceptors: {
+                response: {
+                    use: sinon.stub()
+                }
+            }
         };
         
         axiosStub = sinon.stub(axios, 'create').returns(mockClient);
@@ -25,13 +30,12 @@ suite('GestVenv API Tests', () => {
     });
 
     test('Should create API client with correct base URL', () => {
-        assert.ok(axiosStub.calledWith({
-            baseURL: 'http://localhost:8000',
-            timeout: 30000,
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        }));
+        assert.ok(axiosStub.calledOnce);
+        const callArgs = axiosStub.getCall(0).args[0];
+        assert.strictEqual(callArgs.baseURL, 'http://localhost:8000');
+        assert.strictEqual(callArgs.timeout, 10000);
+        assert.strictEqual(callArgs.headers['Content-Type'], 'application/json');
+        assert.strictEqual(callArgs.headers['X-Client'], 'vscode-extension');
     });
 
     test('Should test connection successfully', async () => {
@@ -39,7 +43,7 @@ suite('GestVenv API Tests', () => {
         
         const result = await api.testConnection();
         assert.strictEqual(result, true);
-        assert.ok(mockClient.get.calledWith('/api/health'));
+        assert.ok(mockClient.get.calledWith('/health'));
     });
 
     test('Should return false when connection fails', async () => {
@@ -95,8 +99,9 @@ suite('GestVenv API Tests', () => {
         
         const result = await api.installPackage('env-123', 'requests', { version: '2.31.0' });
         assert.deepStrictEqual(result, mockResult);
-        assert.ok(mockClient.post.calledWith('/api/v1/environments/env-123/packages', {
-            packages: [{ name: 'requests', version: '2.31.0' }]
+        assert.ok(mockClient.post.calledWith('/api/v1/environments/env-123/packages/install', {
+            package: 'requests',
+            version: '2.31.0'
         }));
     });
 });
