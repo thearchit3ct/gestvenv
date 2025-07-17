@@ -98,4 +98,5 @@ suite('GestVenv API Tests', () => {
         assert.ok(mockClient.post.calledWith('/api/v1/environments/env-123/packages', {
             packages: [{ name: 'requests', version: '2.31.0' }]
         }));
+    });
 });

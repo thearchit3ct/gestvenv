@@ -24,8 +24,7 @@
     "workspaceContains:**/pyproject.toml",
     "workspaceContains:**/requirements.txt",
     "workspaceContains:**/.gestvenv",
-    "workspaceContains:**/*.py",
-    "onCommand:gestvenv.createEnvironment"
+    "workspaceContains:**/*.py"
   ],
   "main": "./out/extension.js",
   "contributes": {
