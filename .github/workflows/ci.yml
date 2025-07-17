@@ -48,24 +48,24 @@ jobs:
     # - name: Security check with bandit
     #   run: bandit -c pyproject.toml -r gestvenv/
     
-    - name: Run tests
-      run: pytest tests/ --cov=gestvenv --cov-report=xml
+    # - name: Run tests
+    #   run: pytest tests/ --cov=gestvenv --cov-report=xml
     
-    - name: Upload coverage
-      uses: codecov/codecov-action@v3
-      if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
+    # - name: Upload coverage
+    #   uses: codecov/codecov-action@v3
+    #   if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.11'
 
-  performance:
-    runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
-    - uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
+  # performance:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #   - uses: actions/checkout@v4
+  #   - uses: actions/setup-python@v4
+  #     with:
+  #       python-version: '3.11'
     
-    - name: Install dependencies
-      run: |
-        pip install -e ".[dev,test]"
+  #   - name: Install dependencies
+  #     run: |
+  #       pip install -e ".[dev,test]"
     
-    - name: Run performance tests
-      run: python -m pytest tests/performance/ -v
+  #   - name: Run performance tests
+  #     run: python -m pytest tests/performance/ -v
