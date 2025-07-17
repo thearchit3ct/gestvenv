@@ -6,48 +6,240 @@ on:
       - 'v*'
 
 jobs:
+  # JOB 4: BUILD DE PACKAGE
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.11'
-    
-    - name: Install build dependencies
-      run: |
-        pip install build twine
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Check package
-      run: twine check dist/*
-    
-    - name: Create GitHub Release
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: >-
-        gh release create
-        '${{ github.ref_name }}'
-        --repo '${{ github.repository }}'
-        --notes "Voir le [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) pour les détails."
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Nécessaire pour obtenir tous les tags
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: Install build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine wheel setuptools
+      - name: Build package
+        run: |
+          python -m build
+      - name: Check package with twine
+        run: |
+          twine check dist/*
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+          retention-days: 7
 
-    - name: Upload to PyPI
-      env:
-        GITHUB_TOKEN: ${{ github.token }}
-      run: >-
+  # JOB 5: TESTS D'INSTALLATION
+  test-install:
+    needs: build
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        python-version: ['3.9', '3.12']
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      
+      - name: Debug - List files
+        run: |
+          echo "=== Contenu du répertoire dist/ ==="
+          python -c "
+          import os
+          for item in os.listdir('dist'):
+              print(f'  {item}')
+          "
+      
+      - name: Install from wheel
+        run: |
+          python -m pip install --upgrade pip
+          python -c "
+          import glob
+          import subprocess
+          import sys
+          
+          wheels = glob.glob('dist/*.whl')
+          if not wheels:
+              print('❌ Aucun wheel trouvé')
+              sys.exit(1)
+          
+          wheel = wheels[0]
+          print(f'📦 Installation: {wheel}')
+          
+          cmd = [sys.executable, '-m', 'pip', 'install', wheel]
+          result = subprocess.run(cmd, capture_output=True, text=True)
+          
+          print('STDOUT:', result.stdout)
+          if result.stderr:
+              print('STDERR:', result.stderr)
+          
+          if result.returncode != 0:
+              sys.exit(1)
+          
+          print('✅ Installation terminée')
+          "
+      
+      - name: Test import
+        run: |
+          python -c "
+          try:
+              import gestvenv
+              print(f'✅ Import réussi - gestvenv v{gestvenv.__version__}')
+              
+              # Test des imports de modules
+              from gestvenv.core import EnvironmentManager
+              print('✅ EnvironmentManager importé')
+              
+              from gestvenv.services.environment_service import EnvironmentService
+              print('✅ EnvironmentService importé')
+              
+              from gestvenv.cli import main
+              print('✅ CLI importé')
+              
+          except Exception as e:
+              print(f'❌ Erreur: {e}')
+              import sys
+              import traceback
+              traceback.print_exc()
+              sys.exit(1)
+          "
+      
+      - name: Test CLI commands
+        run: |
+          python -c "
+          import subprocess
+          import sys
+          
+          # Test via python -m d'abord
+          result = subprocess.run([sys.executable, '-m', 'gestvenv.cli', '--version'], 
+                                capture_output=True, text=True)
+          
+          if result.returncode == 0:
+              print(f'✅ CLI via python -m: {result.stdout.strip()}')
+          else:
+              print(f'❌ CLI via python -m échoué: {result.stderr}')
+              sys.exit(1)
+          
+          # Test de la commande directe
+          result = subprocess.run(['gestvenv', '--version'], 
+                                capture_output=True, text=True)
+          
+          if result.returncode == 0:
+              print(f'✅ CLI directe: {result.stdout.strip()}')
+          else:
+              print(f'⚠️ CLI directe échoué, mais python -m fonctionne')
+              print(f'Erreur: {result.stderr}')
+          "
+
+  # JOB 7: DÉPLOIEMENT SUR PYPI (SEULEMENT POUR LES TAGS)
+  publish-to-pypi:
+    name: Publish to PyPI
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [build, test-install]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/gestvenv
+    permissions:
+      id-token: write  # IMPORTANT: pour l'authentification trusted publisher
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          verbose: true
+          print-hash: true
+
+  # JOB 8: DÉPLOIEMENT SUR TEST PYPI (POUR LES BRANCHES DE DÉVELOPPEMENT)
+  publish-to-testpypi:
+    name: Publish to TestPyPI
+    if: github.ref == 'refs/heads/develop'
+    needs: [build]
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/gestvenv
+    permissions:
+      id-token: write
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Publish to TestPyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          repository-url: https://test.pypi.org/legacy/
+          verbose: true
+
+  # JOB 9: CRÉATION DE RELEASE GITHUB
+  github-release:
+    name: Create GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [publish-to-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: python-package-distributions
+          path: dist/
+      - name: Sign the dists with Sigstore
+        uses: sigstore/gh-action-sigstore-python@v2.1.1
+        with:
+          inputs: >-
+            ./dist/*.tar.gz
+            ./dist/*.whl
+      - name: Create GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create
+          '${{ github.ref_name }}'
+          --repo '${{ github.repository }}'
+          --notes "Voir le [CHANGELOG](https://github.com/${{ github.repository }}/blob/main/CHANGELOG.md) pour les détails."
+      - name: Upload artifact signatures to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: >-
           gh release upload
           '${{ github.ref_name }}' dist/**
           --repo '${{ github.repository }}'
-    
-    - name: Create GitHub Release
-      uses: softprops/action-gh-release@v1
-      with:
-        files: dist/*
-        body: |
-          Release ${{ github.ref_name }}
+
+  # JOB 10: NOTIFICATION DE SUCCÈS
+  notify-success:
+    name: Notify Success
+    if: always() && (needs.publish-to-pypi.result == 'success')
+    needs: [build, publish-to-pypi]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify success
+        run: |
+          echo "✅ Pipeline executed successfully!"
+          echo "📦 Package: gestvenv"
+          echo "🏷️ Version: ${{ github.ref_name }}"
+          echo "🔗 Repository: ${{ github.repository }}"
           
           See [CHANGELOG.md](https://github.com/gestvenv/gestvenv/blob/main/CHANGELOG.md) for details.
