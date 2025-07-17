@@ -1,22 +1,94 @@
-# Package initialization
 """
-Module core de GestVenv.
+Module core de GestVenv v1.1
 
-Ce package contient les composants principaux de GestVenv:
-- models: Classes de données et structures partagées
-- config_manager: Gestion des configurations
-- env_manager: Gestion des environnements virtuels
+Ce module contient les composants centraux du système :
+- Modèles de données
+- Gestionnaire d'environnements
+- Gestionnaire de configuration
+- Exceptions personnalisées
 """
 
-# Exports principaux pour faciliter l'importation
-from .models import EnvironmentInfo, PackageInfo, ConfigInfo
-from .env_manager import EnvironmentManager
+from .models import (
+    EnvironmentInfo,
+    PyProjectInfo,
+    PackageInfo,
+    Config,
+    EnvironmentResult,
+    InstallResult,
+    SyncResult,
+    DiagnosticReport,
+    DiagnosticIssue,
+    OptimizationSuggestion,
+    ProjectTemplate,
+    TemplateFile,
+    CommandResult,
+    ExportResult,
+    ActivationResult,
+    RepairResult,
+    EnvironmentHealth,
+    BackendType,
+    SourceFileType,
+    ExportFormat,
+    IssueLevel,
+)
+
+from .environment_manager import EnvironmentManager
 from .config_manager import ConfigManager
+from .exceptions import (
+    GestVenvError,
+    EnvironmentError,
+    BackendError,
+    ConfigurationError,
+    ValidationError,
+    SecurityValidationError,
+    MigrationError,
+    CacheError,
+    TemplateError,
+    DiagnosticError,
+)
 
 __all__ = [
-    'EnvironmentInfo', 
-    'PackageInfo', 
-    'ConfigInfo',
-    'EnvironmentManager',
-    'ConfigManager'
+    # Models
+    "EnvironmentInfo",
+    "PyProjectInfo", 
+    "PackageInfo",
+    "Config",
+    "EnvironmentResult",
+    "InstallResult",
+    "SyncResult",
+    "DiagnosticReport",
+    "DiagnosticIssue",
+    "OptimizationSuggestion",
+    "ProjectTemplate",
+    "TemplateFile",
+    "CommandResult",
+    "ExportResult",
+    "ActivationResult",
+    "RepairResult",
+    
+    # Enums
+    "EnvironmentHealth",
+    "BackendType",
+    "SourceFileType",
+    "ExportFormat",
+    "IssueLevel",
+    
+    # Managers
+    "EnvironmentManager",
+    "ConfigManager",
+    
+    # Exceptions
+    "GestVenvError",
+    "EnvironmentError",
+    "BackendError",
+    "ConfigurationError",
+    "ValidationError",
+    "SecurityValidationError",
+    "MigrationError",
+    "CacheError",
+    "TemplateError",
+    "DiagnosticError",
 ]
+
+# Version du module core
+__version__ = "1.1.0"
