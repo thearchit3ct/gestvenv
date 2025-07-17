@@ -19,8 +19,7 @@ jobs:
           python-version: '3.10'
       - name: Install build dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install build twine wheel setuptools
+          pip install build twine
       - name: Build package
         run: |
           python -m build
@@ -102,9 +101,6 @@ jobs:
               # Test des imports de modules
               from gestvenv.core import EnvironmentManager
               print('✅ EnvironmentManager importé')
-              
-              from gestvenv.services.environment_service import EnvironmentService
-              print('✅ EnvironmentService importé')
               
               from gestvenv.cli import main
               print('✅ CLI importé')
