@@ -1,0 +1,120 @@
+[project]
+name = "gestvenv"
+version = "2.0.0"
+description = "Gestionnaire d'environnements virtuels Python moderne"
+authors = [
+    {name = "GestVenv Team", email = "contact@gestvenv.dev"}
+]
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.9"
+keywords = ["python", "virtualenv", "package-manager", "environment", "pyproject"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10", 
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Software Distribution",
+    "Topic :: Software Development :: Build Tools",
+]
+
+dependencies = [
+    "packaging>=21.0",
+    "tomli>=2.0.0; python_version<'3.11'",
+    "tomlkit>=0.11.0",
+    "click>=8.0.0",
+    "rich>=13.0.0",
+    "psutil>=5.9.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.6",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "isort>=5.10",
+    "mypy>=1.0",
+    "flake8>=6.0",
+    "pre-commit>=3.0",
+]
+docs = [
+    "sphinx>=6.0",
+    "sphinx-rtd-theme>=1.0",
+    "myst-parser>=1.0",
+    "sphinx-click>=4.0",
+]
+performance = [
+    "uv>=0.1.0",
+]
+full = [
+    "uv>=0.1.0",
+    "tomli-w>=1.0.0",
+    "psutil>=5.9.0",
+]
+test = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+    "pytest-mock>=3.6",
+    "pytest-asyncio>=0.21",
+    "psutil>=5.9.0",
+]
+
+[project.scripts]
+gestvenv = "gestvenv.cli:main"
+gv = "gestvenv.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/gestvenv/gestvenv"
+Documentation = "https://gestvenv.readthedocs.io"
+Repository = "https://github.com/gestvenv/gestvenv.git"
+Changelog = "https://github.com/gestvenv/gestvenv/blob/main/CHANGELOG.md"
+Issues = "https://github.com/gestvenv/gestvenv/issues"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["gestvenv*"]
+exclude = ["web*", "tests*", "docs*"]
+
+[tool.setuptools_scm]
+write_to = "gestvenv/__version__.py"
+version_scheme = "no-guess-dev"
+local_scheme = "dirty-tag"
+fallback_version = "2.0.0"
+
+[tool.black]
+line-length = 88
+target-version = ['py39']
+include = '\.pyi?$'
+extend-exclude = '''
+/(
+  \.eggs
+  | \.git
+  | \.mypy_cache
+  | \.tox
+  | \.venv
+  | build
+  | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+multi_line_output = 3
+line_length = 88
+
+[tool.bandit]
+# Exclure les templates qui contiennent des strings de template non-Python
+exclude_dirs = ["gestvenv/templates"]
+# Ignorer certains tests spécifiques si nécessaire
+skips = []

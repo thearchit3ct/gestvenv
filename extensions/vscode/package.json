@@ -1,0 +1,229 @@
+{
+  "name": "gestvenv-vscode",
+  "displayName": "GestVenv",
+  "description": "Native VS Code integration for GestVenv - Modern Python virtual environment manager",
+  "version": "0.1.0",
+  "publisher": "gestvenv",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Other"
+  ],
+  "keywords": [
+    "python",
+    "virtualenv",
+    "gestvenv",
+    "environment",
+    "package manager"
+  ],
+  "icon": "resources/icons/gestvenv-logo.png",
+  "activationEvents": [
+    "onLanguage:python",
+    "workspaceContains:**/pyproject.toml",
+    "workspaceContains:**/requirements.txt",
+    "workspaceContains:**/.gestvenv",
+    "workspaceContains:**/*.py"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gestvenv.createEnvironment",
+        "title": "Create Environment",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.selectEnvironment",
+        "title": "Select Environment",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.installPackage",
+        "title": "Install Package",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.syncDependencies",
+        "title": "Sync Dependencies",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.refreshEnvironments",
+        "title": "Refresh Environments",
+        "category": "GestVenv",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "gestvenv.showEnvironmentDetails",
+        "title": "Show Environment Details",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.runInEnvironment",
+        "title": "Run Command in Environment",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.deleteEnvironment",
+        "title": "Delete Environment",
+        "category": "GestVenv"
+      }
+    ],
+    "configuration": {
+      "title": "GestVenv",
+      "properties": {
+        "gestvenv.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable GestVenv integration"
+        },
+        "gestvenv.autoDetect": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically detect and activate GestVenv environments"
+        },
+        "gestvenv.showStatusBar": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show active environment in status bar"
+        },
+        "gestvenv.enableIntelliSense": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable enhanced IntelliSense for GestVenv environments"
+        },
+        "gestvenv.apiEndpoint": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "GestVenv API endpoint URL"
+        },
+        "gestvenv.cache.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable caching for better performance"
+        },
+        "gestvenv.cache.ttl": {
+          "type": "number",
+          "default": 300,
+          "description": "Cache time-to-live in seconds"
+        },
+        "gestvenv.diagnostics.enable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable GestVenv diagnostics"
+        },
+        "gestvenv.completion.showPackageStats": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show package download statistics in completions"
+        },
+        "gestvenv.enableWebSocket": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable WebSocket for real-time updates"
+        },
+        "gestvenv.refactoring.extractVariable": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable extract variable refactoring"
+        },
+        "gestvenv.refactoring.extractFunction": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable extract function refactoring"
+        },
+        "gestvenv.refactoring.organizeImports": {
+          "type": "boolean",
+          "default": true,
+          "description": "Enable organize imports refactoring"
+        }
+      }
+    },
+    "views": {
+      "explorer": [
+        {
+          "id": "gestvenvEnvironments",
+          "name": "GestVenv Environments",
+          "icon": "resources/icons/gestvenv.svg",
+          "contextualTitle": "GestVenv"
+        }
+      ]
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "gestvenv",
+          "title": "GestVenv",
+          "icon": "resources/icons/gestvenv-activity.svg"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "gestvenv.createEnvironment",
+          "when": "view == gestvenvEnvironments",
+          "group": "navigation@1"
+        },
+        {
+          "command": "gestvenv.refreshEnvironments",
+          "when": "view == gestvenvEnvironments",
+          "group": "navigation@2"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "gestvenv.showEnvironmentDetails",
+          "when": "view == gestvenvEnvironments && viewItem == environment",
+          "group": "1_info"
+        },
+        {
+          "command": "gestvenv.installPackage",
+          "when": "view == gestvenvEnvironments && viewItem == environment",
+          "group": "2_actions"
+        }
+      ]
+    },
+    "languages": [
+      {
+        "id": "python",
+        "extensions": [
+          ".py"
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "lint": "eslint src --ext ts",
+    "test": "node ./out/test/runTest.js"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "20.x",
+    "@types/sinon": "^17.0.2",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.5.10",
+    "@typescript-eslint/eslint-plugin": "^6.15.0",
+    "@typescript-eslint/parser": "^6.15.0",
+    "@vscode/test-electron": "^2.3.8",
+    "eslint": "^8.56.0",
+    "glob": "^8.1.0",
+    "mocha": "^10.2.0",
+    "sinon": "^17.0.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "axios": "^1.6.2",
+    "vscode-languageclient": "^9.0.1",
+    "vscode-languageserver": "^9.0.1",
+    "vscode-languageserver-textdocument": "^1.0.11",
+    "ws": "^8.16.0"
+  }
+}

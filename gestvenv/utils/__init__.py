@@ -1,31 +1,30 @@
-# Package initialization
 """
-Utilitaires pour GestVenv.
+Module utils de GestVenv v1.1
 
-Ce package contient des modules utilitaires utilisés par GestVenv:
-- path_handler: Gestion des chemins de fichiers
-- system_commands: Exécution de commandes système
-- validators: Validation des entrées utilisateur
+Ce module contient tous les utilitaires du système :
+- TomlHandler : Gestionnaire TOML optimisé
+- PyProjectParser : Parser pyproject.toml conforme PEP 621  
+- ValidationUtils : Utilitaires de validation
+- PathUtils : Utilitaires de gestion des chemins
+- SecurityUtils : Utilitaires de sécurité
+- PerformanceMonitor : Monitoring de performance
 """
 
-# Exports principaux pour faciliter l'importation
-from ..utils.path_handler import (
-    get_environment_path,
-    get_python_executable,
-    get_pip_executable,
-    get_activation_script_path,
-    get_config_file_path
-)
+from .toml_handler import TomlHandler
+from .pyproject_parser import PyProjectParser
+from .validation import ValidationUtils
+from .path_utils import PathUtils
+from .security import SecurityUtils
+from .performance import PerformanceMonitor
 
-from ..utils.validators import (
-    validate_env_name,
-    validate_python_version,
-    validate_packages_list
-)
+__all__ = [
+    "TomlHandler",
+    "PyProjectParser", 
+    "ValidationUtils",
+    "PathUtils",
+    "SecurityUtils",
+    "PerformanceMonitor",
+]
 
-from ..utils.system_commands import (
-    create_virtual_environment,
-    install_packages,
-    uninstall_packages,
-    get_activation_command
-)
+# Version du module utils
+__version__ = "1.1.0"

@@ -1,0 +1,111 @@
+name: Security Audit
+
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Weekly Monday 6AM UTC
+  push:
+    branches: [main, develop]
+    paths:
+      - 'pyproject.toml'
+      - 'requirements*.txt'
+      - 'gestvenv/**'
+      - '.github/workflows/security.yml'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install bandit[toml] pip-audit
+        pip install -e . || pip install .
+
+    # Primary vulnerability scanner (free, no API key required)
+    - name: Run pip-audit (dependency vulnerabilities)
+      id: pip-audit
+      continue-on-error: true
+      run: |
+        echo "## Dependency Vulnerability Scan" >> $GITHUB_STEP_SUMMARY
+        pip-audit --format=markdown >> $GITHUB_STEP_SUMMARY 2>&1 || true
+        pip-audit --format=json --output=pip-audit-report.json || true
+
+    # Static code analysis for security issues
+    - name: Run bandit (code security analysis)
+      id: bandit
+      continue-on-error: true
+      run: |
+        echo "## Code Security Analysis" >> $GITHUB_STEP_SUMMARY
+        # -c pyproject.toml utilise la config [tool.bandit] pour exclure les templates
+        bandit -c pyproject.toml -r gestvenv/ -f txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
+        bandit -c pyproject.toml -r gestvenv/ -f json -o bandit-report.json || true
+
+    # Summary report
+    - name: Generate security summary
+      run: |
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Summary" >> $GITHUB_STEP_SUMMARY
+        echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+        echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+        if [ "${{ steps.pip-audit.outcome }}" == "success" ]; then
+          echo "| pip-audit | :white_check_mark: Passed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| pip-audit | :warning: Issues found |" >> $GITHUB_STEP_SUMMARY
+        fi
+        if [ "${{ steps.bandit.outcome }}" == "success" ]; then
+          echo "| bandit | :white_check_mark: Passed |" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "| bandit | :warning: Issues found |" >> $GITHUB_STEP_SUMMARY
+        fi
+
+    - name: Upload security reports
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: security-reports
+        path: |
+          pip-audit-report.json
+          bandit-report.json
+        retention-days: 30
+
+    # Check for critical vulnerabilities
+    - name: Check for critical vulnerabilities
+      run: |
+        # Check pip-audit for actual vulnerabilities
+        # Pattern '"vulns": [{' matches non-empty vuln arrays (packages WITH vulnerabilities)
+        if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
+          # grep -o returns matches only, wc -l counts them
+          VULN_COUNT=$(grep -o '"vulns": \[{' pip-audit-report.json 2>/dev/null | wc -l)
+          if [ "$VULN_COUNT" -gt 0 ]; then
+            echo "::error::Found $VULN_COUNT packages with vulnerabilities - check pip-audit report"
+            exit 1
+          else
+            echo "No dependency vulnerabilities found"
+          fi
+        fi
+
+        # Check bandit for high severity issues
+        if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
+          HIGH_COUNT=$(grep -o '"issue_severity": "HIGH"' bandit-report.json 2>/dev/null | wc -l)
+          if [ "$HIGH_COUNT" -gt 0 ]; then
+            echo "::error::Found $HIGH_COUNT high severity code issues - check bandit report"
+            exit 1
+          else
+            echo "No high severity code issues found"
+          fi
+        fi
