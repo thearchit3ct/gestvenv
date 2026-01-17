@@ -36,6 +36,13 @@ from .exceptions import (
     CleanupException,
     IsolationException
 )
+from .cgroups import (
+    CgroupManager,
+    ResourceLimits,
+    CgroupsNotAvailableError,
+    CgroupOperationError,
+    cgroup_manager,
+)
 from ..models import Backend
 
 logger = logging.getLogger(__name__)
@@ -347,9 +354,47 @@ class LifecycleController:
             await self._setup_process_isolation(env)
     
     async def _setup_resource_limits(self, env: EphemeralEnvironment):
-        """Configuration des limites de ressources"""
-        # TODO: Implémentation complète avec cgroups en Phase 2
-        pass
+        """Configuration des limites de ressources via cgroups v2"""
+
+        # Vérifier si cgroups est disponible
+        if not cgroup_manager.is_available:
+            logger.debug("cgroups v2 not available, skipping resource limits")
+            return
+
+        # Extraire les limites de l'environnement
+        resource_limits = env.resource_limits
+        if not resource_limits:
+            return
+
+        try:
+            # Créer les limites cgroups
+            limits = ResourceLimits(
+                max_memory_mb=resource_limits.max_memory,
+                memory_high_mb=int(resource_limits.max_memory * 0.8) if resource_limits.max_memory else None,
+                swap_max_mb=0,  # Désactiver le swap par défaut
+                max_cpu_percent=resource_limits.max_cpu_percent,
+                cpu_weight=100,
+                max_pids=resource_limits.max_processes or 100,
+                network_access=resource_limits.network_access,
+            )
+
+            # Créer le cgroup
+            cgroup_info = await cgroup_manager.create_cgroup(env.id, limits)
+
+            # Stocker la référence au cgroup dans l'environnement
+            env.cgroup_path = cgroup_info.path
+
+            logger.info(f"Resource limits configured for {env.id}: "
+                       f"memory={resource_limits.max_memory}MB, "
+                       f"cpu={resource_limits.max_cpu_percent}%, "
+                       f"pids={resource_limits.max_processes or 100}")
+
+        except CgroupsNotAvailableError:
+            logger.warning("cgroups v2 not available on this system")
+        except CgroupOperationError as e:
+            logger.warning(f"Failed to set resource limits: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error setting resource limits: {e}")
     
     async def _stop_processes(self, env: EphemeralEnvironment, force: bool = False):
         """Arrêt des processus de l'environnement"""
@@ -374,7 +419,15 @@ class LifecycleController:
     
     async def _cleanup_isolation(self, env: EphemeralEnvironment):
         """Nettoyage de l'isolation"""
-        
+
+        # Nettoyage du cgroup
+        if hasattr(env, 'cgroup_path') and env.cgroup_path:
+            try:
+                await cgroup_manager.delete_cgroup(env.id)
+                logger.debug(f"Cleaned up cgroup for {env.id}")
+            except Exception as e:
+                logger.warning(f"Failed to cleanup cgroup for {env.id}: {e}")
+
         if env.container_id:
             # Nettoyage du container
             try:
@@ -452,6 +505,13 @@ class ProcessManager:
             if env.id not in self.active_processes:
                 self.active_processes[env.id] = []
             self.active_processes[env.id].append(process)
+
+            # Ajouter le processus au cgroup si disponible
+            if hasattr(env, 'cgroup_path') and env.cgroup_path:
+                try:
+                    await cgroup_manager.add_process_to_cgroup(env.id, process.pid)
+                except Exception as e:
+                    logger.debug(f"Could not add process to cgroup: {e}")
             
             # Attente avec timeout
             if timeout:
