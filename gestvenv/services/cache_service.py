@@ -341,9 +341,17 @@ class CacheService:
                     shutil.rmtree(backup_path)
                 shutil.copytree(self.cache_path, backup_path)
             
-            # Extraction
+            # Extraction avec filtre de sécurité (évite path traversal)
             with tarfile.open(cache_archive, 'r:gz') as tar:
-                tar.extractall(self.cache_path.parent)
+                # Python 3.12+: filter='data' filtre les membres dangereux
+                # Pour compatibilité, on utilise une approche manuelle
+                for member in tar.getmembers():
+                    # Vérifie que le chemin est sûr (pas de path traversal)
+                    member_path = self.cache_path.parent / member.name
+                    if not member_path.resolve().is_relative_to(self.cache_path.parent.resolve()):
+                        logger.warning(f"Membre tar ignoré (path traversal): {member.name}")
+                        continue
+                    tar.extract(member, self.cache_path.parent)  # nosec B202
             
             # Rechargement
             self._cache_index = self._load_cache_index()
@@ -379,9 +387,10 @@ class CacheService:
             self._save_cache_stats()
     
     def _generate_cache_key(self, package: str, version: str, platform: str) -> str:
-        """Génère clé de cache"""
+        """Génère clé de cache (MD5 utilisé pour hashing non-cryptographique)"""
         key_string = f"{package}-{version}-{platform}"
-        return hashlib.md5(key_string.encode()).hexdigest()
+        # usedforsecurity=False indique que MD5 n'est pas utilisé pour la sécurité
+        return hashlib.md5(key_string.encode(), usedforsecurity=False).hexdigest()  # nosec B324
     
     def _get_current_platform(self) -> str:
         """Plateforme actuelle"""

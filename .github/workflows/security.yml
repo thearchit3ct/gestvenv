@@ -51,8 +51,9 @@ jobs:
       continue-on-error: true
       run: |
         echo "## Code Security Analysis" >> $GITHUB_STEP_SUMMARY
-        bandit -r gestvenv/ -f txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
-        bandit -r gestvenv/ -f json -o bandit-report.json || true
+        # -c pyproject.toml utilise la config [tool.bandit] pour exclure les templates
+        bandit -c pyproject.toml -r gestvenv/ -f txt >> $GITHUB_STEP_SUMMARY 2>&1 || true
+        bandit -c pyproject.toml -r gestvenv/ -f json -o bandit-report.json || true
 
     # Summary report
     - name: Generate security summary
@@ -85,14 +86,15 @@ jobs:
     # Check for critical vulnerabilities
     - name: Check for critical vulnerabilities
       run: |
-        # Check pip-audit for vulnerabilities using simple grep
+        # Check pip-audit for actual vulnerabilities
+        # Pattern '"vulns": [{' matches non-empty vuln arrays (not '"vulns": []')
         if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
-          # pip-audit returns empty array [] when no vulnerabilities
-          if ! grep -q '^\[\]$' pip-audit-report.json 2>/dev/null; then
-            VULN_COUNT=$(grep -c '"vulns"' pip-audit-report.json 2>/dev/null || echo "0")
-            if [ "$VULN_COUNT" != "0" ]; then
-              echo "::warning::Found packages with vulnerabilities - check pip-audit report"
-            fi
+          VULN_COUNT=$(grep -c '"vulns": \[{' pip-audit-report.json 2>/dev/null || echo "0")
+          if [ "$VULN_COUNT" != "0" ]; then
+            echo "::error::Found $VULN_COUNT packages with vulnerabilities - check pip-audit report"
+            exit 1
+          else
+            echo "✅ No dependency vulnerabilities found"
           fi
         fi
 
@@ -100,6 +102,9 @@ jobs:
         if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
           HIGH_COUNT=$(grep -c '"issue_severity": "HIGH"' bandit-report.json 2>/dev/null || echo "0")
           if [ "$HIGH_COUNT" != "0" ]; then
-            echo "::warning::Found $HIGH_COUNT high severity code issues - check bandit report"
+            echo "::error::Found $HIGH_COUNT high severity code issues - check bandit report"
+            exit 1
+          else
+            echo "✅ No high severity code issues found"
           fi
         fi
