@@ -9,6 +9,7 @@ on:
       - 'pyproject.toml'
       - 'requirements*.txt'
       - 'gestvenv/**'
+      - '.github/workflows/security.yml'
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -84,42 +85,21 @@ jobs:
     # Check for critical vulnerabilities
     - name: Check for critical vulnerabilities
       run: |
-        # Check pip-audit for vulnerabilities
-        # pip-audit JSON format: list of {name, version, vulns: [...]}
+        # Check pip-audit for vulnerabilities using simple grep
         if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
-          VULN_COUNT=$(python -c "
-import json, sys
-try:
-    with open('pip-audit-report.json') as f:
-        data = json.load(f)
-    # Count packages with vulnerabilities
-    if isinstance(data, list):
-        count = sum(1 for pkg in data if pkg.get('vulns'))
-    else:
-        count = len(data.get('dependencies', []))
-    print(count)
-except:
-    print(0)
-" 2>/dev/null || echo "0")
-          if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "" ]; then
-            echo "::warning::Found $VULN_COUNT packages with vulnerabilities"
+          # pip-audit returns empty array [] when no vulnerabilities
+          if ! grep -q '^\[\]$' pip-audit-report.json 2>/dev/null; then
+            VULN_COUNT=$(grep -c '"vulns"' pip-audit-report.json 2>/dev/null || echo "0")
+            if [ "$VULN_COUNT" != "0" ]; then
+              echo "::warning::Found packages with vulnerabilities - check pip-audit report"
+            fi
           fi
         fi
 
-        # Check bandit for high severity issues (excluding nosec comments)
+        # Check bandit for high severity issues
         if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
-          HIGH_COUNT=$(python -c "
-import json
-try:
-    with open('bandit-report.json') as f:
-        data = json.load(f)
-    results = data.get('results', [])
-    high_issues = [r for r in results if r.get('issue_severity') == 'HIGH']
-    print(len(high_issues))
-except:
-    print(0)
-" 2>/dev/null || echo "0")
-          if [ "$HIGH_COUNT" != "0" ] && [ "$HIGH_COUNT" != "" ]; then
-            echo "::warning::Found $HIGH_COUNT high severity code issues"
+          HIGH_COUNT=$(grep -c '"issue_severity": "HIGH"' bandit-report.json 2>/dev/null || echo "0")
+          if [ "$HIGH_COUNT" != "0" ]; then
+            echo "::warning::Found $HIGH_COUNT high severity code issues - check bandit report"
           fi
         fi
