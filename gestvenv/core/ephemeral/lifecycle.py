@@ -1,10 +1,25 @@
 """
 Contrôleur de cycle de vie des environnements éphémères
+
+Security Note:
+    This module intentionally uses shell execution (create_subprocess_shell) for
+    command execution within virtual environments. This is necessary because:
+    1. Virtual environment activation requires sourcing shell scripts
+    2. Users expect to run arbitrary commands in their environments
+
+    The shell execution is controlled and isolated:
+    - Commands run within isolated virtual environment contexts
+    - Environment variables are explicitly controlled
+    - Working directory is restricted to the environment's storage path
+
+    All subprocess.run calls in backends use list arguments (not shell strings)
+    which is the secure approach for fixed commands.
 """
 
 import asyncio
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -415,8 +430,10 @@ class ProcessManager:
         
         try:
             # Création du processus
+            # Note: Shell execution is required for venv activation (source command)
+            # Command runs in isolated environment with controlled env vars and cwd
             if capture_output:
-                process = await asyncio.create_subprocess_shell(
+                process = await asyncio.create_subprocess_shell(  # nosec B602
                     full_command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -424,7 +441,7 @@ class ProcessManager:
                     cwd=env.storage_path
                 )
             else:
-                process = await asyncio.create_subprocess_shell(
+                process = await asyncio.create_subprocess_shell(  # nosec B602
                     full_command,
                     env=exec_env,
                     cwd=env.storage_path

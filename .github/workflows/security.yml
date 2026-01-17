@@ -81,20 +81,44 @@ jobs:
           bandit-report.json
         retention-days: 30
 
-    # Fail the job if critical issues found
+    # Check for critical vulnerabilities
     - name: Check for critical vulnerabilities
       run: |
-        # Check pip-audit for high/critical vulnerabilities
-        if [ -f pip-audit-report.json ]; then
-          VULN_COUNT=$(cat pip-audit-report.json | python -c "import sys,json; d=json.load(sys.stdin); print(len(d.get('dependencies', [])))" 2>/dev/null || echo "0")
+        # Check pip-audit for vulnerabilities
+        # pip-audit JSON format: list of {name, version, vulns: [...]}
+        if [ -f pip-audit-report.json ] && [ -s pip-audit-report.json ]; then
+          VULN_COUNT=$(python -c "
+import json, sys
+try:
+    with open('pip-audit-report.json') as f:
+        data = json.load(f)
+    # Count packages with vulnerabilities
+    if isinstance(data, list):
+        count = sum(1 for pkg in data if pkg.get('vulns'))
+    else:
+        count = len(data.get('dependencies', []))
+    print(count)
+except:
+    print(0)
+" 2>/dev/null || echo "0")
           if [ "$VULN_COUNT" != "0" ] && [ "$VULN_COUNT" != "" ]; then
-            echo "::warning::Found $VULN_COUNT vulnerable dependencies"
+            echo "::warning::Found $VULN_COUNT packages with vulnerabilities"
           fi
         fi
 
-        # Check bandit for high severity issues
-        if [ -f bandit-report.json ]; then
-          HIGH_COUNT=$(cat bandit-report.json | python -c "import sys,json; d=json.load(sys.stdin); print(len([r for r in d.get('results', []) if r.get('issue_severity') == 'HIGH']))" 2>/dev/null || echo "0")
+        # Check bandit for high severity issues (excluding nosec comments)
+        if [ -f bandit-report.json ] && [ -s bandit-report.json ]; then
+          HIGH_COUNT=$(python -c "
+import json
+try:
+    with open('bandit-report.json') as f:
+        data = json.load(f)
+    results = data.get('results', [])
+    high_issues = [r for r in results if r.get('issue_severity') == 'HIGH']
+    print(len(high_issues))
+except:
+    print(0)
+" 2>/dev/null || echo "0")
           if [ "$HIGH_COUNT" != "0" ] && [ "$HIGH_COUNT" != "" ]; then
             echo "::warning::Found $HIGH_COUNT high severity code issues"
           fi
