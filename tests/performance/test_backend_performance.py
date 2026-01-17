@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Dict, Any
 import asyncio
 
-from gestvenv.backends import BackendType
+from gestvenv.core.models import BackendType
 from gestvenv.backends.backend_manager import BackendManager
 from gestvenv.backends.pip_backend import PipBackend
 from gestvenv.backends.uv_backend import UvBackend

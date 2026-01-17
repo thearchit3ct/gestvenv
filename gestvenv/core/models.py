@@ -306,6 +306,17 @@ class Config:
     show_migration_hints: bool = True
     offline_mode: bool = False
     template_settings: Dict[str, Any] = field(default_factory=dict)
+    max_parallel_jobs: int = 4
+
+    @property
+    def cache_enabled(self) -> bool:
+        """Indique si le cache est activé"""
+        return self.cache_settings.get("enabled", True)
+
+    @cache_enabled.setter
+    def cache_enabled(self, value: bool) -> None:
+        """Définit l'état du cache"""
+        self.cache_settings["enabled"] = value
     
     def save(self, path: Path) -> bool:
         """Sauvegarde la configuration"""
