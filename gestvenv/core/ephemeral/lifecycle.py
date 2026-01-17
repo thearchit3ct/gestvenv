@@ -43,7 +43,7 @@ from .cgroups import (
     CgroupOperationError,
     cgroup_manager,
 )
-from ..models import Backend
+from ..models import BackendType
 
 logger = logging.getLogger(__name__)
 
@@ -143,16 +143,16 @@ class LifecycleController:
             return OperationResult(0, "", "", 0.0, "")
         
         # Construction de la commande selon le backend
-        if env.backend == Backend.UV:
+        if env.backend == BackendType.UV:
             base_cmd = "uv pip install"
-        elif env.backend == Backend.PDM:
+        elif env.backend == BackendType.PDM:
             base_cmd = "pdm add"
-        elif env.backend == Backend.POETRY:
+        elif env.backend == BackendType.POETRY:
             base_cmd = "poetry add"
         else:
             base_cmd = "pip install"
         
-        if upgrade and env.backend in [Backend.PIP, Backend.UV]:
+        if upgrade and env.backend in [BackendType.PIP, BackendType.UV]:
             base_cmd += " --upgrade"
         
         packages_str = " ".join(packages)
@@ -190,7 +190,7 @@ class LifecycleController:
         venv_path = env.storage_path / "venv"
         env.venv_path = venv_path
         
-        if env.backend == Backend.UV:
+        if env.backend == BackendType.UV:
             # uv est le plus rapide pour les créations
             cmd = [
                 "uv", "venv",
@@ -198,13 +198,13 @@ class LifecycleController:
                 "--python", env.python_version,
                 "--seed"  # Pré-install pip/setuptools
             ]
-        elif env.backend == Backend.PDM:
+        elif env.backend == BackendType.PDM:
             cmd = [
                 "pdm", "venv", "create",
                 "--python", env.python_version,
                 str(venv_path)
             ]
-        elif env.backend == Backend.POETRY:
+        elif env.backend == BackendType.POETRY:
             # Poetry gère ses propres venvs, on crée un venv standard
             cmd = [
                 f"python{env.python_version}",
@@ -212,7 +212,7 @@ class LifecycleController:
                 str(venv_path),
                 "--upgrade-deps"
             ]
-        else:  # Backend.PIP
+        else:  # BackendType.PIP
             cmd = [
                 f"python{env.python_version}",
                 "-m", "venv",
@@ -584,7 +584,7 @@ class ProcessManager:
     async def _build_command(self, env: EphemeralEnvironment, command: str) -> str:
         """Construction de la commande avec activation du venv"""
         
-        if env.venv_path and env.backend != Backend.POETRY:
+        if env.venv_path and env.backend != BackendType.POETRY:
             # Activation explicite du virtual environment
             activate_script = env.venv_path / "bin" / "activate"
             if activate_script.exists():
