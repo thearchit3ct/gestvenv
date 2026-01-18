@@ -26,6 +26,10 @@ from gestvenv.services.migration_service import MigrationService
 from gestvenv.services.cache_service import CacheService
 from gestvenv.utils.toml_handler import TomlHandler
 from gestvenv.utils.path_utils import PathUtils
+
+# Import des commandes avancées
+from gestvenv.cli.commands import diff_group, deps_group, security_group, python_group
+
 # Version fixe pour GestVenv 2.0
 __version__ = "2.0.0"
 
@@ -2940,6 +2944,13 @@ def import_v1_environments(ctx: click.Context, source_path: Optional[str],
     except Exception as e:
         console.print(f"❌ Erreur import: {e}")
         sys.exit(1)
+
+
+# Enregistrement des groupes de commandes avancées
+cli.add_command(diff_group)
+cli.add_command(deps_group)
+cli.add_command(security_group)
+cli.add_command(python_group)
 
 
 def main() -> None:
