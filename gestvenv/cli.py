@@ -5,6 +5,7 @@ Interface en ligne de commande complète pour GestVenv v1.1
 import sys
 import logging
 import time
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Optional, List
@@ -25,6 +26,10 @@ from gestvenv.services.migration_service import MigrationService
 from gestvenv.services.cache_service import CacheService
 from gestvenv.utils.toml_handler import TomlHandler
 from gestvenv.utils.path_utils import PathUtils
+
+# Import des commandes avancées
+from gestvenv.cli.commands import diff_group, deps_group, security_group, python_group
+
 # Version fixe pour GestVenv 2.0
 __version__ = "2.0.0"
 
@@ -2709,6 +2714,244 @@ def cleanup(ctx: click.Context, orphaned: bool, clean_all: bool, clean_cache: bo
     except Exception as e:
         console.print(f"❌ Erreur: {e}")
         sys.exit(1)
+
+@cli.command()
+@click.option('--from-v1', is_flag=True, help='Migration depuis GestVenv v1.x')
+@click.option('--dry-run', is_flag=True, help='Simuler la migration sans modifications')
+@click.option('--backup/--no-backup', default=True, help='Créer une sauvegarde avant migration')
+@click.pass_context
+def migrate(ctx: click.Context, from_v1: bool, dry_run: bool, backup: bool) -> None:
+    """Migrer depuis une version antérieure de GestVenv
+
+    Cette commande détecte et migre automatiquement les configurations
+    et environnements depuis GestVenv v1.x vers v2.0.
+
+    Exemples:
+        gv migrate --from-v1
+        gv migrate --dry-run
+    """
+    try:
+        migration_service = MigrationService()
+
+        console.print(Panel.fit(
+            "[bold blue]Migration GestVenv[/bold blue]",
+            subtitle="v1.x → v2.0"
+        ))
+
+        if dry_run:
+            console.print("[yellow]Mode simulation (dry-run)[/yellow]\n")
+
+        # Détection automatique
+        v1_paths = [
+            Path.home() / ".gestvenv_v1",
+            Path.home() / ".gestvenv-v1",
+            Path.home() / ".gestvenv" / "v1_backup"
+        ]
+
+        v1_found = None
+        for path in v1_paths:
+            if path.exists():
+                v1_found = path
+                break
+
+        if from_v1 or v1_found:
+            if v1_found:
+                console.print(f"📁 Installation v1.x détectée: {v1_found}")
+            else:
+                console.print("[yellow]⚠️ Aucune installation v1.x trouvée[/yellow]")
+                console.print("Chemins vérifiés:")
+                for p in v1_paths:
+                    console.print(f"  - {p}")
+                return
+
+            if dry_run:
+                console.print("\n[bold]Actions qui seraient effectuées:[/bold]")
+                console.print("  1. Sauvegarde des données v1.x")
+                console.print("  2. Migration de la configuration")
+                console.print("  3. Migration des environnements")
+                console.print("  4. Validation de la migration")
+                return
+
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                console=console
+            ) as progress:
+                task = progress.add_task("Migration en cours...", total=None)
+
+                result = migration_service.auto_migrate_if_needed()
+
+                progress.update(task, completed=True)
+
+            if result.success:
+                console.print(f"\n✅ {result.message}")
+                if result.backup_path:
+                    console.print(f"💾 Sauvegarde créée: {result.backup_path}")
+                if result.details:
+                    console.print("\n[bold]Détails:[/bold]")
+                    for key, value in result.details.items():
+                        console.print(f"  • {key}: {value}")
+            else:
+                console.print(f"\n❌ Échec migration: {result.message}")
+                sys.exit(1)
+        else:
+            # Vérification automatique
+            result = migration_service.auto_migrate_if_needed()
+            console.print(f"ℹ️ {result.message}")
+
+    except Exception as e:
+        console.print(f"❌ Erreur migration: {e}")
+        sys.exit(1)
+
+
+@cli.command('import-v1-environments')
+@click.argument('source_path', type=click.Path(exists=True), required=False)
+@click.option('--target', help='Répertoire cible pour les environnements importés')
+@click.option('--dry-run', is_flag=True, help='Simuler l\'import sans modifications')
+@click.option('--skip-existing', is_flag=True, help='Ignorer les environnements existants')
+@click.pass_context
+def import_v1_environments(ctx: click.Context, source_path: Optional[str],
+                           target: Optional[str], dry_run: bool, skip_existing: bool) -> None:
+    """Importer les environnements depuis GestVenv v1.x
+
+    Cette commande importe les environnements virtuels créés avec
+    GestVenv v1.x vers la nouvelle structure v2.0.
+
+    Arguments:
+        SOURCE_PATH: Chemin vers le répertoire v1.x (défaut: ~/.gestvenv-v1/)
+
+    Exemples:
+        gv import-v1-environments
+        gv import-v1-environments ~/.gestvenv-v1/
+        gv import-v1-environments --dry-run
+    """
+    try:
+        env_manager = EnvironmentManager()
+
+        console.print(Panel.fit(
+            "[bold blue]Import Environnements v1.x[/bold blue]"
+        ))
+
+        # Déterminer le chemin source
+        if source_path:
+            v1_path = Path(source_path)
+        else:
+            # Chemins par défaut
+            default_paths = [
+                Path.home() / ".gestvenv-v1",
+                Path.home() / ".gestvenv_v1",
+                Path.home() / ".gestvenv" / "environments_v1"
+            ]
+            v1_path = None
+            for p in default_paths:
+                if p.exists():
+                    v1_path = p
+                    break
+
+            if not v1_path:
+                console.print("[yellow]⚠️ Aucun répertoire v1.x trouvé[/yellow]")
+                console.print("\nChemins vérifiés:")
+                for p in default_paths:
+                    console.print(f"  - {p}")
+                console.print("\n💡 Spécifiez le chemin: gv import-v1-environments /chemin/vers/v1/")
+                return
+
+        console.print(f"📁 Source: {v1_path}")
+
+        # Lister les environnements v1.x
+        envs_found = []
+        if v1_path.is_dir():
+            for item in v1_path.iterdir():
+                if item.is_dir():
+                    # Vérifier si c'est un environnement virtuel
+                    if (item / "pyvenv.cfg").exists() or (item / "bin" / "python").exists():
+                        envs_found.append(item)
+
+        if not envs_found:
+            console.print("[yellow]Aucun environnement trouvé dans ce répertoire[/yellow]")
+            return
+
+        console.print(f"🔍 {len(envs_found)} environnement(s) trouvé(s)\n")
+
+        if dry_run:
+            console.print("[yellow]Mode simulation (dry-run)[/yellow]\n")
+
+        # Table des environnements
+        table = Table(title="Environnements à importer")
+        table.add_column("Nom", style="cyan")
+        table.add_column("Python", style="green")
+        table.add_column("Taille", style="yellow")
+        table.add_column("Status", style="magenta")
+
+        target_path = Path(target) if target else env_manager.config_manager.get_environments_path()
+
+        imported = 0
+        skipped = 0
+
+        for env_path in envs_found:
+            env_name = env_path.name
+
+            # Détecter version Python
+            pyvenv_cfg = env_path / "pyvenv.cfg"
+            python_version = "?"
+            if pyvenv_cfg.exists():
+                try:
+                    content = pyvenv_cfg.read_text()
+                    for line in content.splitlines():
+                        if line.startswith("version"):
+                            python_version = line.split("=")[1].strip()
+                            break
+                except Exception:
+                    pass
+
+            # Calculer taille
+            size_mb = sum(f.stat().st_size for f in env_path.rglob("*") if f.is_file()) / (1024 * 1024)
+
+            # Vérifier si existe déjà
+            target_env = target_path / env_name
+            exists = target_env.exists()
+
+            if exists and skip_existing:
+                status = "⏭️ Ignoré (existe)"
+                skipped += 1
+            elif exists:
+                status = "⚠️ Existe déjà"
+                skipped += 1
+            elif dry_run:
+                status = "📋 À importer"
+            else:
+                # Effectuer l'import
+                try:
+                    shutil.copytree(env_path, target_env)
+                    status = "✅ Importé"
+                    imported += 1
+                except Exception as e:
+                    status = f"❌ Erreur: {e}"
+
+            table.add_row(env_name, python_version, f"{size_mb:.1f} MB", status)
+
+        console.print(table)
+
+        console.print(f"\n📊 Résumé:")
+        if dry_run:
+            console.print(f"   {len(envs_found)} environnement(s) seraient importés")
+        else:
+            console.print(f"   ✅ {imported} importé(s)")
+            console.print(f"   ⏭️ {skipped} ignoré(s)")
+            if imported > 0:
+                console.print(f"\n💡 Environnements disponibles dans: {target_path}")
+
+    except Exception as e:
+        console.print(f"❌ Erreur import: {e}")
+        sys.exit(1)
+
+
+# Enregistrement des groupes de commandes avancées
+cli.add_command(diff_group)
+cli.add_command(deps_group)
+cli.add_command(security_group)
+cli.add_command(python_group)
+
 
 def main() -> None:
     """Point d'entrée principal"""

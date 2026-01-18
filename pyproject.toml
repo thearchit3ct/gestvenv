@@ -112,3 +112,9 @@ extend-exclude = '''
 profile = "black"
 multi_line_output = 3
 line_length = 88
+
+[tool.bandit]
+# Exclure les templates qui contiennent des strings de template non-Python
+exclude_dirs = ["gestvenv/templates"]
+# Ignorer certains tests spécifiques si nécessaire
+skips = []

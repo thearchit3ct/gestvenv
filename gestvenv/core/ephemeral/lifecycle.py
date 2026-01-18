@@ -1,10 +1,25 @@
 """
 Contrôleur de cycle de vie des environnements éphémères
+
+Security Note:
+    This module intentionally uses shell execution (create_subprocess_shell) for
+    command execution within virtual environments. This is necessary because:
+    1. Virtual environment activation requires sourcing shell scripts
+    2. Users expect to run arbitrary commands in their environments
+
+    The shell execution is controlled and isolated:
+    - Commands run within isolated virtual environment contexts
+    - Environment variables are explicitly controlled
+    - Working directory is restricted to the environment's storage path
+
+    All subprocess.run calls in backends use list arguments (not shell strings)
+    which is the secure approach for fixed commands.
 """
 
 import asyncio
 import logging
 import os
+import shlex
 import shutil
 import subprocess
 from pathlib import Path
@@ -21,7 +36,14 @@ from .exceptions import (
     CleanupException,
     IsolationException
 )
-from ..models import Backend
+from .cgroups import (
+    CgroupManager,
+    ResourceLimits,
+    CgroupsNotAvailableError,
+    CgroupOperationError,
+    cgroup_manager,
+)
+from ..models import BackendType
 
 logger = logging.getLogger(__name__)
 
@@ -121,16 +143,16 @@ class LifecycleController:
             return OperationResult(0, "", "", 0.0, "")
         
         # Construction de la commande selon le backend
-        if env.backend == Backend.UV:
+        if env.backend == BackendType.UV:
             base_cmd = "uv pip install"
-        elif env.backend == Backend.PDM:
+        elif env.backend == BackendType.PDM:
             base_cmd = "pdm add"
-        elif env.backend == Backend.POETRY:
+        elif env.backend == BackendType.POETRY:
             base_cmd = "poetry add"
         else:
             base_cmd = "pip install"
         
-        if upgrade and env.backend in [Backend.PIP, Backend.UV]:
+        if upgrade and env.backend in [BackendType.PIP, BackendType.UV]:
             base_cmd += " --upgrade"
         
         packages_str = " ".join(packages)
@@ -168,7 +190,7 @@ class LifecycleController:
         venv_path = env.storage_path / "venv"
         env.venv_path = venv_path
         
-        if env.backend == Backend.UV:
+        if env.backend == BackendType.UV:
             # uv est le plus rapide pour les créations
             cmd = [
                 "uv", "venv",
@@ -176,13 +198,13 @@ class LifecycleController:
                 "--python", env.python_version,
                 "--seed"  # Pré-install pip/setuptools
             ]
-        elif env.backend == Backend.PDM:
+        elif env.backend == BackendType.PDM:
             cmd = [
                 "pdm", "venv", "create",
                 "--python", env.python_version,
                 str(venv_path)
             ]
-        elif env.backend == Backend.POETRY:
+        elif env.backend == BackendType.POETRY:
             # Poetry gère ses propres venvs, on crée un venv standard
             cmd = [
                 f"python{env.python_version}",
@@ -190,7 +212,7 @@ class LifecycleController:
                 str(venv_path),
                 "--upgrade-deps"
             ]
-        else:  # Backend.PIP
+        else:  # BackendType.PIP
             cmd = [
                 f"python{env.python_version}",
                 "-m", "venv",
@@ -332,9 +354,47 @@ class LifecycleController:
             await self._setup_process_isolation(env)
     
     async def _setup_resource_limits(self, env: EphemeralEnvironment):
-        """Configuration des limites de ressources"""
-        # TODO: Implémentation complète avec cgroups en Phase 2
-        pass
+        """Configuration des limites de ressources via cgroups v2"""
+
+        # Vérifier si cgroups est disponible
+        if not cgroup_manager.is_available:
+            logger.debug("cgroups v2 not available, skipping resource limits")
+            return
+
+        # Extraire les limites de l'environnement
+        resource_limits = env.resource_limits
+        if not resource_limits:
+            return
+
+        try:
+            # Créer les limites cgroups
+            limits = ResourceLimits(
+                max_memory_mb=resource_limits.max_memory,
+                memory_high_mb=int(resource_limits.max_memory * 0.8) if resource_limits.max_memory else None,
+                swap_max_mb=0,  # Désactiver le swap par défaut
+                max_cpu_percent=resource_limits.max_cpu_percent,
+                cpu_weight=100,
+                max_pids=resource_limits.max_processes or 100,
+                network_access=resource_limits.network_access,
+            )
+
+            # Créer le cgroup
+            cgroup_info = await cgroup_manager.create_cgroup(env.id, limits)
+
+            # Stocker la référence au cgroup dans l'environnement
+            env.cgroup_path = cgroup_info.path
+
+            logger.info(f"Resource limits configured for {env.id}: "
+                       f"memory={resource_limits.max_memory}MB, "
+                       f"cpu={resource_limits.max_cpu_percent}%, "
+                       f"pids={resource_limits.max_processes or 100}")
+
+        except CgroupsNotAvailableError:
+            logger.warning("cgroups v2 not available on this system")
+        except CgroupOperationError as e:
+            logger.warning(f"Failed to set resource limits: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error setting resource limits: {e}")
     
     async def _stop_processes(self, env: EphemeralEnvironment, force: bool = False):
         """Arrêt des processus de l'environnement"""
@@ -359,7 +419,15 @@ class LifecycleController:
     
     async def _cleanup_isolation(self, env: EphemeralEnvironment):
         """Nettoyage de l'isolation"""
-        
+
+        # Nettoyage du cgroup
+        if hasattr(env, 'cgroup_path') and env.cgroup_path:
+            try:
+                await cgroup_manager.delete_cgroup(env.id)
+                logger.debug(f"Cleaned up cgroup for {env.id}")
+            except Exception as e:
+                logger.warning(f"Failed to cleanup cgroup for {env.id}: {e}")
+
         if env.container_id:
             # Nettoyage du container
             try:
@@ -415,8 +483,10 @@ class ProcessManager:
         
         try:
             # Création du processus
+            # Note: Shell execution is required for venv activation (source command)
+            # Command runs in isolated environment with controlled env vars and cwd
             if capture_output:
-                process = await asyncio.create_subprocess_shell(
+                process = await asyncio.create_subprocess_shell(  # nosec B602
                     full_command,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
@@ -424,7 +494,7 @@ class ProcessManager:
                     cwd=env.storage_path
                 )
             else:
-                process = await asyncio.create_subprocess_shell(
+                process = await asyncio.create_subprocess_shell(  # nosec B602
                     full_command,
                     env=exec_env,
                     cwd=env.storage_path
@@ -435,6 +505,13 @@ class ProcessManager:
             if env.id not in self.active_processes:
                 self.active_processes[env.id] = []
             self.active_processes[env.id].append(process)
+
+            # Ajouter le processus au cgroup si disponible
+            if hasattr(env, 'cgroup_path') and env.cgroup_path:
+                try:
+                    await cgroup_manager.add_process_to_cgroup(env.id, process.pid)
+                except Exception as e:
+                    logger.debug(f"Could not add process to cgroup: {e}")
             
             # Attente avec timeout
             if timeout:
@@ -507,7 +584,7 @@ class ProcessManager:
     async def _build_command(self, env: EphemeralEnvironment, command: str) -> str:
         """Construction de la commande avec activation du venv"""
         
-        if env.venv_path and env.backend != Backend.POETRY:
+        if env.venv_path and env.backend != BackendType.POETRY:
             # Activation explicite du virtual environment
             activate_script = env.venv_path / "bin" / "activate"
             if activate_script.exists():

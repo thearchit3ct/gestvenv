@@ -69,6 +69,46 @@
         "command": "gestvenv.deleteEnvironment",
         "title": "Delete Environment",
         "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.runDiagnostic",
+        "title": "Run Diagnostic",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.showEnvironmentInfo",
+        "title": "Show Environment Info",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.openWebUI",
+        "title": "Open Web UI",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.openShell",
+        "title": "Open GestVenv Shell",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.migrateEnvironment",
+        "title": "Migrate Environment to GestVenv",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.installFromCursor",
+        "title": "Install Package (from cursor)",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.showPackageInfo",
+        "title": "Show Package Info",
+        "category": "GestVenv"
+      },
+      {
+        "command": "gestvenv.updateAllPackages",
+        "title": "Update All Packages",
+        "category": "GestVenv"
       }
     ],
     "configuration": {
@@ -138,9 +178,56 @@
           "type": "boolean",
           "default": true,
           "description": "Enable organize imports refactoring"
+        },
+        "gestvenv.autoActivate": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically activate detected GestVenv environments"
+        },
+        "gestvenv.syncOnFileChange": {
+          "type": "boolean",
+          "default": true,
+          "description": "Suggest syncing dependencies when requirements.txt or pyproject.toml changes"
+        },
+        "gestvenv.showMissingPackageWarnings": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show warnings for missing packages in import statements"
+        },
+        "gestvenv.webUIUrl": {
+          "type": "string",
+          "default": "http://localhost:5173",
+          "description": "GestVenv Web UI URL"
         }
       }
     },
+    "keybindings": [
+      {
+        "command": "gestvenv.createEnvironment",
+        "key": "ctrl+shift+e ctrl+shift+n",
+        "mac": "cmd+shift+e cmd+shift+n"
+      },
+      {
+        "command": "gestvenv.selectEnvironment",
+        "key": "ctrl+shift+e ctrl+shift+s",
+        "mac": "cmd+shift+e cmd+shift+s"
+      },
+      {
+        "command": "gestvenv.installPackage",
+        "key": "ctrl+shift+e ctrl+shift+i",
+        "mac": "cmd+shift+e cmd+shift+i"
+      },
+      {
+        "command": "gestvenv.syncDependencies",
+        "key": "ctrl+shift+e ctrl+shift+y",
+        "mac": "cmd+shift+e cmd+shift+y"
+      },
+      {
+        "command": "gestvenv.openShell",
+        "key": "ctrl+shift+e ctrl+shift+t",
+        "mac": "cmd+shift+e cmd+shift+t"
+      }
+    ],
     "views": {
       "explorer": [
         {

@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gestvenv"
+version = "1.0.0"
+description = "Gestionnaire d'Environnements Virtuels Python"
+readme = "README.md"
+authors = [
+    {name = "thearchit3ct", email = "thearchit3ct@outlook.fr"}
+]
+requires-python = ">=3.9"
+
+keywords = ["virtual environment", "python", "venv", "environment manager"]
+dependencies = [
+    "argparse",
+    "pathlib",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/thearchit3ct/gestvenv"
+"Bug Tracker" = "https://github.com/thearchit3ct/gestvenv/issues"
+"Documentation" = "https://github.com/thearchit3ct/gestvenv/wiki"
+
+[project.scripts]
+gestvenv = "gestvenv.cli:main"
+
+[tool.setuptools]
+packages = ["gestvenv", "gestvenv.core", "gestvenv.utils", "gestvenv.templates", "gestvenv.tests"]
+package-data = {"gestvenv.templates" = ["*.json"]}
+
+[tool.setuptools.package-dir]
+gestvenv = "gestvenv"
+
+[tool.pytest]
+testpaths = ["tests"]
+python_files = "test_*.py"
+python_functions = "test_*"
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312", "py313"]
+include = '\.pyi?$'
+
+[tool.isort]
+profile = "black"
+line_length = 100
+multi_line_output = 3
+
+[tool.mypy]
+python_version = "3.9"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+
+[[tool.mypy.overrides]]
+module = "tests.*"
+disallow_untyped_defs = false
+disallow_incomplete_defs = false
+
+[tool.coverage.run]
+source = ["gestvenv"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "pass",
+    "raise ImportError",
+]

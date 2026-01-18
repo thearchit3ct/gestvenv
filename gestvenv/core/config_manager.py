@@ -4,11 +4,13 @@ Gestionnaire de configuration pour GestVenv v1.1
 
 import json
 import shutil
+import re
+from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 
 from .models import Config
-from .exceptions import ConfigurationError
+from .exceptions import ConfigurationError, ValidationError
 
 
 class ConfigManager:
@@ -259,7 +261,7 @@ class ConfigManager:
         try:
             with open(config_path, 'r', encoding='utf-8') as f:
                 imported_data = json.load(f)
-            
+
             if merge:
                 # Fusion avec config existante
                 current_data = self.config.__dict__.copy()
@@ -268,7 +270,7 @@ class ConfigManager:
             else:
                 # Remplacement complet
                 config_data = imported_data
-            
+
             # Reconstruction de la config
             new_config = Config()
             for key, value in config_data.items():
@@ -277,7 +279,112 @@ class ConfigManager:
                         setattr(new_config, key, Path(value))
                     else:
                         setattr(new_config, key, value)
-            
+
             return self.save_config(new_config)
         except Exception:
             return False
+
+    def get_setting(self, name: str, default: Any = None) -> Any:
+        """Récupère une valeur de configuration
+
+        Args:
+            name: Nom du paramètre à récupérer
+            default: Valeur par défaut si le paramètre n'existe pas
+
+        Returns:
+            Valeur du paramètre ou default
+        """
+        if hasattr(self.config, name):
+            return getattr(self.config, name)
+        return default
+
+    def set_setting(self, name: str, value: Any) -> bool:
+        """Définit une valeur de configuration
+
+        Args:
+            name: Nom du paramètre à définir
+            value: Valeur à attribuer
+
+        Returns:
+            True si succès
+
+        Raises:
+            ValidationError: Si la valeur est invalide
+        """
+        if not hasattr(self.config, name):
+            # Ignorer silencieusement les paramètres inconnus
+            return True
+
+        # Validation spécifique selon le paramètre
+        if name == 'default_python_version':
+            if not re.match(r'^\d+\.\d+', str(value)):
+                raise ValidationError(
+                    f"Version Python invalide: {value}",
+                    field=name,
+                    validation_errors=[f"Valeur invalide: {value}"]
+                )
+
+        setattr(self.config, name, value)
+        return self.save_config()
+
+    def update_config(self, updates: Dict[str, Any]) -> bool:
+        """Met à jour plusieurs paramètres de configuration
+
+        Args:
+            updates: Dictionnaire des mises à jour
+
+        Returns:
+            True si succès
+
+        Raises:
+            ValidationError: Si une valeur est invalide
+        """
+        # Validation préalable
+        for name, value in updates.items():
+            if name == 'default_python_version':
+                if not re.match(r'^\d+\.\d+', str(value)):
+                    raise ValidationError(
+                        f"Version Python invalide: {value}",
+                        field=name,
+                        validation_errors=[f"Valeur invalide: {value}"]
+                    )
+            if name == 'cache_ttl_hours' and isinstance(value, (int, float)) and value < 0:
+                raise ValidationError(
+                    f"Valeur TTL cache invalide: {value}",
+                    field=name,
+                    validation_errors=[f"Valeur invalide: {value}"]
+                )
+
+        # Application des mises à jour
+        for name, value in updates.items():
+            if hasattr(self.config, name):
+                setattr(self.config, name, value)
+
+        return self.save_config()
+
+    def get_cache_path(self) -> Path:
+        """Retourne le chemin du cache
+
+        Returns:
+            Chemin vers le répertoire cache
+        """
+        cache_path = self.config.environments_path.parent / "cache"
+        cache_path.mkdir(parents=True, exist_ok=True)
+        return cache_path
+
+    def ensure_directories(self) -> None:
+        """Crée les répertoires nécessaires s'ils n'existent pas"""
+        # Répertoire de configuration
+        config_dir = self.config_path.parent
+        if not config_dir.exists():
+            config_dir.mkdir(parents=True, exist_ok=True)
+
+        # Répertoire des environnements
+        env_path = self.config.environments_path
+        if not env_path.exists():
+            env_path.mkdir(parents=True, exist_ok=True)
+
+        # Répertoire cache
+        cache_path = self.config.environments_path.parent / "cache"
+        if not cache_path.exists():
+            cache_path.mkdir(parents=True, exist_ok=True)

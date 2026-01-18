@@ -173,11 +173,11 @@ web/api/__pycache__/
 web/api/*.pyc
 web/api/.env
 
-# Test files
-test_*.py
-test_*.sh
-*_test.py
-*/test_*
+# Test files (excluding tests/ directory)
+/test_*.py
+/test_*.sh
+/*_test.py
+# Note: tests/ directory is NOT ignored
 web/fix_*.py
 web/diagnose_*.py
 web/final_*.py

@@ -14,11 +14,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Dict, List, Optional, Any, Tuple
 
+import tempfile
 from ..core.models import (
     Config,
     EnvironmentInfo,
     InstallResult,
-    ExportResult
+    ExportResult,
+    CacheAddResult
 )
 from ..core.exceptions import CacheError
 
@@ -234,7 +236,158 @@ class CacheService:
         except Exception as e:
             logger.error(f"Erreur mise en cache package installé {package}: {e}")
             return False
-    
+
+    def add_package_to_cache(
+        self,
+        package: str,
+        platforms: Optional[List[str]] = None,
+        python_version: Optional[str] = None
+    ) -> CacheAddResult:
+        """
+        Télécharge un package et l'ajoute au cache.
+
+        Args:
+            package: Nom du package (avec version optionnelle, ex: 'requests==2.28.0')
+            platforms: Liste des plateformes cibles (optionnel)
+            python_version: Version Python cible (optionnel)
+
+        Returns:
+            CacheAddResult avec le statut de l'opération
+        """
+        if not self.enabled:
+            return CacheAddResult(
+                success=False,
+                message="Cache désactivé",
+                package=package
+            )
+
+        temp_dir = None
+        try:
+            # Créer un répertoire temporaire pour le téléchargement
+            temp_dir = tempfile.mkdtemp(prefix="gestvenv_cache_")
+            temp_path = Path(temp_dir)
+
+            # Construire la commande pip download
+            cmd = ["pip", "download", "--dest", str(temp_path), package]
+
+            # Ajouter les options de plateforme si spécifiées
+            if platforms:
+                for platform in platforms:
+                    cmd.extend(["--platform", platform])
+
+            # Ajouter la version Python si spécifiée
+            if python_version:
+                cmd.extend(["--python-version", python_version])
+
+            logger.info(f"Téléchargement de {package} vers le cache")
+
+            # Exécuter pip download avec encodage UTF-8 explicite
+            # pour éviter les erreurs Windows cp1252
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                encoding='utf-8',
+                errors='replace',  # Remplacer les caractères non-décodables
+                timeout=300  # 5 minutes timeout
+            )
+
+            if result.returncode != 0:
+                error_msg = result.stderr or result.stdout or "Erreur inconnue"
+                logger.error(f"Échec pip download pour {package}: {error_msg}")
+                return CacheAddResult(
+                    success=False,
+                    message=f"Échec téléchargement: {error_msg[:200]}",
+                    package=package
+                )
+
+            # Trouver les fichiers téléchargés (.whl ou .tar.gz)
+            downloaded_files = list(temp_path.glob("*.whl")) + list(temp_path.glob("*.tar.gz"))
+
+            if not downloaded_files:
+                return CacheAddResult(
+                    success=False,
+                    message="Aucun fichier téléchargé",
+                    package=package
+                )
+
+            cached_files = []
+            total_size = 0
+            main_version = ""
+
+            # Mettre en cache chaque fichier téléchargé
+            for file_path in downloaded_files:
+                try:
+                    # Lire les données du fichier
+                    file_data = file_path.read_bytes()
+                    file_size = len(file_data)
+                    total_size += file_size
+
+                    # Parser le nom du fichier pour extraire package/version
+                    file_name = file_path.name
+                    parts = file_name.replace('.whl', '').replace('.tar.gz', '').split('-')
+
+                    if len(parts) >= 2:
+                        pkg_name = parts[0]
+                        pkg_version = parts[1]
+
+                        # Garder la version du package principal
+                        if pkg_name.lower().replace('_', '-') == package.lower().split('==')[0].replace('_', '-'):
+                            main_version = pkg_version
+
+                        # Déterminer la plateforme
+                        platform = self._get_current_platform()
+                        if len(parts) >= 5 and file_name.endswith('.whl'):
+                            # Format wheel: name-version-pyver-abi-platform.whl
+                            platform = parts[-1]
+
+                        # Mettre en cache
+                        if self.cache_package(pkg_name, pkg_version, platform, file_data):
+                            cached_files.append(f"{pkg_name}-{pkg_version}")
+                            logger.debug(f"Package mis en cache: {pkg_name}-{pkg_version}")
+
+                except Exception as e:
+                    logger.warning(f"Erreur mise en cache de {file_path.name}: {e}")
+                    continue
+
+            if cached_files:
+                return CacheAddResult(
+                    success=True,
+                    message=f"{len(cached_files)} fichier(s) mis en cache",
+                    package=package,
+                    version=main_version,
+                    file_size=total_size,
+                    cached_files=cached_files
+                )
+            else:
+                return CacheAddResult(
+                    success=False,
+                    message="Aucun fichier n'a pu être mis en cache",
+                    package=package
+                )
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout lors du téléchargement de {package}")
+            return CacheAddResult(
+                success=False,
+                message="Timeout lors du téléchargement (>5min)",
+                package=package
+            )
+        except Exception as e:
+            logger.error(f"Erreur ajout package au cache {package}: {e}")
+            return CacheAddResult(
+                success=False,
+                message=str(e),
+                package=package
+            )
+        finally:
+            # Nettoyer le répertoire temporaire
+            if temp_dir and Path(temp_dir).exists():
+                try:
+                    shutil.rmtree(temp_dir)
+                except Exception as e:
+                    logger.warning(f"Impossible de supprimer {temp_dir}: {e}")
+
     def clear_cache(self, selective: bool = False) -> bool:
         """Nettoie le cache"""
         try:
@@ -341,9 +494,17 @@ class CacheService:
                     shutil.rmtree(backup_path)
                 shutil.copytree(self.cache_path, backup_path)
             
-            # Extraction
+            # Extraction avec filtre de sécurité (évite path traversal)
             with tarfile.open(cache_archive, 'r:gz') as tar:
-                tar.extractall(self.cache_path.parent)
+                # Python 3.12+: filter='data' filtre les membres dangereux
+                # Pour compatibilité, on utilise une approche manuelle
+                for member in tar.getmembers():
+                    # Vérifie que le chemin est sûr (pas de path traversal)
+                    member_path = self.cache_path.parent / member.name
+                    if not member_path.resolve().is_relative_to(self.cache_path.parent.resolve()):
+                        logger.warning(f"Membre tar ignoré (path traversal): {member.name}")
+                        continue
+                    tar.extract(member, self.cache_path.parent)  # nosec B202
             
             # Rechargement
             self._cache_index = self._load_cache_index()
@@ -379,9 +540,10 @@ class CacheService:
             self._save_cache_stats()
     
     def _generate_cache_key(self, package: str, version: str, platform: str) -> str:
-        """Génère clé de cache"""
+        """Génère clé de cache (MD5 utilisé pour hashing non-cryptographique)"""
         key_string = f"{package}-{version}-{platform}"
-        return hashlib.md5(key_string.encode()).hexdigest()
+        # usedforsecurity=False indique que MD5 n'est pas utilisé pour la sécurité
+        return hashlib.md5(key_string.encode(), usedforsecurity=False).hexdigest()  # nosec B324
     
     def _get_current_platform(self) -> str:
         """Plateforme actuelle"""
