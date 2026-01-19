@@ -344,6 +344,13 @@ POST   /api/v1/templates/create         # Créer depuis template
 
 ## Versions de Maintenance
 
+### v2.0.3 (2026-01-19)
+
+Améliorations du workflow de release :
+
+- **Sigstore v3** : Mise à jour pour compatibilité GitHub Actions
+- **Script notify-success** : Correction syntaxe shell
+
 ### v2.0.2 (2026-01-19)
 
 Corrections de stabilité CI/CD et qualité de code :

@@ -5,6 +5,16 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.3] - 2026-01-19
+
+### 🔧 Améliorations
+
+#### Workflow Release
+- **Sigstore v3** : Mise à jour vers `sigstore/gh-action-sigstore-python@v3.0.0` pour compatibilité avec GitHub Actions
+- **Script notify-success** : Correction de l'erreur de syntaxe shell
+
+---
+
 ## [2.0.2] - 2026-01-19
 
 ### 🐛 Corrections

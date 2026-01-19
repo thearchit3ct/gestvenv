@@ -1,6 +1,6 @@
 [project]
 name = "gestvenv"
-version = "2.0.2"
+version = "2.0.3"
 description = "Gestionnaire d'environnements virtuels Python moderne"
 authors = [
     {name = "GestVenv Team", email = "contact@gestvenv.dev"}
@@ -90,7 +90,7 @@ exclude = ["web*", "tests*", "docs*"]
 write_to = "gestvenv/__version__.py"
 version_scheme = "no-guess-dev"
 local_scheme = "dirty-tag"
-fallback_version = "2.0.2"
+fallback_version = "2.0.3"
 
 [tool.black]
 line-length = 88
