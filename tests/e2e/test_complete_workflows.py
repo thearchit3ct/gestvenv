@@ -129,9 +129,12 @@ class TestEnvironmentCreationWorkflow:
     def test_create_environment_with_uv(self, e2e_temp_dir: Path):
         """Test: Création d'un environnement avec uv (si disponible)"""
         # Vérifier si uv est disponible
-        uv_check = subprocess.run(["uv", "--version"], capture_output=True)
-        if uv_check.returncode != 0:
-            pytest.skip("uv not available")
+        try:
+            uv_check = subprocess.run(["uv", "--version"], capture_output=True)
+            if uv_check.returncode != 0:
+                pytest.skip("uv not available")
+        except FileNotFoundError:
+            pytest.skip("uv not installed")
 
         env_path = e2e_temp_dir / "uv-test-env"
 

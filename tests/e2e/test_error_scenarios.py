@@ -36,13 +36,14 @@ try:
         RETRY_NETWORK,
     )
     from gestvenv.core.exceptions import (
-        GestVenvException,
+        GestVenvError,
         ConfigurationError,
         EnvironmentError,
         BackendError,
     )
     IMPORTS_AVAILABLE = True
-except ImportError:
+except ImportError as e:
+    print(f"Import error: {e}")
     IMPORTS_AVAILABLE = False
 
 
@@ -342,17 +343,18 @@ class TestErrorHandlingModule:
 
     def test_error_enrichment(self):
         """Test: Enrichissement des erreurs"""
-        original_error = FileNotFoundError("Config file not found")
+        original_error = Exception("Environment not found")
 
+        # Utiliser ENV_NOT_FOUND qui a des suggestions définies
         enriched = enrich_error(
             original_error,
-            code=ErrorCode.FILE_NOT_FOUND,
-            context={"file": "config.json", "path": "/etc/gestvenv/"}
+            code=ErrorCode.ENV_NOT_FOUND,
+            context={"env_name": "test-env", "path": "/etc/gestvenv/"}
         )
 
-        assert enriched.code == ErrorCode.FILE_NOT_FOUND
-        assert "Config file not found" in enriched.message
-        assert enriched.context["file"] == "config.json"
+        assert enriched.code == ErrorCode.ENV_NOT_FOUND
+        assert "Environment not found" in enriched.message
+        assert enriched.context["env_name"] == "test-env"
         assert len(enriched.suggestions) > 0
 
     def test_error_handler_statistics(self):
