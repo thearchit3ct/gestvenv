@@ -26,6 +26,10 @@ from gestvenv.services.migration_service import MigrationService
 from gestvenv.services.cache_service import CacheService
 from gestvenv.utils.toml_handler import TomlHandler
 from gestvenv.utils.path_utils import PathUtils
+
+# Import des commandes avancées
+from gestvenv.cli.commands import diff_group, deps_group, security_group, python_group
+
 # Version fixe pour GestVenv 2.0
 __version__ = "2.0.0"
 
@@ -361,15 +365,15 @@ def create_from_conda(ctx: click.Context, conda_file: str, name: Optional[str],
         console.print(f"❌ Erreur: {e}")
         sys.exit(1)
 
-@cli.command()
+@cli.command(name='list')
 @click.option('--active-only', is_flag=True, help='Afficher seulement les environnements actifs')
 @click.option('--format', 'output_format', type=click.Choice(['table', 'json']), default='table')
 @click.option('--backend', help='Filtrer par backend')
 @click.option('--health', help='Filtrer par état de santé')
 @click.option('--sort', type=click.Choice(['name', 'created', 'used', 'size']), default='used')
 @click.pass_context
-def list(ctx: click.Context, active_only: bool, output_format: str, 
-         backend: Optional[str], health: Optional[str], sort: str) -> None:
+def list_environments(ctx: click.Context, active_only: bool, output_format: str,
+                      backend: Optional[str], health: Optional[str], sort: str) -> None:
     """Lister tous les environnements"""
     env_manager = ctx.obj['env_manager']
     
@@ -787,11 +791,11 @@ def list_packages(ctx: click.Context, env: Optional[str], group: Optional[str],
 @click.option('--editable', '-e', is_flag=True, help='Installation en mode éditable')
 @click.option('--upgrade', is_flag=True, help='Mettre à jour si déjà installé')
 @click.pass_context
-def install(ctx: click.Context, packages: tuple, env: Optional[str], 
+def install(ctx: click.Context, packages: tuple, env: Optional[str],
            group: Optional[str], backend: Optional[str], editable: bool, upgrade: bool) -> None:
     """Installer des packages"""
     env_manager = ctx.obj['env_manager']
-    
+
     try:
         # Résolution environnement
         if not env:
@@ -810,9 +814,9 @@ def install(ctx: click.Context, packages: tuple, env: Optional[str],
             if not target_env:
                 console.print(f"❌ Environnement '{env}' introuvable")
                 sys.exit(1)
-        
+
         package_list = list(packages)
-        
+
         with Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
@@ -2940,6 +2944,13 @@ def import_v1_environments(ctx: click.Context, source_path: Optional[str],
     except Exception as e:
         console.print(f"❌ Erreur import: {e}")
         sys.exit(1)
+
+
+# Enregistrement des groupes de commandes avancées
+cli.add_command(diff_group)
+cli.add_command(deps_group)
+cli.add_command(security_group)
+cli.add_command(python_group)
 
 
 def main() -> None:

@@ -14,41 +14,36 @@
         <div class="flex space-x-4">
           <div class="flex-1 relative">
             <Search :size="16" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-            <Input
+            <input
               v-model="searchQuery"
+              type="text"
               placeholder="Rechercher des packages... (ex: requests, numpy)"
-              class="pl-9"
+              class="form-input pl-9 w-full"
               @keydown.enter="searchPackages"
             />
           </div>
-          <Select v-model="selectedEnvironment">
-            <SelectTrigger class="w-[200px]">
-              <SelectValue placeholder="Tous les environnements" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Tous les environnements</SelectItem>
-              <SelectSeparator />
-              <SelectItem v-for="env in environments" :key="env.name" :value="env.name">
-                {{ env.name }}
-              </SelectItem>
-            </SelectContent>
-          </Select>
-          <Button @click="searchPackages" :disabled="isSearching">
+          <select v-model="selectedEnvironment" class="form-select w-[200px]">
+            <option value="all">Tous les environnements</option>
+            <option v-for="env in environments" :key="env.name" :value="env.name">
+              {{ env.name }}
+            </option>
+          </select>
+          <button class="btn btn-primary" @click="searchPackages" :disabled="isSearching">
             <Search :size="16" class="mr-2" />
             Rechercher
-          </Button>
+          </button>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+    </div>
 
     <!-- Loading State -->
     <div v-if="isLoading" class="space-y-4">
-      <Card v-for="i in 3" :key="i">
-        <CardContent class="p-6">
+      <div v-for="i in 3" :key="i" class="card">
+        <div class="card-body p-6">
           <div class="space-y-3">
-            <Skeleton class="h-4 w-1/3" />
-            <Skeleton class="h-4 w-1/2" />
-            <Skeleton class="h-4 w-2/3" />
+            <div class="skeleton h-4 w-1/3"></div>
+            <div class="skeleton h-4 w-1/2"></div>
+            <div class="skeleton h-4 w-2/3"></div>
           </div>
         </div>
       </div>
@@ -124,17 +119,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useEnvironmentsStore } from '@/stores/environments'
 import { usePackagesStore } from '@/stores/packages'
-// Toast functionality will be implemented locally
 import { Search, Package, Folder } from 'lucide-vue-next'
-// Using custom CSS classes from style.css
 import PackageCard from '@/components/PackageCard.vue'
 
-// Main Component State
 // Simple toast notification function
 const showToast = (options: { title: string; description?: string; variant?: string }) => {
-  // For now, using console.log - can be replaced with a proper notification system
   console.log(`[${options.variant || 'info'}] ${options.title}: ${options.description || ''}`)
 }
+
 const environmentsStore = useEnvironmentsStore()
 const packagesStore = usePackagesStore()
 
@@ -149,14 +141,14 @@ const environments = ref<any[]>([])
 // Computed
 const groupedResults = computed(() => {
   const groups: Record<string, any[]> = {}
-  
+
   searchResults.value.forEach(pkg => {
     if (!groups[pkg.environment]) {
       groups[pkg.environment] = []
     }
     groups[pkg.environment].push(pkg)
   })
-  
+
   return groups
 })
 
@@ -176,10 +168,10 @@ const loadEnvironments = async () => {
 
 const searchPackages = async () => {
   if (!searchQuery.value.trim()) return
-  
+
   isSearching.value = true
   searchResults.value = []
-  
+
   try {
     if (selectedEnvironment.value === 'all') {
       // Search in all environments
@@ -187,12 +179,12 @@ const searchPackages = async () => {
       for (const env of environments.value) {
         const envDetails = await environmentsStore.fetchEnvironmentDetails(env.name)
         const packages = envDetails.packages || []
-        
-        const filtered = packages.filter(pkg => 
+
+        const filtered = packages.filter(pkg =>
           pkg.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
           pkg.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
         )
-        
+
         results.push(...filtered.map(pkg => ({
           ...pkg,
           environment: env.name
@@ -203,12 +195,12 @@ const searchPackages = async () => {
       // Search in specific environment
       const envDetails = await environmentsStore.fetchEnvironmentDetails(selectedEnvironment.value)
       const packages = envDetails.packages || []
-      
-      const filtered = packages.filter(pkg => 
+
+      const filtered = packages.filter(pkg =>
         pkg.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
         pkg.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
       )
-      
+
       searchResults.value = filtered.map(pkg => ({
         ...pkg,
         environment: selectedEnvironment.value
@@ -231,12 +223,12 @@ const installPackage = async ({ package: packageName, environment }: any) => {
       environment,
       name: packageName
     })
-    
+
     showToast({
       title: 'Succès',
       description: `Package ${packageName} installé dans ${environment}`
     })
-    
+
     // Refresh search results
     await searchPackages()
   } catch (error) {
@@ -251,12 +243,12 @@ const installPackage = async ({ package: packageName, environment }: any) => {
 const uninstallPackage = async ({ package: packageName, environment }: any) => {
   try {
     await packagesStore.uninstallPackage(environment, packageName)
-    
+
     showToast({
       title: 'Succès',
       description: `Package ${packageName} désinstallé de ${environment}`
     })
-    
+
     // Refresh search results
     await searchPackages()
   } catch (error) {
@@ -271,12 +263,12 @@ const uninstallPackage = async ({ package: packageName, environment }: any) => {
 const updatePackage = async ({ package: packageName, environment }: any) => {
   try {
     await packagesStore.updatePackages(environment, [packageName])
-    
+
     showToast({
       title: 'Succès',
       description: `Package ${packageName} mis à jour dans ${environment}`
     })
-    
+
     // Refresh search results
     await searchPackages()
   } catch (error) {

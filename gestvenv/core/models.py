@@ -306,6 +306,17 @@ class Config:
     show_migration_hints: bool = True
     offline_mode: bool = False
     template_settings: Dict[str, Any] = field(default_factory=dict)
+    max_parallel_jobs: int = 4
+
+    @property
+    def cache_enabled(self) -> bool:
+        """Indique si le cache est activé"""
+        return self.cache_settings.get("enabled", True)
+
+    @cache_enabled.setter
+    def cache_enabled(self, value: bool) -> None:
+        """Définit l'état du cache"""
+        self.cache_settings["enabled"] = value
     
     def save(self, path: Path) -> bool:
         """Sauvegarde la configuration"""
@@ -526,3 +537,14 @@ class RepairResult:
     issues_fixed: List[str] = field(default_factory=list)
     issues_remaining: List[str] = field(default_factory=list)
     actions_taken: List[str] = field(default_factory=list)
+
+
+@dataclass
+class CacheAddResult:
+    """Résultat d'ajout au cache"""
+    success: bool
+    message: str
+    package: str = ""
+    version: str = ""
+    file_size: int = 0
+    cached_files: List[str] = field(default_factory=list)
