@@ -18,6 +18,7 @@ module.exports = {
   },
   rules: {
     'vue/multi-word-component-names': 'off',
+    'vue/no-side-effects-in-computed-properties': 'warn',
     'no-unused-vars': 'warn',
     '@typescript-eslint/no-unused-vars': 'warn'
   },
