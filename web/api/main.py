@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 
 from api.routes import environments, packages, cache, system, templates, ide, websocket
-from api.websocket import WebSocketManager
+from api.ws_manager import WebSocketManager
 from api.core.config import settings
 
 # Configuration du logging
@@ -55,14 +55,14 @@ app.include_router(websocket.router, tags=["websocket"])
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     """WebSocket endpoint pour les mises à jour en temps réel."""
-    await websocket_manager.connect(websocket)
+    client_id = await websocket_manager.connect(websocket)
     try:
         while True:
             data = await websocket.receive_text()
             # Traitement des messages WebSocket si nécessaire
             logger.info(f"Received WebSocket message: {data}")
     except WebSocketDisconnect:
-        websocket_manager.disconnect(websocket)
+        websocket_manager.disconnect(client_id)
 
 # Route de health check
 @app.get("/api/health")
