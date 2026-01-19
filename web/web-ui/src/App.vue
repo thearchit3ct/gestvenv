@@ -185,7 +185,14 @@ import {
 import { useSystemStore } from '@/stores/system'
 
 // Navigation items
-const navigation = [
+interface NavItem {
+  name: string
+  path: string
+  icon: typeof HomeIcon
+  badge?: string | number
+}
+
+const navigation: NavItem[] = [
   { name: 'Tableau de bord', path: '/', icon: HomeIcon },
   { name: 'Environnements', path: '/environments', icon: ServerIcon },
   { name: 'Packages', path: '/packages', icon: CubeIcon },

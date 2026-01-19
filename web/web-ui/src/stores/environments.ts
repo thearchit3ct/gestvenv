@@ -103,12 +103,14 @@ export const useEnvironmentsStore = defineStore('environments', () => {
   async function fetchEnvironmentDetails(name: string) {
     loading.value = true
     error.value = null
-    
+
     try {
       currentEnvironment.value = await api.getEnvironment(name)
+      return currentEnvironment.value
     } catch (err: any) {
       error.value = err.message || 'Erreur lors du chargement des détails'
       console.error('Failed to fetch environment details:', err)
+      return null
     } finally {
       loading.value = false
     }

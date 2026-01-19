@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { SystemInfo, Operation, CacheInfo } from '@/types'
+import { OperationStatus } from '@/types'
 import { api } from '@/services/api'
 import { websocket } from '@/services/websocket'
 
@@ -89,7 +90,7 @@ export const useSystemStore = defineStore('system', () => {
         // Mettre à jour l'opération localement
         const index = operations.value.findIndex(op => op.id === operationId)
         if (index !== -1) {
-          operations.value[index].status = 'cancelled'
+          operations.value[index].status = OperationStatus.CANCELLED
         }
         return response
       } else {
@@ -227,7 +228,7 @@ export const useSystemStore = defineStore('system', () => {
       // Mettre à jour l'opération comme terminée
       const index = operations.value.findIndex(op => op.id === data.operation_id)
       if (index !== -1) {
-        operations.value[index].status = 'completed'
+        operations.value[index].status = OperationStatus.COMPLETED
         operations.value[index].progress = 100
         operations.value[index].result = data.result
         operations.value[index].completed_at = new Date().toISOString()

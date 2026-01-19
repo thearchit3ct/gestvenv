@@ -119,7 +119,8 @@
 import { ref, computed, onMounted } from 'vue'
 import { useEnvironmentsStore } from '@/stores/environments'
 import { usePackagesStore } from '@/stores/packages'
-import { Search, Package, Folder } from 'lucide-vue-next'
+import { Search, Package as PackageIcon, Folder } from 'lucide-vue-next'
+import type { Package } from '@/types'
 import PackageCard from '@/components/PackageCard.vue'
 
 // Simple toast notification function
@@ -180,12 +181,12 @@ const searchPackages = async () => {
         const envDetails = await environmentsStore.fetchEnvironmentDetails(env.name)
         const packages = envDetails.packages || []
 
-        const filtered = packages.filter(pkg =>
+        const filtered = packages.filter((pkg: Package) =>
           pkg.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
           pkg.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
         )
 
-        results.push(...filtered.map(pkg => ({
+        results.push(...filtered.map((pkg: Package) => ({
           ...pkg,
           environment: env.name
         })))
@@ -196,12 +197,12 @@ const searchPackages = async () => {
       const envDetails = await environmentsStore.fetchEnvironmentDetails(selectedEnvironment.value)
       const packages = envDetails.packages || []
 
-      const filtered = packages.filter(pkg =>
+      const filtered = packages.filter((pkg: Package) =>
         pkg.name.toLowerCase().includes(searchQuery.value.toLowerCase()) ||
         pkg.description?.toLowerCase().includes(searchQuery.value.toLowerCase())
       )
 
-      searchResults.value = filtered.map(pkg => ({
+      searchResults.value = filtered.map((pkg: Package) => ({
         ...pkg,
         environment: selectedEnvironment.value
       }))
@@ -217,10 +218,9 @@ const searchPackages = async () => {
   }
 }
 
-const installPackage = async ({ package: packageName, environment }: any) => {
+const installPackage = async ({ package: packageName, environment }: { package: string; environment: string }) => {
   try {
-    await packagesStore.installPackage({
-      environment,
+    await packagesStore.installPackage(environment, {
       name: packageName
     })
 

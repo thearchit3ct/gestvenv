@@ -394,7 +394,7 @@ const loadSystemInfo = async () => {
   error.value = null
   
   try {
-    systemInfo.value = await api.system.getInfo()
+    systemInfo.value = await api.getSystemInfo()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Erreur lors du chargement'
     showToast({
@@ -412,7 +412,7 @@ const runHealthCheck = async () => {
   error.value = null
   
   try {
-    systemHealth.value = await api.system.getHealth()
+    systemHealth.value = await api.getSystemHealth()
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Erreur lors de la vérification'
     showToast({
@@ -430,7 +430,7 @@ const runDoctor = async () => {
   error.value = null
   
   try {
-    const result = await api.system.runDoctor()
+    const result = await api.runDoctor()
     
     // Refresh system info and health
     await Promise.all([
@@ -459,7 +459,7 @@ const runCleanup = async () => {
   error.value = null
   
   try {
-    const result = await api.system.cleanup(cleanupOptions.value)
+    const result = await api.cleanupSystem(cleanupOptions.value)
     
     showCleanupDialog.value = false
     

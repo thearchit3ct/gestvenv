@@ -187,7 +187,7 @@ interface Props {
   environment: Environment
 }
 
-defineProps<Props>()
+const props = defineProps<Props>()
 
 // Events
 const emit = defineEmits<{

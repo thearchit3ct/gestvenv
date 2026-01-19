@@ -505,8 +505,8 @@ const packageStatusText = (status: string) => {
   }
 }
 
-const toggleSelectAll = (value: boolean) => {
-  selectAll.value = value
+const toggleSelectAll = () => {
+  // La valeur est déjà mise à jour par v-model
 }
 
 const loadEnvironment = async () => {
@@ -514,7 +514,7 @@ const loadEnvironment = async () => {
   error.value = null
   
   try {
-    environment.value = await environmentsStore.getEnvironmentDetails(envName.value)
+    environment.value = await environmentsStore.fetchEnvironmentDetails(envName.value)
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Erreur lors du chargement'
     showToast({
@@ -586,8 +586,7 @@ const installPackage = async () => {
   error.value = null
   
   try {
-    await packagesStore.installPackage({
-      environment: envName.value,
+    await packagesStore.installPackage(envName.value, {
       name: newPackageName.value,
       editable: installEditable.value,
       upgrade: installUpgrade.value
@@ -642,10 +641,7 @@ const updatePackage = async (packageName: string) => {
   error.value = null
   
   try {
-    await packagesStore.updatePackages({
-      environment: envName.value,
-      packages: [packageName]
-    })
+    await packagesStore.updatePackages(envName.value, [packageName])
     await loadEnvironment()
     
     showToast({
@@ -675,10 +671,7 @@ const updateAllPackages = async () => {
   error.value = null
   
   try {
-    await packagesStore.updatePackages({
-      environment: envName.value,
-      packages: outdatedPackages
-    })
+    await packagesStore.updatePackages(envName.value, outdatedPackages)
     await loadEnvironment()
     
     showToast({
