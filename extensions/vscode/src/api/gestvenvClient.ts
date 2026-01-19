@@ -110,7 +110,7 @@ export class GestVenvAPI {
     async listEnvironments(): Promise<Environment[]> {
         const cacheKey = 'environments';
         const cached = this.getCached(cacheKey);
-        if (cached) return cached;
+        if (cached) { return cached; }
 
         const response = await this.client.get<Environment[]>('/api/v1/environments');
         this.setCache(cacheKey, response.data);
@@ -147,7 +147,7 @@ export class GestVenvAPI {
     async getPackages(envId: string): Promise<Package[]> {
         const cacheKey = `packages:${envId}`;
         const cached = this.getCached(cacheKey);
-        if (cached) return cached;
+        if (cached) { return cached; }
 
         const response = await this.client.get<Package[]>(`/api/v1/ide/environments/${envId}/packages`);
         this.setCache(cacheKey, response.data);
@@ -337,7 +337,7 @@ export class GestVenvAPI {
 
     async deleteEnvironment(envId: string): Promise<{ success: boolean; message?: string }> {
         try {
-            const response = await this.client.delete(`/api/v1/environments/${envId}`);
+            await this.client.delete(`/api/v1/environments/${envId}`);
             this.invalidateCache();
             return { success: true };
         } catch (error: any) {
@@ -350,7 +350,7 @@ export class GestVenvAPI {
 
     async uninstallPackages(envId: string, packages: string[]): Promise<{ success: boolean; message?: string }> {
         try {
-            const response = await this.client.post(
+            await this.client.post(
                 `/api/v1/environments/${envId}/uninstall`,
                 { packages }
             );
