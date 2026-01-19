@@ -154,8 +154,8 @@
           </div>
         </div>
         
-        <DialogFooter>
-          <button variant="outline" @click="showCleanDialog = false">
+        <div class="flex justify-end space-x-2 mt-4">
+          <button class="btn btn-outline" @click="showCleanDialog = false">
             Annuler
           </button>
           <button
@@ -182,39 +182,41 @@
         
         <div class="space-y-4">
           <div>
-            <Label for="export-path">Chemin de destination</Label>
-            <Input
+            <label for="export-path" class="form-label">Chemin de destination</label>
+            <input
               id="export-path"
               v-model="exportPath"
               placeholder="/path/to/export/cache.tar.gz"
+              class="form-input"
             />
           </div>
-          
+
           <div class="flex items-center space-x-2">
-            <Checkbox id="compress" v-model:checked="exportCompress" />
-            <Label for="compress">Compresser l'archive</Label>
+            <input type="checkbox" id="compress" v-model="exportCompress" class="mr-2" />
+            <label for="compress" class="form-label">Compresser l'archive</label>
           </div>
-          
+
           <div class="flex items-center space-x-2">
-            <Checkbox id="include-metadata" v-model:checked="exportIncludeMetadata" />
-            <Label for="include-metadata">Inclure les métadonnées</Label>
+            <input type="checkbox" id="include-metadata" v-model="exportIncludeMetadata" class="mr-2" />
+            <label for="include-metadata" class="form-label">Inclure les métadonnées</label>
           </div>
         </div>
         
-        <DialogFooter>
-          <button variant="outline" @click="showExportDialog = false">
+        <div class="flex justify-end space-x-2 mt-4">
+          <button class="btn btn-outline" @click="showExportDialog = false">
             Annuler
           </button>
           <button
+            class="btn btn-primary"
             @click="exportCache"
             :disabled="!exportPath.trim() || isExporting"
           >
             <Loader2 v-if="isExporting" :size="16" class="mr-2 animate-spin" />
             Exporter
           </button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        </div>
+      </div>
+    </div>
 
     <!-- Import Dialog -->
     <div v-if="showImportDialog" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
@@ -248,11 +250,12 @@
           </div>
         </div>
         
-        <DialogFooter>
-          <button variant="outline" @click="showImportDialog = false">
+        <div class="flex justify-end space-x-2 mt-4">
+          <button class="btn btn-outline" @click="showImportDialog = false">
             Annuler
           </button>
           <button
+            class="btn btn-primary"
             @click="importCache"
             :disabled="!importPath.trim() || isImporting"
           >
