@@ -179,6 +179,7 @@ const searchPackages = async () => {
       const results = []
       for (const env of environments.value) {
         const envDetails = await environmentsStore.fetchEnvironmentDetails(env.name)
+        if (!envDetails) continue
         const packages = envDetails.packages || []
 
         const filtered = packages.filter((pkg: Package) =>
@@ -195,6 +196,10 @@ const searchPackages = async () => {
     } else {
       // Search in specific environment
       const envDetails = await environmentsStore.fetchEnvironmentDetails(selectedEnvironment.value)
+      if (!envDetails) {
+        searchResults.value = []
+        return
+      }
       const packages = envDetails.packages || []
 
       const filtered = packages.filter((pkg: Package) =>

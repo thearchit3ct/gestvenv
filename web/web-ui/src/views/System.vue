@@ -459,7 +459,10 @@ const runCleanup = async () => {
   error.value = null
   
   try {
-    const result = await api.cleanupSystem(cleanupOptions.value)
+    const result = await api.cleanupSystem({
+      orphaned_only: cleanupOptions.value.temp_files,
+      clean_cache: cleanupOptions.value.unused_cache
+    })
     
     showCleanupDialog.value = false
     
