@@ -126,7 +126,17 @@ jobs:
     - name: Check API health
       run: |
         curl -f http://localhost:8000/api/health || exit 1
-        
+
+    - name: Start UI server
+      working-directory: web/web-ui
+      run: |
+        npm run preview &
+        sleep 5
+
+    - name: Check UI health
+      run: |
+        curl -f http://localhost:4173 || exit 1
+
     - name: Run E2E tests
       working-directory: web/web-ui
       run: npm run test:e2e -- --headless
