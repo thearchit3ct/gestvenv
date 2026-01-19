@@ -52,7 +52,7 @@ def run_command(cmd: List[str], cwd: Optional[Path] = None,
             cwd=cwd,
             capture_output=capture_output,
             text=True,
-            shell=shell,
+            shell=shell,  # nosec B602 - shell est False par défaut, True uniquement pour cas contrôlés
             env=env
         )
         

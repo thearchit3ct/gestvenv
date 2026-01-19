@@ -15,6 +15,10 @@ export class StatusBarManager implements vscode.Disposable {
         this.update();
     }
 
+    getActiveEnvironment(): Environment | null {
+        return this.activeEnvironment;
+    }
+
     async setActiveEnvironment(env: Environment | null) {
         this.activeEnvironment = env;
         await this.update();

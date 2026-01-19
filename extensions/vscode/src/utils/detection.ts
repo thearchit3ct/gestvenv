@@ -183,7 +183,7 @@ export class EnvironmentDetector {
     /**
      * Trouve l'exécutable Python dans un environnement
      */
-    private findPythonExecutable(envPath: string): string | null {
+    private findPythonExecutable(envPath: string): string | undefined {
         const possiblePaths = [
             path.join(envPath, 'bin', 'python3'),
             path.join(envPath, 'bin', 'python'),
@@ -197,7 +197,7 @@ export class EnvironmentDetector {
             }
         }
 
-        return null;
+        return undefined;
     }
 
     /**

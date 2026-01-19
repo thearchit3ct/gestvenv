@@ -22,6 +22,46 @@ from .registry import PythonVersion
 logger = logging.getLogger(__name__)
 
 
+def _is_safe_path(base_path: Path, target_path: Path) -> bool:
+    """Vérifie qu'un chemin d'extraction est sûr (pas de path traversal)"""
+    try:
+        resolved_base = base_path.resolve()
+        resolved_target = (base_path / target_path).resolve()
+        return str(resolved_target).startswith(str(resolved_base))
+    except (ValueError, OSError):
+        return False
+
+
+def _safe_tar_extract(tar: tarfile.TarFile, destination: Path) -> None:
+    """Extrait un tarfile de manière sécurisée en filtrant les membres dangereux"""
+    for member in tar.getmembers():
+        member_path = Path(member.name)
+        # Vérifier les chemins absolus et path traversal
+        if member_path.is_absolute() or '..' in member_path.parts:
+            logger.warning(f"Membre tar ignoré (chemin dangereux): {member.name}")
+            continue
+        if not _is_safe_path(destination, member_path):
+            logger.warning(f"Membre tar ignoré (path traversal): {member.name}")
+            continue
+        # Extraire de manière sécurisée
+        tar.extract(member, destination)  # nosec B202
+
+
+def _safe_zip_extract(zf: zipfile.ZipFile, destination: Path) -> None:
+    """Extrait un zipfile de manière sécurisée en filtrant les membres dangereux"""
+    for member in zf.namelist():
+        member_path = Path(member)
+        # Vérifier les chemins absolus et path traversal
+        if member_path.is_absolute() or '..' in member_path.parts:
+            logger.warning(f"Membre zip ignoré (chemin dangereux): {member}")
+            continue
+        if not _is_safe_path(destination, member_path):
+            logger.warning(f"Membre zip ignoré (path traversal): {member}")
+            continue
+        # Extraire de manière sécurisée
+        zf.extract(member, destination)  # nosec B202
+
+
 @dataclass
 class DownloadProgress:
     """Progression du téléchargement"""
@@ -271,7 +311,7 @@ class PythonDownloader:
                 # Archive tar.gz
                 with tarfile.open(archive_path, "r:gz") as tar:
                     # python-build-standalone extrait dans un dossier "python"
-                    tar.extractall(destination)
+                    _safe_tar_extract(tar, destination)
 
                     # Renommer si nécessaire
                     extracted_dir = destination / "python"
@@ -290,7 +330,7 @@ class PythonDownloader:
             elif archive_path.suffix == ".zip":
                 # Archive zip
                 with zipfile.ZipFile(archive_path, "r") as zf:
-                    zf.extractall(destination)
+                    _safe_zip_extract(zf, destination)
 
             return DownloadResult(
                 success=True,

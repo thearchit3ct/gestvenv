@@ -289,6 +289,52 @@ export class GestVenvAPI {
         return response.data;
     }
 
+    async migrateEnvironment(params: {
+        source_path: string;
+        name: string;
+        workspace_path: string;
+    }): Promise<{ success: boolean; message?: string; environment?: Environment }> {
+        try {
+            const response = await this.client.post('/api/v1/environments/migrate', params);
+            this.invalidateCache();
+            return {
+                success: true,
+                environment: response.data
+            };
+        } catch (error: any) {
+            return {
+                success: false,
+                message: error.response?.data?.detail || error.message
+            };
+        }
+    }
+
+    async getPackageInfo(packageName: string): Promise<any | null> {
+        try {
+            const response = await this.client.get(`/api/v1/packages/${packageName}/info`);
+            return response.data;
+        } catch (error: any) {
+            console.error(`Failed to get package info for ${packageName}:`, error);
+            return null;
+        }
+    }
+
+    async updateAllPackages(envId: string): Promise<{ success: boolean; message?: string; updated_count?: number }> {
+        try {
+            const response = await this.client.post(`/api/v1/environments/${envId}/update-all`);
+            this.invalidateCache(`packages:${envId}`);
+            return {
+                success: true,
+                updated_count: response.data?.updated_count || 0
+            };
+        } catch (error: any) {
+            return {
+                success: false,
+                message: error.response?.data?.detail || error.message
+            };
+        }
+    }
+
     async deleteEnvironment(envId: string): Promise<{ success: boolean; message?: string }> {
         try {
             const response = await this.client.delete(`/api/v1/environments/${envId}`);
