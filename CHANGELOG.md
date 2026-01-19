@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.0.1] - 2025-01-19
+
+### 🐛 Corrections
+
+#### Interface Web
+- **Fix CSS Tailwind** : Ajout de `postcss.config.js` manquant pour le rendu correct des styles
+- **Installation plugins Tailwind** : Ajout des plugins `@tailwindcss/forms` et `@tailwindcss/typography`
+- **Correction Packages.vue** : Remplacement des composants UI manquants (Input, Select, Button) par HTML natif
+- **Correction PackageCard.vue** : Remplacement des composants Card, Badge, Button par classes CSS
+- **Correction Cache.vue** : Remplacement des composants Label, Input, Checkbox par éléments natifs
+
+#### Améliorations
+- Meilleure compatibilité sans bibliothèque de composants externe
+- Interface plus légère et rapide à charger
+- Cohérence des styles avec Tailwind CSS natif
+
+---
+
 ## [2.0.0] - 2025-07-17
 
 ### 🎉 Nouveautés Majeures
