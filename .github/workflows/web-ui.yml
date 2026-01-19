@@ -31,7 +31,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
         
     - name: Cache pip dependencies
-      uses: actions/cache@v3
+      uses: actions/cache@v4
       with:
         path: ~/.cache/pip
         key: ${{ runner.os }}-pip-${{ hashFiles('web/requirements.txt') }}
@@ -64,12 +64,10 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ matrix.node-version }}
-        cache: 'npm'
-        cache-dependency-path: web/web-ui/package-lock.json
         
     - name: Install dependencies
       working-directory: web/web-ui
-      run: npm ci
+      run: npm install
       
     - name: Run linter
       working-directory: web/web-ui
@@ -113,7 +111,7 @@ jobs:
         
     - name: Install UI dependencies
       working-directory: web/web-ui
-      run: npm ci
+      run: npm install
       
     - name: Build UI
       working-directory: web/web-ui
