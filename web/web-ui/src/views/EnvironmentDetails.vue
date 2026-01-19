@@ -205,7 +205,7 @@
                   <ChevronDown :size="16" class="ml-2" />
                 </button>
                 <div v-if="showDropdown" class="absolute right-0 mt-2 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10">
-                  <button @click="bulkUninstall; showDropdown = false" class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center">
+                  <button @click="bulkUninstall(); showDropdown = false" class="w-full px-4 py-2 text-left hover:bg-gray-100 flex items-center">
                     <Trash2 :size="16" class="mr-2" />
                     Désinstaller la sélection
                   </button>
