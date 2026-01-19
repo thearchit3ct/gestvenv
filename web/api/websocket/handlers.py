@@ -1,6 +1,6 @@
 """WebSocket message handlers for IDE integration."""
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import asyncio
 from datetime import datetime
 import logging
