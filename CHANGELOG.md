@@ -5,7 +5,25 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] - 2025-01-19
+## [2.0.2] - 2026-01-19
+
+### 🐛 Corrections
+
+#### CI/CD
+- **Import Python manquant** : Ajout de `List` aux imports de typing dans `handlers.py`
+- **Conflit de nommage WebSocket** : Renommage de `websocket.py` en `ws_manager.py` pour éviter le conflit avec le package `websocket/`
+- **Serveur UI manquant** : Ajout de `npm run preview` dans le workflow CI pour servir l'UI avant les tests E2E
+- **Viewport Cypress** : Configuration du viewport (1280x720) pour les tests E2E en mode headless
+- **GitHub Actions dépréciées** : Mise à jour de `actions/upload-artifact` et `actions/cache` vers v4
+- **Sigstore** : Mise à jour vers `sigstore/gh-action-sigstore-python@v3.0.0`
+
+#### Corrections de code
+- **Signature disconnect()** : Correction de l'appel `disconnect()` pour utiliser `client_id` au lieu de `websocket`
+- **Erreur syntaxe workflow** : Correction du script shell dans le job `notify-success`
+
+---
+
+## [2.0.1] - 2026-01-19
 
 ### 🐛 Corrections
 

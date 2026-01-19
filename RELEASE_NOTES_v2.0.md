@@ -342,6 +342,31 @@ POST   /api/v1/templates/create         # Créer depuis template
 
 ---
 
+## Versions de Maintenance
+
+### v2.0.2 (2026-01-19)
+
+Corrections de stabilité CI/CD et qualité de code :
+
+- **Import Python manquant** : Correction de l'import `List` dans `handlers.py`
+- **Conflit de nommage** : Renommage de `websocket.py` → `ws_manager.py`
+- **CI/CD** :
+  - Ajout du serveur UI preview avant les tests E2E
+  - Configuration viewport Cypress (1280x720)
+  - Mise à jour des GitHub Actions vers v4
+  - Mise à jour Sigstore vers v3.0.0
+- **Correction de code** : Signature `disconnect()` corrigée
+
+### v2.0.1 (2026-01-19)
+
+Corrections de l'interface web :
+
+- **CSS Tailwind** : Ajout de `postcss.config.js` manquant
+- **Plugins Tailwind** : Installation de `@tailwindcss/forms` et `@tailwindcss/typography`
+- **Composants Vue** : Remplacement des composants UI manquants par HTML natif avec Tailwind
+
+---
+
 ## Migration depuis v1.x
 
 ### Migration Automatique
@@ -496,5 +521,5 @@ Merci à tous les contributeurs et à la communauté Python pour leur soutien co
     <a href="https://pypi.org/project/gestvenv/">PyPI</a> •
     <a href="docs/">Documentation</a>
   </p>
-  <p><em>Licence MIT - 2025</em></p>
+  <p><em>Licence MIT - 2026</em></p>
 </div>
