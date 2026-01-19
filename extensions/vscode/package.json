@@ -18,7 +18,6 @@
     "environment",
     "package manager"
   ],
-  "icon": "resources/icons/gestvenv-logo.png",
   "activationEvents": [
     "onLanguage:python",
     "workspaceContains:**/pyproject.toml",
